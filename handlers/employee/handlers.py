@@ -7,11 +7,9 @@ from .utils import *
 from datetime import datetime
 import logging
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Вспомогательная функция для безопасного редактирования
 async def safe_edit(query, text, reply_markup=None):
     try:
         await query.edit_message_text(text, reply_markup=reply_markup)
@@ -57,7 +55,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.answer("Сначала отметься на смене!", show_alert=True)
             return MAIN_MENU
         all_items = get_checklist_items(user_id, context)
-        if not all_items:
+        if all_items is None:
             await safe_edit(query, "Ошибка получения чек-листа.", reply_markup=main_menu_keyboard(has_shift=True))
             return MAIN_MENU
         cats = list({item['category'] for item in all_items})
@@ -77,7 +75,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if done is None:
             await safe_edit(query, "Ошибка получения прогресса.", reply_markup=main_menu_keyboard(has_shift=True))
             return MAIN_MENU
-        progress_text = f"📊 Твой прогресс: {done}/{total} выполнено ({int(done/total*100)}%)\n\n"
+        progress_text = f"📊 Твой прогресс: {done}/{total} выполнено ({int(done/total*100) if total else 0}%)\n\n"
         for cat, stats in categories.items():
             cat_name = CATEGORY_NAMES.get(cat, cat)
             progress_text += f"• {cat_name}: {stats['done']}/{stats['total']}\n"
@@ -135,14 +133,13 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     if data.startswith(CB_ITEM_DONE):
-        idx = int(data.split("_")[-1])
-        logger.info(f"Отметка DONE: user={user_id}, idx={idx}")
-        changed = mark_item_done(user_id, idx, context)
+        item_id = int(data.split("_")[-1])  # теперь это реальный id из БД
+        logger.info(f"Отметка DONE: user={user_id}, item_id={item_id}")
+        changed = mark_item_done(user_id, item_id, context)
         if not changed:
             await query.answer("Уже выполнено", show_alert=False)
             return CHECKLIST_VIEW
 
-        # Принудительно обновляем текущую категорию
         current_category = context.user_data.get('current_category')
         if not current_category:
             all_items = get_checklist_items(user_id, context)
@@ -150,20 +147,12 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit(query, "Выбери категорию:", reply_markup=categories_keyboard(cats))
             return CATEGORY_SELECT
 
-        # Перечитываем пункты с обновлённым прогрессом
         items = get_items_by_category(user_id, context, current_category)
         if not items:
             all_items = get_checklist_items(user_id, context)
             cats = list({item['category'] for item in all_items}) if all_items else []
             await safe_edit(query, "Выбери категорию:", reply_markup=categories_keyboard(cats))
             return CATEGORY_SELECT
-
-        # Проверяем, изменился ли прогресс (для отладки)
-        for it in items:
-            if it['completed']:
-                logger.info(f"✅ Пункт выполнен: {it['text'][:30]}")
-            else:
-                logger.info(f"⬜ Пункт не выполнен: {it['text'][:30]}")
 
         await safe_edit(
             query,
@@ -173,9 +162,9 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CHECKLIST_VIEW
 
     elif data.startswith(CB_ITEM_UNDO):
-        idx = int(data.split("_")[-1])
-        logger.info(f"Отмена DONE: user={user_id}, idx={idx}")
-        changed = mark_item_undone(user_id, idx, context)
+        item_id = int(data.split("_")[-1])
+        logger.info(f"Отмена DONE: user={user_id}, item_id={item_id}")
+        changed = mark_item_undone(user_id, item_id, context)
         if not changed:
             await query.answer("Уже не выполнено", show_alert=False)
             return CHECKLIST_VIEW
@@ -253,7 +242,6 @@ async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
     return MAIN_MENU
 
-# Заглушка для noop
 async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Это просто заголовок")

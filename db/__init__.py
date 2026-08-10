@@ -6,7 +6,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "bot.db")
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = OFF")  # временное отключение
+    conn.execute("PRAGMA foreign_keys = OFF")
     return conn
 
 def init_db():
@@ -50,9 +50,11 @@ def init_db():
                 date TEXT,
                 completed BOOLEAN DEFAULT 0,
                 completed_at TEXT
-                -- FOREIGN KEY (item_id) REFERENCES checklist_items(id)  -- временно убрали
             )
         """)
         conn.commit()
+    # Импорт чек-листов после создания таблиц
+    from .checklist import import_checklist_items
+    import_checklist_items()
 
 init_db()

@@ -3,7 +3,7 @@ from .handlers import (
     start_menu,
     main_menu_callback,
     location_selection,
-    category_selection,          # обязательно импортируйте
+    category_selection,
     checklist_action,
     progress_back,
     noop
@@ -20,7 +20,7 @@ def register_handlers(app: Application):
             SELECT_LOCATION: [
                 CallbackQueryHandler(location_selection, pattern="|".join([CB_SHIFT_BAR, CB_SHIFT_KITCHEN, CB_BACK_MAIN]))
             ],
-            CATEGORY_SELECT: [   # ДОБАВЬТЕ ЭТОТ БЛОК
+            CATEGORY_SELECT: [
                 CallbackQueryHandler(category_selection, pattern=f"^{CB_CATEGORY}.*|^{CB_BACK_MAIN}$"),
             ],
             CHECKLIST_VIEW: [

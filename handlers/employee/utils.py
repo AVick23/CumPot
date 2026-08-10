@@ -1,7 +1,6 @@
 from db.shifts import start_shift, get_active_shift, end_shift
-from db.checklist import save_progress, get_progress_for_user_date
+from db.checklist import get_items_for_location_and_day, save_progress, get_progress_for_user_date
 from datetime import datetime
-from .constants import get_daily_items, get_weekly_item
 
 def mark_shift(user_id, location):
     start_shift(user_id, location)
@@ -20,29 +19,19 @@ def get_checklist_items(user_id, context):
     day_of_week = datetime.now().weekday()
     date = datetime.now().strftime("%Y-%m-%d")
 
-    items = []
-    daily = get_daily_items(location)
-    for item in daily:
-        items.append({
-            'id': None,
-            'category': item['category'],
-            'text': item['text'],
-            'completed': False,
-        })
-    weekly_text = get_weekly_item(location, day_of_week)
-    if weekly_text:
-        items.append({
-            'id': None,
-            'category': 'weekly',
-            'text': weekly_text,
-            'completed': False,
-        })
+    # Получаем пункты из БД
+    items = get_items_for_location_and_day(location, day_of_week)
+    if not items:
+        return []
 
-    progress_list = get_progress_for_user_date(user_id, date)
-    progress_dict = {p['item_id']: p['completed'] for p in progress_list}
-    for idx, item in enumerate(items):
-        if idx in progress_dict:
-            item['completed'] = progress_dict[idx] == 1
+    # Получаем прогресс
+    progress = get_progress_for_user_date(user_id, date)
+    progress_dict = {p['item_id']: p['completed'] for p in progress}
+
+    # Добавляем статус выполнения
+    for item in items:
+        item['completed'] = progress_dict.get(item['id'], 0) == 1
+
     return items
 
 def get_items_by_category(user_id, context, category):
@@ -55,7 +44,7 @@ def mark_item_done(user_id, item_id, context):
     date = datetime.now().strftime("%Y-%m-%d")
     progress_list = get_progress_for_user_date(user_id, date)
     progress_dict = {p['item_id']: p['completed'] for p in progress_list}
-    current = progress_dict.get(item_id, 0)  # 0 или 1
+    current = progress_dict.get(item_id, 0)
     if current == 1:
         return False
     save_progress(user_id, item_id, True)

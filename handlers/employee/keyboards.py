@@ -19,24 +19,21 @@ def location_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def categories_keyboard(available_categories):
-    """Клавиатура выбора категории (только те, у которых есть пункты)"""
     keyboard = []
     for cat in available_categories:
         label = CATEGORY_NAMES.get(cat, cat)
         keyboard.append([InlineKeyboardButton(label, callback_data=f"category_{cat}")])
-    keyboard.append([InlineKeyboardButton("◀️ Назад в главное меню", callback_data="back_main")])
+    keyboard.append([InlineKeyboardButton("◀️ В главное меню", callback_data="back_main")])
     return InlineKeyboardMarkup(keyboard)
 
 def checklist_keyboard(items, category, back_callback="back_categories"):
-    """Клавиатура для пунктов конкретной категории"""
     keyboard = []
-    for idx, item in enumerate(items):
+    for item in items:
         status = "✅" if item['completed'] else "⬜"
-        callback = f"item_done_{idx}" if not item['completed'] else f"item_undo_{idx}"
-        # Обрезаем длинные тексты
+        # Используем реальный id из БД
+        callback = f"item_done_{item['id']}" if not item['completed'] else f"item_undo_{item['id']}"
         text = item['text'][:40] + "..." if len(item['text']) > 40 else item['text']
         keyboard.append([InlineKeyboardButton(f"{status} {text}", callback_data=callback)])
-    # Кнопка назад
     keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
