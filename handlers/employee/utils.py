@@ -1,4 +1,5 @@
 from db.shifts import start_shift, get_active_shift, end_shift
+from db.checklist import save_progress, get_progress_for_user_date
 from datetime import datetime
 from .constants import get_daily_items, get_weekly_item
 
@@ -12,24 +13,24 @@ def end_current_shift(user_id):
     end_shift(user_id)
 
 def get_checklist_items(user_id, context):
-    """Возвращает список всех пунктов (ежедневные + недельный) с флагом completed"""
+    """Возвращает список всех пунктов (ежедневные + недельный) с флагом completed из БД"""
     shift = get_active_shift(user_id)
     if not shift:
         return None
     location = shift['location']
     day_of_week = datetime.now().weekday()
+    date = datetime.now().strftime("%Y-%m-%d")
 
+    # Получаем все пункты из констант
     items = []
-    # Ежедневные
     daily = get_daily_items(location)
     for item in daily:
         items.append({
-            'id': None,  # временно
+            'id': None,  # временно, будем использовать индекс как id
             'category': item['category'],
             'text': item['text'],
             'completed': False,
         })
-    # Недельная задача
     weekly_text = get_weekly_item(location, day_of_week)
     if weekly_text:
         items.append({
@@ -39,35 +40,38 @@ def get_checklist_items(user_id, context):
             'completed': False,
         })
 
-    # Загружаем прогресс из context.user_data
-    date = datetime.now().strftime("%Y-%m-%d")
-    key = f"progress_{user_id}_{date}"
-    progress = context.user_data.get(key, {})
+    # Получаем прогресс из БД
+    progress_list = get_progress_for_user_date(user_id, date)
+    # Превращаем в словарь для быстрого доступа по индексу (используем порядковый номер)
+    progress_dict = {}
+    for p in progress_list:
+        # Используем индекс (порядковый номер) как ключ
+        # Так как у нас нет реального item_id, мы будем хранить прогресс по индексу.
+        # Для этого в БД мы будем сохранять item_id = индекс.
+        progress_dict[p['item_id']] = p['completed'] == 1
+
+    # Применяем прогресс к пунктам
     for idx, item in enumerate(items):
-        if str(idx) in progress:
-            item['completed'] = progress[str(idx)]
+        if idx in progress_dict:
+            item['completed'] = progress_dict[idx]
+
     return items
 
 def get_items_by_category(user_id, context, category):
-    """Возвращает пункты только для указанной категории"""
     all_items = get_checklist_items(user_id, context)
     if not all_items:
         return None
     return [item for item in all_items if item['category'] == category]
 
 def mark_item_done(user_id, item_id, context):
+    # item_id - это индекс (порядковый номер)
     date = datetime.now().strftime("%Y-%m-%d")
-    key = f"progress_{user_id}_{date}"
-    progress = context.user_data.get(key, {})
-    progress[str(item_id)] = True
-    context.user_data[key] = progress
+    # Сохраняем в БД с item_id = индекс
+    save_progress(user_id, item_id, True)   # передаём индекс как item_id
 
 def mark_item_undone(user_id, item_id, context):
     date = datetime.now().strftime("%Y-%m-%d")
-    key = f"progress_{user_id}_{date}"
-    progress = context.user_data.get(key, {})
-    progress[str(item_id)] = False
-    context.user_data[key] = progress
+    save_progress(user_id, item_id, False)
 
 def get_user_progress_summary(user_id, context):
     items = get_checklist_items(user_id, context)
@@ -75,7 +79,6 @@ def get_user_progress_summary(user_id, context):
         return None, None, None
     total = len(items)
     done = sum(1 for i in items if i['completed'])
-    # Прогресс по категориям
     categories = {}
     for item in items:
         cat = item['category']

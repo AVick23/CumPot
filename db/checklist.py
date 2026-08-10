@@ -13,11 +13,9 @@ def get_items_for_location_and_day(location, day_of_week):
         return [dict(row) for row in rows]
 
 def save_progress(user_id, item_id, completed=True):
-    """Сохраняет или обновляет прогресс на сегодня"""
     date = datetime.now().strftime("%Y-%m-%d")
     completed_at = datetime.now().strftime("%H:%M:%S") if completed else None
     with get_connection() as conn:
-        # Проверяем, есть ли запись за сегодня
         row = conn.execute(
             "SELECT id FROM checklist_progress WHERE user_id = ? AND item_id = ? AND date = ?",
             (user_id, item_id, date)
