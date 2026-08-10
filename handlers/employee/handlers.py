@@ -57,7 +57,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
-        # Очищаем сохранённую категорию при новом входе в чек-листы
         context.user_data.pop('current_category', None)
         await query.edit_message_text(
             "📋 Выбери категорию:",
@@ -99,7 +98,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     elif data == CB_BACK_MAIN:
         shift = get_active_shift(user_id)
-        # Очищаем сохранённую категорию при возврате в главное меню
         context.user_data.pop('current_category', None)
         await query.edit_message_text(
             "Главное меню:",
@@ -112,7 +110,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return MAIN_MENU
 
 async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка выбора категории"""
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -120,7 +117,6 @@ async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data.startswith(CB_CATEGORY):
         category = data.split("_")[1]
-        # СОХРАНЯЕМ ВЫБРАННУЮ КАТЕГОРИЮ
         context.user_data['current_category'] = category
         items = get_items_by_category(user_id, context, category)
         if not items:
@@ -156,7 +152,10 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith(CB_ITEM_DONE):
         idx = int(data.split("_")[-1])
-        mark_item_done(user_id, idx, context)
+        changed = mark_item_done(user_id, idx, context)
+        if not changed:
+            await query.answer("Уже выполнено", show_alert=False)
+            return CHECKLIST_VIEW
         current_category = context.user_data.get('current_category')
         if not current_category:
             all_items = get_checklist_items(user_id, context)
@@ -184,7 +183,10 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith(CB_ITEM_UNDO):
         idx = int(data.split("_")[-1])
-        mark_item_undone(user_id, idx, context)
+        changed = mark_item_undone(user_id, idx, context)
+        if not changed:
+            await query.answer("Уже не выполнено", show_alert=False)
+            return CHECKLIST_VIEW
         current_category = context.user_data.get('current_category')
         if not current_category:
             all_items = get_checklist_items(user_id, context)
@@ -211,7 +213,6 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CHECKLIST_VIEW
 
     elif data == CB_BACK_CATEGORIES:
-        # Возврат к выбору категорий – очищаем сохранённую категорию
         context.user_data.pop('current_category', None)
         all_items = get_checklist_items(user_id, context)
         cats = list({item['category'] for item in all_items}) if all_items else []
