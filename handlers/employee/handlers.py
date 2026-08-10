@@ -40,12 +40,11 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return SELECT_LOCATION
 
     elif data == CB_CHECKLIST:
-        # Кнопка видна только если есть смена, но проверка на всякий случай
         shift = get_active_shift(user_id)
         if not shift:
             await query.answer("Сначала отметься на смене!", show_alert=True)
             return MAIN_MENU
-        items = get_checklist_items(user_id)
+        items = get_checklist_items(user_id, context)  # передаём context
         if items is None:
             await query.edit_message_text(
                 "Ошибка получения чек-листа. Попробуйте позже.",
@@ -53,11 +52,17 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return MAIN_MENU
         if not items:
+            if query.message.text == "На сегодня нет задач.":
+                await query.answer("Уже показано")
+                return MAIN_MENU
             await query.edit_message_text(
                 "На сегодня нет задач.",
                 reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
+        if query.message.text == "Ваш чек-лист на сегодня:":
+            await query.answer("Чек-лист уже открыт")
+            return CHECKLIST_VIEW
         await query.edit_message_text(
             "Ваш чек-лист на сегодня:",
             reply_markup=checklist_keyboard(items, datetime.now().strftime("%Y-%m-%d"))
@@ -69,7 +74,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not shift:
             await query.answer("Сначала отметься на смене!", show_alert=True)
             return MAIN_MENU
-        done, total, items = get_user_progress_summary(user_id)
+        done, total, items = get_user_progress_summary(user_id, context)
         if done is None:
             await query.edit_message_text(
                 "Ошибка получения прогресса.",
@@ -84,6 +89,9 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 progress_text += f"\n...и ещё {len(undone)-10} пунктов"
         else:
             progress_text += "🎉 Все задачи выполнены!"
+        if query.message.text == progress_text:
+            await query.answer("Прогресс уже показан")
+            return PROGRESS_VIEW
         await query.edit_message_text(
             progress_text,
             reply_markup=progress_keyboard()
@@ -144,8 +152,8 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith(CB_ITEM_DONE):
         item_id = int(data.split("_")[-1])
-        mark_item_done(user_id, item_id)
-        items = get_checklist_items(user_id)
+        mark_item_done(user_id, item_id, context)  # передаём context
+        items = get_checklist_items(user_id, context)
         if items:
             await query.edit_message_text(
                 "Ваш чек-лист обновлён:",
@@ -161,8 +169,8 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith(CB_ITEM_UNDO):
         item_id = int(data.split("_")[-1])
-        mark_item_undone(user_id, item_id)
-        items = get_checklist_items(user_id)
+        mark_item_undone(user_id, item_id, context)
+        items = get_checklist_items(user_id, context)
         if items:
             await query.edit_message_text(
                 "Ваш чек-лист обновлён:",

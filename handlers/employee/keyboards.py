@@ -1,7 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def main_menu_keyboard(has_shift=False):
-    """Главное меню: если смена есть – показываем все кнопки, иначе только отметку."""
     keyboard = [
         [InlineKeyboardButton("✅ Отметиться на смене", callback_data="shift_mark")]
     ]
@@ -21,12 +20,13 @@ def location_keyboard():
 def checklist_keyboard(items, date):
     keyboard = []
     current_category = None
-    for item in items:
-        if item['category'] != current_category:
-            current_category = item['category']
+    for idx, item in enumerate(items):
+        category = item.get('category', '')
+        if category != current_category:
+            current_category = category
             keyboard.append([InlineKeyboardButton(f"--- {current_category.upper()} ---", callback_data="noop")])
-        status = "✅" if item['completed'] else "⬜"
-        callback = f"item_done_{item['id']}" if not item['completed'] else f"item_undo_{item['id']}"
+        status = "✅" if item.get('completed', False) else "⬜"
+        callback = f"item_done_{idx}" if not item.get('completed', False) else f"item_undo_{idx}"
         keyboard.append([InlineKeyboardButton(f"{status} {item['text'][:30]}", callback_data=callback)])
     keyboard.append([InlineKeyboardButton("◀️ В главное меню", callback_data="back_main")])
     return InlineKeyboardMarkup(keyboard)
