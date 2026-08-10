@@ -1,5 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constant import *
+from datetime import datetime, timedelta
+import calendar
 
 def admin_main_keyboard():
     keyboard = [
@@ -19,6 +21,51 @@ def employee_list_keyboard(employees):
         name = f"{emp['first_name']} {emp['last_name']}" if emp['last_name'] else emp['first_name']
         keyboard.append([InlineKeyboardButton(name, callback_data=f"{CB_ADMIN_EMPLOYEE}{emp['tg_id']}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)])
+    return InlineKeyboardMarkup(keyboard)
+
+def calendar_keyboard(year, month, shift_days):
+    """Создаёт клавиатуру-календарь на месяц.
+    shift_days — список строк дат (YYYY-MM-DD), когда была смена."""
+    keyboard = []
+    # Заголовок с месяцем и годом + навигация
+    month_name = calendar.month_name[month]
+    keyboard.append([
+        InlineKeyboardButton("◀️", callback_data=CB_ADMIN_MONTH_PREV),
+        InlineKeyboardButton(f"{month_name} {year}", callback_data="noop"),
+        InlineKeyboardButton("▶️", callback_data=CB_ADMIN_MONTH_NEXT),
+    ])
+    # Дни недели
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(day, callback_data="noop") for day in weekdays])
+    # Дни месяца
+    first_day = datetime(year, month, 1)
+    start_weekday = first_day.weekday()  # 0-6, понедельник = 0
+    _, days_in_month = calendar.monthrange(year, month)
+    row = []
+    # Пустые ячейки до первого дня
+    for _ in range(start_weekday):
+        row.append(InlineKeyboardButton(" ", callback_data="noop"))
+    for day in range(1, days_in_month + 1):
+        date_str = f"{year}-{month:02d}-{day:02d}"
+        # Если день есть в shift_days, ставим значок
+        label = f"✅{day}" if date_str in shift_days else str(day)
+        row.append(InlineKeyboardButton(label, callback_data=f"{CB_ADMIN_DAY}{date_str}"))
+        if len(row) == 7:
+            keyboard.append(row)
+            row = []
+    # Если остались ячейки, заполняем пустыми
+    if row:
+        while len(row) < 7:
+            row.append(InlineKeyboardButton(" ", callback_data="noop"))
+        keyboard.append(row)
+    # Кнопка назад
+    keyboard.append([InlineKeyboardButton("◀️ Выбрать другого сотрудника", callback_data=CB_ADMIN_BACK)])
+    return InlineKeyboardMarkup(keyboard)
+
+def progress_detail_keyboard(employee_id, date_str):
+    keyboard = [
+        [InlineKeyboardButton("◀️ Назад к календарю", callback_data=CB_ADMIN_BACK_TO_CALENDAR)],
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 def edit_items_keyboard(items):

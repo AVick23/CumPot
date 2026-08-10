@@ -2,7 +2,8 @@
 ADMIN_MAIN = 10
 ADMIN_SHIFTS = 11
 ADMIN_SELECT_EMPLOYEE = 20
-ADMIN_SHOW_PROGRESS = 21
+ADMIN_CALENDAR = 35
+ADMIN_DAY_PROGRESS = 36
 ADMIN_EDIT_ITEMS = 22
 ADMIN_EDIT_ITEM = 23
 ADMIN_DELETE_ITEM = 24
@@ -16,7 +17,13 @@ ADMIN_AWAIT_ITEM_CATEGORY = 29
 ADMIN_AWAIT_ITEM_DAY = 30
 ADMIN_AWAIT_EDIT_TEXT = 31
 
-# Callback data
+# Callback data для календаря
+CB_ADMIN_MONTH_PREV = "admin_month_prev"
+CB_ADMIN_MONTH_NEXT = "admin_month_next"
+CB_ADMIN_DAY = "admin_day_"          # + день, например admin_day_15
+CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"
+
+# Остальные callback'и
 CB_ADMIN_SHIFTS = "admin_shifts"
 CB_ADMIN_PROGRESS = "admin_progress"
 CB_ADMIN_EDIT = "admin_edit"
@@ -27,9 +34,8 @@ CB_ADMIN_DELETE_ITEM = "admin_delete_item_"
 CB_ADMIN_CONFIRM_DELETE = "admin_confirm_delete_"
 CB_ADMIN_ADD_ITEM = "admin_add_item"
 CB_ADMIN_EDIT_ITEMS = "admin_edit_items"
-CB_ADMIN_ITEM_TYPE = "admin_item_type_"    # daily/weekly
-CB_ADMIN_ITEM_LOCATION = "admin_item_location_"  # bar/kitchen
-CB_ADMIN_ITEM_CATEGORY = "admin_item_category_"  # opening/daytime/closing/weekly
-CB_ADMIN_ITEM_DAY = "admin_item_day_"  # 0-6
-CB_ADMIN_SAVE_ITEM = "admin_save_item"
+CB_ADMIN_ITEM_TYPE = "admin_item_type_"
+CB_ADMIN_ITEM_LOCATION = "admin_item_location_"
+CB_ADMIN_ITEM_CATEGORY = "admin_item_category_"
+CB_ADMIN_ITEM_DAY = "admin_item_day_"
 CB_ADMIN_CANCEL = "admin_cancel"
