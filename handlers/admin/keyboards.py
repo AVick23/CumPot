@@ -5,7 +5,6 @@ import calendar
 from datetime import datetime
 
 def admin_main_keyboard():
-    """Главное меню админа."""
     keyboard = [
         [InlineKeyboardButton("📋 Смены сегодня", callback_data=CB_ADMIN_SHIFTS)],
         [InlineKeyboardButton("📊 Прогресс сотрудников", callback_data=CB_ADMIN_PROGRESS)],
@@ -14,30 +13,24 @@ def admin_main_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def back_to_main_button():
-    """Универсальная кнопка 'Назад' в главное меню."""
     return InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)]])
 
 def employee_list_keyboard(employees):
-    """Список сотрудников (как в iOS Settings)."""
     keyboard = []
     for emp in employees:
         name = f"{emp['first_name']} {emp['last_name']}" if emp['last_name'] else emp['first_name']
-        # Используем символ шеврона ">" для обозначения перехода
         keyboard.append([InlineKeyboardButton(f"{name} >", callback_data=f"{CB_ADMIN_EMPLOYEE}{emp['tg_id']}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)])
     return InlineKeyboardMarkup(keyboard)
 
 def calendar_keyboard(year, month, shift_days):
-    """Календарь с отметками о сменах."""
     keyboard = []
     month_name = calendar.month_name[month]
-    # Навигация по месяцам
     keyboard.append([
         InlineKeyboardButton("◀️", callback_data=CB_ADMIN_MONTH_PREV),
         InlineKeyboardButton(f"{month_name} {year}", callback_data="noop"),
         InlineKeyboardButton("▶️", callback_data=CB_ADMIN_MONTH_NEXT),
     ])
-    # Заголовки дней недели
     weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     keyboard.append([InlineKeyboardButton(day, callback_data="noop") for day in weekdays])
 
@@ -46,13 +39,11 @@ def calendar_keyboard(year, month, shift_days):
     _, days_in_month = calendar.monthrange(year, month)
 
     row = []
-    # Заполняем пустые ячейки до первого дня
     for _ in range(start_weekday):
         row.append(InlineKeyboardButton(" ", callback_data="noop"))
 
     for day in range(1, days_in_month + 1):
         date_str = f"{year}-{month:02d}-{day:02d}"
-        # Отмечаем дни со сменой символом "●"
         label = f"● {day}" if date_str in shift_days else str(day)
         row.append(InlineKeyboardButton(label, callback_data=f"{CB_ADMIN_DAY}{date_str}"))
         if len(row) == 7:
@@ -67,15 +58,13 @@ def calendar_keyboard(year, month, shift_days):
     return InlineKeyboardMarkup(keyboard)
 
 def progress_detail_keyboard():
-    """Кнопка для возврата из деталей прогресса."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("◀️ Назад к календарю", callback_data=CB_ADMIN_BACK_TO_CALENDAR)]
     ])
 
-# --- Клавиатуры для редактора чек-листов ---
+# --- Редактор чек-листов ---
 
 def edit_categories_keyboard(categories):
-    """Выбор категории для редактирования."""
     keyboard = []
     for cat in categories:
         label = CATEGORY_NAMES.get(cat, cat)
@@ -85,19 +74,24 @@ def edit_categories_keyboard(categories):
     return InlineKeyboardMarkup(keyboard)
 
 def edit_items_list_keyboard(items):
-    """Список пунктов в категории с кнопками действий."""
+    """Список пунктов категории. Нажатие открывает детальный просмотр."""
     keyboard = []
     for item in items:
-        text = item['text'][:30] + "..." if len(item['text']) > 30 else item['text']
-        keyboard.append([
-            InlineKeyboardButton(f"✏️ {text}", callback_data=f"{CB_ADMIN_EDIT_ITEM}{item['id']}"),
-            InlineKeyboardButton("🗑️", callback_data=f"{CB_ADMIN_EDIT_DELETE}{item['id']}")
-        ])
+        text = item['text'][:40] + "..." if len(item['text']) > 40 else item['text']
+        keyboard.append([InlineKeyboardButton(text, callback_data=f"{CB_ADMIN_VIEW_ITEM}{item['id']}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data=CB_ADMIN_EDIT_BACK)])
     return InlineKeyboardMarkup(keyboard)
 
+def view_item_detail_keyboard(item_id):
+    """Клавиатура для детального просмотра пункта."""
+    keyboard = [
+        [InlineKeyboardButton("✏️ Редактировать", callback_data=f"{CB_ADMIN_EDIT_ITEM}{item_id}")],
+        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"{CB_ADMIN_EDIT_DELETE}{item_id}")],
+        [InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_ADMIN_EDIT_BACK)],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def confirm_delete_keyboard(item_id):
-    """Подтверждение удаления."""
     keyboard = [
         [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_ADMIN_EDIT_CONFIRM_DELETE}{item_id}")],
         [InlineKeyboardButton("❌ Отмена", callback_data=CB_ADMIN_EDIT_BACK)],

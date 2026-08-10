@@ -1,4 +1,4 @@
-# Состояния для админа (иерархия: Главная -> Сотрудники -> Календарь -> Прогресс)
+# Состояния для админа (иерархия)
 ADMIN_MAIN = 10
 ADMIN_SHIFTS = 11
 ADMIN_EMPLOYEE_LIST = 20
@@ -8,7 +8,8 @@ ADMIN_DAY_PROGRESS = 36
 # Состояния для редактора чек-листов
 ADMIN_EDIT_CATEGORIES = 40
 ADMIN_EDIT_ITEMS_LIST = 41
-ADMIN_DELETE_CONFIRM = 42
+ADMIN_VIEW_ITEM = 42          # детальный просмотр пункта
+ADMIN_DELETE_CONFIRM = 43
 
 # Состояния для добавления/редактирования пункта
 ADMIN_AWAIT_ITEM_TYPE = 27
@@ -38,7 +39,8 @@ CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"
 
 # Редактор чек-листов
 CB_ADMIN_EDIT_CATEGORY = "admin_edit_cat_"
-CB_ADMIN_EDIT_ITEM = "admin_edit_item_"
+CB_ADMIN_VIEW_ITEM = "admin_view_item_"      # просмотр пункта
+CB_ADMIN_EDIT_ITEM = "admin_edit_item_"      # редактирование (ввод нового текста)
 CB_ADMIN_EDIT_DELETE = "admin_edit_delete_"
 CB_ADMIN_EDIT_BACK = "admin_edit_back"
 CB_ADMIN_EDIT_CONFIRM_DELETE = "admin_edit_confirm_delete_"

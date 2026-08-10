@@ -25,6 +25,9 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_CATEGORY}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$")
             ],
             ADMIN_EDIT_ITEMS_LIST: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_VIEW_ITEM}.*|^{CB_ADMIN_EDIT_BACK}$|^{CB_ADMIN_BACK}$")
+            ],
+            ADMIN_VIEW_ITEM: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_EDIT_DELETE}.*|^{CB_ADMIN_EDIT_BACK}$|^{CB_ADMIN_BACK}$")
             ],
             ADMIN_DELETE_CONFIRM: [

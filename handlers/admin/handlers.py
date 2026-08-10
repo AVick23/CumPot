@@ -47,7 +47,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADMIN_SHIFTS
 
     # ============================================================
-    # 2. ПРОГРЕСС СОТРУДНИКОВ (ИЕРАРХИЯ: Сотрудники -> Календарь -> Детали)
+    # 2. ПРОГРЕСС СОТРУДНИКОВ
     # ============================================================
     if data == CB_ADMIN_PROGRESS:
         employees = get_all_users()
@@ -68,7 +68,6 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=calendar_keyboard(now.year, now.month, shift_days))
         return ADMIN_CALENDAR
 
-    # Навигация по календарю
     if data == CB_ADMIN_MONTH_PREV or data == CB_ADMIN_MONTH_NEXT:
         year = context.user_data.get('calendar_year')
         month = context.user_data.get('calendar_month')
@@ -101,13 +100,11 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit(query, "В этот день не было задач.", reply_markup=back_to_main_button())
             return ADMIN_MAIN
 
-        # ---- ОТОБРАЖАЕМ ПРОГРЕСС ПО КАТЕГОРИЯМ (КАК У СОТРУДНИКА) ----
         text = f"📊 Прогресс за {date_str}\n\n"
         done_total = sum(1 for item in items if item['completed'])
         total = len(items)
         text += f"Выполнено: {done_total} / {total} ({int(done_total/total*100) if total else 0}%)\n\n"
 
-        # Группируем по категориям
         categories_progress = {}
         for item in items:
             cat = item['category']
@@ -139,7 +136,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADMIN_CALENDAR
 
     # ============================================================
-    # 3. РЕДАКТОР ЧЕК-ЛИСТОВ (ИЕРАРХИЯ: Категории -> Список пунктов)
+    # 3. РЕДАКТОР ЧЕК-ЛИСТОВ (новая логика с детальным просмотром)
     # ============================================================
     if data == CB_ADMIN_EDIT:
         all_items = get_all_checklist_items()
@@ -156,11 +153,30 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         category = data.split("_")[-1]
         context.user_data['edit_category'] = category
         items = [item for item in get_all_checklist_items() if item['category'] == category]
-        await safe_edit(query, f"📋 Редактирование: {CATEGORY_NAMES.get(category, category)}\n"
-                               f"Нажмите ✏️ для редактирования или 🗑️ для удаления:",
+        await safe_edit(query, f"📋 {CATEGORY_NAMES.get(category, category)}\n"
+                               f"Нажмите на пункт для просмотра и редактирования:",
                         reply_markup=edit_items_list_keyboard(items))
         return ADMIN_EDIT_ITEMS_LIST
 
+    # === Детальный просмотр пункта ===
+    if data.startswith(CB_ADMIN_VIEW_ITEM):
+        item_id = int(data.split("_")[-1])
+        item = next((i for i in get_all_checklist_items() if i['id'] == item_id), None)
+        if not item:
+            await safe_edit(query, "Пункт не найден.", reply_markup=back_to_main_button())
+            return ADMIN_MAIN
+        context.user_data['view_item_id'] = item_id
+        text = f"📌 {item['text']}\n\n"
+        text += f"Категория: {CATEGORY_NAMES.get(item['category'], item['category'])}\n"
+        text += f"Локация: {'Бар' if item['location'] == 'bar' else 'Кухня'}\n"
+        text += f"Тип: {'Ежедневная' if item['type'] == 'daily' else 'Недельная'}\n"
+        if item['day_of_week'] is not None:
+            days = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"]
+            text += f"День недели: {days[item['day_of_week']]}\n"
+        await safe_edit(query, text, reply_markup=view_item_detail_keyboard(item_id))
+        return ADMIN_VIEW_ITEM
+
+    # === Редактирование ===
     if data.startswith(CB_ADMIN_EDIT_ITEM):
         item_id = int(data.split("_")[-1])
         context.user_data['edit_item_id'] = item_id
@@ -168,6 +184,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=back_to_main_button())
         return ADMIN_AWAIT_EDIT_TEXT
 
+    # === Удаление ===
     if data.startswith(CB_ADMIN_EDIT_DELETE):
         item_id = int(data.split("_")[-1])
         item = next((i for i in get_all_checklist_items() if i['id'] == item_id), None)
@@ -238,22 +255,19 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADMIN_AWAIT_ITEM_TEXT
 
     # ============================================================
-    # 5. ОБЩИЕ ДЕЙСТВИЯ: НАЗАД, ОТМЕНА
+    # 5. ОБЩИЕ ДЕЙСТВИЯ
     # ============================================================
     if data == CB_ADMIN_BACK:
-        # Возврат на предыдущий уровень иерархии
         await safe_edit(query, "Главное меню админа:", reply_markup=admin_main_keyboard())
         return ADMIN_MAIN
 
     if data == CB_ADMIN_CANCEL:
         context.user_data.pop('new_item', None)
         context.user_data.pop('edit_item_id', None)
+        context.user_data.pop('view_item_id', None)
         await safe_edit(query, "Действие отменено.", reply_markup=admin_main_keyboard())
         return ADMIN_MAIN
 
-    # ============================================================
-    # 6. НЕИЗВЕСТНАЯ КОМАНДА
-    # ============================================================
     await safe_edit(query, "Неизвестная команда", reply_markup=admin_main_keyboard())
     return ADMIN_MAIN
 
