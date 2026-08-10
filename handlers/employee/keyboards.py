@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from .constants import CATEGORY_NAMES
 
 def main_menu_keyboard(has_shift=False):
     keyboard = [
@@ -17,18 +18,26 @@ def location_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def checklist_keyboard(items, date):
+def categories_keyboard(available_categories):
+    """Клавиатура выбора категории (только те, у которых есть пункты)"""
     keyboard = []
-    current_category = None
+    for cat in available_categories:
+        label = CATEGORY_NAMES.get(cat, cat)
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"category_{cat}")])
+    keyboard.append([InlineKeyboardButton("◀️ Назад в главное меню", callback_data="back_main")])
+    return InlineKeyboardMarkup(keyboard)
+
+def checklist_keyboard(items, category, back_callback="back_categories"):
+    """Клавиатура для пунктов конкретной категории"""
+    keyboard = []
     for idx, item in enumerate(items):
-        category = item.get('category', '')
-        if category != current_category:
-            current_category = category
-            keyboard.append([InlineKeyboardButton(f"--- {current_category.upper()} ---", callback_data="noop")])
-        status = "✅" if item.get('completed', False) else "⬜"
-        callback = f"item_done_{idx}" if not item.get('completed', False) else f"item_undo_{idx}"
-        keyboard.append([InlineKeyboardButton(f"{status} {item['text'][:30]}", callback_data=callback)])
-    keyboard.append([InlineKeyboardButton("◀️ В главное меню", callback_data="back_main")])
+        status = "✅" if item['completed'] else "⬜"
+        callback = f"item_done_{idx}" if not item['completed'] else f"item_undo_{idx}"
+        # Обрезаем длинные тексты
+        text = item['text'][:40] + "..." if len(item['text']) > 40 else item['text']
+        keyboard.append([InlineKeyboardButton(f"{status} {text}", callback_data=callback)])
+    # Кнопка назад
+    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
 def progress_keyboard():
