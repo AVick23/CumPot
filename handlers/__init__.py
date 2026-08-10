@@ -9,6 +9,7 @@ from .employee.handlers import (
     start_menu,
     main_menu_callback,
     location_selection,
+    category_selection,          # добавлен импорт
     checklist_action,
     progress_back,
     noop
@@ -18,6 +19,7 @@ from .employee.constants import (
     SELECT_LOCATION,
     CHECKLIST_VIEW,
     PROGRESS_VIEW,
+    CATEGORY_SELECT,             # добавлено
     CB_BACK_MAIN,
     CB_SHIFT_MARK,
     CB_CHECKLIST,
@@ -25,7 +27,9 @@ from .employee.constants import (
     CB_SHIFT_BAR,
     CB_SHIFT_KITCHEN,
     CB_ITEM_DONE,
-    CB_ITEM_UNDO
+    CB_ITEM_UNDO,
+    CB_CATEGORY,                 # добавлено
+    CB_BACK_CATEGORIES           # добавлено
 )
 
 from .admin.handlers import admin_start, admin_callback
@@ -71,10 +75,16 @@ def register_handlers(app: Application):
                     pattern=f"^{CB_SHIFT_BAR}$|^{CB_SHIFT_KITCHEN}$|^{CB_BACK_MAIN}$"
                 ),
             ],
+            CATEGORY_SELECT: [   # ДОБАВЛЕНО
+                CallbackQueryHandler(
+                    category_selection,
+                    pattern=f"^{CB_CATEGORY}.*|^{CB_BACK_MAIN}$"
+                ),
+            ],
             CHECKLIST_VIEW: [
                 CallbackQueryHandler(
                     checklist_action,
-                    pattern=f"^{CB_ITEM_DONE}.*|^{CB_ITEM_UNDO}.*|^{CB_BACK_MAIN}$"
+                    pattern=f"^{CB_ITEM_DONE}.*|^{CB_ITEM_UNDO}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MAIN}$"
                 ),
                 CallbackQueryHandler(noop, pattern="^noop$"),  # игнорируем заголовки категорий
             ],
