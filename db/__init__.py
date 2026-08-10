@@ -14,50 +14,46 @@ def get_connection():
 def init_db():
     with get_connection() as conn:
         conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            tg_id INTEGER PRIMARY KEY,
-            username TEXT,
-            first_name TEXT,
-            last_name TEXT,
-            is_admin BOOLEAN DEFAULT 0
-        )
+            CREATE TABLE IF NOT EXISTS users (
+                tg_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                is_admin BOOLEAN DEFAULT 0
+            )
         """)
-
         conn.execute("""
-        CREATE TABLE IF NOT EXISTS shifts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            date TEXT,
-            location TEXT,
-            start_time TEXT,
-            active BOOLEAN DEFAULT 1,
-            FOREIGN KEY (user_id) REFERENCES users(tg_id)
-        )
+            CREATE TABLE IF NOT EXISTS shifts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                location TEXT,
+                start_time TEXT,
+                active BOOLEAN DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(tg_id)
+            )
         """)
-
         conn.execute("""
-        CREATE TABLE IF NOT EXISTS checklist_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            type TEXT,
-            location TEXT,
-            category TEXT,
-            day_of_week INTEGER,
-            sort_order INTEGER,
-            text TEXT
-        )
+            CREATE TABLE IF NOT EXISTS checklist_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT,
+                location TEXT,
+                category TEXT,
+                day_of_week INTEGER,
+                sort_order INTEGER,
+                text TEXT
+            )
         """)
-
         conn.execute("""
-        CREATE TABLE IF NOT EXISTS checklist_progress (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            item_id INTEGER,
-            date TEXT,
-            completed BOOLEAN DEFAULT 0,
-            completed_at TEXT
-        )
+            CREATE TABLE IF NOT EXISTS checklist_progress (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                item_id INTEGER,
+                date TEXT,
+                completed BOOLEAN DEFAULT 0,
+                completed_at TEXT
+            )
         """)
-
         conn.commit()
 
     from .checklist import import_checklist_items

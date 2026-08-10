@@ -10,23 +10,15 @@ from db.checklist import (
     get_items_for_location_and_day,
     get_progress_for_user_date,
 )
-
-from .constants import (
-    PAGE_SIZE,
-    DAILY_CATEGORIES,
-    CATEGORY_ORDER,
-    MONTHS_GEN,
-)
+from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN
 
 
 def full_name(user: dict | None) -> str:
     if not user:
         return "Пользователь"
-
     first = (user.get("first_name") or "").strip()
     last = (user.get("last_name") or "").strip()
     username = (user.get("username") or "").strip()
-
     name = " ".join([x for x in [first, last] if x]).strip()
     if name:
         return name
@@ -38,47 +30,28 @@ def full_name(user: dict | None) -> str:
 def get_employees() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT tg_id, username, first_name, last_name
-            FROM users
-            WHERE is_admin = 0
-            ORDER BY first_name
-            """
+            "SELECT tg_id, username, first_name, last_name FROM users WHERE is_admin = 0 ORDER BY first_name"
         ).fetchall()
         return [dict(row) for row in rows]
 
 
 def get_user_by_id(user_id: int) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM users WHERE tg_id = ?",
-            (user_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE tg_id = ?", (user_id,)).fetchone()
         return dict(row) if row else None
 
 
 def get_today_shifts_full() -> list[dict]:
     today = datetime.now().strftime("%Y-%m-%d")
     with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                s.id,
-                s.user_id,
-                s.date,
-                s.location,
-                s.start_time,
-                s.active,
-                u.username,
-                u.first_name,
-                u.last_name
+        rows = conn.execute("""
+            SELECT s.id, s.user_id, s.date, s.location, s.start_time, s.active,
+                   u.username, u.first_name, u.last_name
             FROM shifts s
             LEFT JOIN users u ON u.tg_id = s.user_id
             WHERE s.date = ?
             ORDER BY s.start_time
-            """,
-            (today,)
-        ).fetchall()
+        """, (today,)).fetchall()
         return [dict(row) for row in rows]
 
 
@@ -88,16 +61,9 @@ def get_employee_shift_days(employee_id: int, year: int, month: int) -> set[str]
         end_date = f"{year + 1}-01-01"
     else:
         end_date = f"{year:04d}-{month + 1:02d}-01"
-
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT DISTINCT date
-            FROM shifts
-            WHERE user_id = ?
-              AND date >= ?
-              AND date < ?
-            """,
+            "SELECT DISTINCT date FROM shifts WHERE user_id = ? AND date >= ? AND date < ?",
             (employee_id, start_date, end_date)
         ).fetchall()
         return {row["date"] for row in rows}
@@ -106,13 +72,7 @@ def get_employee_shift_days(employee_id: int, year: int, month: int) -> set[str]
 def get_shift_for_date_any(user_id: int, date_str: str) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
-            """
-            SELECT *
-            FROM shifts
-            WHERE user_id = ? AND date = ?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
+            "SELECT * FROM shifts WHERE user_id = ? AND date = ? ORDER BY id DESC LIMIT 1",
             (user_id, date_str)
         ).fetchone()
         return dict(row) if row else None
@@ -122,7 +82,6 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
     shift = get_shift_for_date_any(employee_id, date_str)
     if not shift:
         return None
-
     day_of_week = datetime.strptime(date_str, "%Y-%m-%d").weekday()
     items = get_items_for_location_and_day(shift["location"], day_of_week)
     progress = get_progress_for_user_date(employee_id, date_str)
@@ -131,43 +90,25 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
     grouped = {}
     done = 0
     total = 0
-
     for item in items:
         item = dict(item)
         completed = progress_dict.get(item["id"], 0) == 1
         item["completed"] = completed
-
         total += 1
         if completed:
             done += 1
-
         cat = item.get("category") or "weekly"
         grouped.setdefault(cat, []).append(item)
 
-    ordered_grouped = {
-        cat: grouped[cat]
-        for cat in CATEGORY_ORDER
-        if cat in grouped
-    }
-
-    return {
-        "shift": shift,
-        "grouped": ordered_grouped,
-        "done": done,
-        "total": total,
-        "items": items,
-    }
+    ordered_grouped = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
+    return {"shift": shift, "grouped": ordered_grouped, "done": done, "total": total, "items": items}
 
 
 def get_location_counts() -> dict[str, int]:
     counts = {"bar": 0, "kitchen": 0}
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT location, COUNT(*) AS cnt
-            FROM checklist_items
-            GROUP BY location
-            """
+            "SELECT location, COUNT(*) AS cnt FROM checklist_items GROUP BY location"
         ).fetchall()
         for row in rows:
             counts[row["location"]] = row["cnt"]
@@ -177,32 +118,20 @@ def get_location_counts() -> dict[str, int]:
 def get_category_counts(location: str) -> dict[str, int]:
     counts = {key: 0 for key, _ in DAILY_CATEGORIES}
     counts["weekly"] = 0
-
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT category, COUNT(*) AS cnt
-            FROM checklist_items
-            WHERE location = ?
-            GROUP BY category
-            """,
+            "SELECT category, COUNT(*) AS cnt FROM checklist_items WHERE location = ? GROUP BY category",
             (location,)
         ).fetchall()
         for row in rows:
             counts[row["category"]] = row["cnt"]
-
     return counts
 
 
 def get_items_for_editor(location: str, category: str) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT *
-            FROM checklist_items
-            WHERE location = ? AND category = ?
-            ORDER BY sort_order, id
-            """,
+            "SELECT * FROM checklist_items WHERE location = ? AND category = ? ORDER BY sort_order, id",
             (location, category)
         ).fetchall()
         return [dict(row) for row in rows]
@@ -217,10 +146,7 @@ def paginate_items(items: list[dict], page: int) -> tuple[list[dict], int, int]:
 
 def get_item(item_id: int) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM checklist_items WHERE id = ?",
-            (item_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM checklist_items WHERE id = ?", (item_id,)).fetchone()
         return dict(row) if row else None
 
 

@@ -4,10 +4,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ==========================================
-# ДАННЫЕ ДЛЯ ИМПОРТА (СТАРТОВЫЕ ЧЕК-ЛИСТЫ)
-# ==========================================
-
 BAR_DAILY_ITEMS = [
     {"category": "opening", "text": "Включить свет и электричество (рубильники 10-16, 23-29)"},
     {"category": "opening", "text": "Включить бойлер, кофемашину, кофемолку, ледогенератор, свет витрины, кассу, колонку"},
@@ -64,15 +60,12 @@ KITCHEN_WEEKLY_ITEMS = {
 }
 
 
-# ==========================================
-# ФУНКЦИИ РАБОТЫ С БД
-# ==========================================
+def _clean(item: dict, key: str) -> str:
+    """Безопасное извлечение значения с учётом возможных пробелов в ключах"""
+    return item.get(key, item.get(f"{key} ", "")).strip()
+
 
 def import_checklist_items():
-    """
-    Импортирует стартовые чек-листы в БД.
-    Выполняется только если таблица checklist_items пуста.
-    """
     with get_connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM checklist_items").fetchone()[0]
         if count > 0:
@@ -80,29 +73,25 @@ def import_checklist_items():
             return
 
         logger.info("Начинаю импорт стартовых чек-листов...")
-        
-        # Импорт ежедневных задач бара
+
         for item in BAR_DAILY_ITEMS:
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
-                ('daily', 'bar', item['category'].strip(), None, 0, item['text'].strip())
+                ('daily', 'bar', _clean(item, 'category'), None, 0, _clean(item, 'text'))
             )
 
-        # Импорт ежедневных задач кухни
         for item in KITCHEN_DAILY_ITEMS:
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
-                ('daily', 'kitchen', item['category'].strip(), None, 0, item['text'].strip())
+                ('daily', 'kitchen', _clean(item, 'category'), None, 0, _clean(item, 'text'))
             )
 
-        # Импорт недельных задач бара
         for day, text in BAR_WEEKLY_ITEMS.items():
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
                 ('weekly', 'bar', 'weekly', int(day), 0, text.strip())
             )
 
-        # Импорт недельных задач кухни
         for day, text in KITCHEN_WEEKLY_ITEMS.items():
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
@@ -114,46 +103,32 @@ def import_checklist_items():
 
 
 def get_items_for_location_and_day(location: str, day_of_week: int) -> list[dict]:
-    """
-    Возвращает список задач для конкретной локации и дня недели.
-    Включает:
-    - Все daily задачи для этой локации
-    - Weekly задачи, у которых day_of_week совпадает с переданным
-    """
     with get_connection() as conn:
         rows = conn.execute("""
             SELECT * FROM checklist_items
             WHERE location = ?
-              AND (
-                  type = 'daily' 
-                  OR (type = 'weekly' AND day_of_week = ?)
-              )
-            ORDER BY 
-                CASE category 
-                    WHEN 'opening' THEN 1 
-                    WHEN 'daytime' THEN 2 
-                    WHEN 'closing' THEN 3 
-                    WHEN 'weekly' THEN 4 
-                    ELSE 5 
+              AND (type = 'daily' OR (type = 'weekly' AND day_of_week = ?))
+            ORDER BY
+                CASE category
+                    WHEN 'opening' THEN 1
+                    WHEN 'daytime' THEN 2
+                    WHEN 'closing' THEN 3
+                    WHEN 'weekly' THEN 4
+                    ELSE 5
                 END,
-                sort_order ASC,
-                id ASC
+                sort_order ASC, id ASC
         """, (location, day_of_week)).fetchall()
-        
         return [dict(row) for row in rows]
 
 
 def save_progress(user_id: int, item_id: int, completed: bool = True):
-    """Сохраняет или обновляет прогресс выполнения задачи"""
     date = datetime.now().strftime("%Y-%m-%d")
     completed_at = datetime.now().strftime("%H:%M:%S") if completed else None
-    
     with get_connection() as conn:
         row = conn.execute(
             "SELECT id FROM checklist_progress WHERE user_id = ? AND item_id = ? AND date = ?",
             (user_id, item_id, date)
         ).fetchone()
-        
         if row:
             conn.execute(
                 "UPDATE checklist_progress SET completed = ?, completed_at = ? WHERE id = ?",
@@ -168,26 +143,21 @@ def save_progress(user_id: int, item_id: int, completed: bool = True):
 
 
 def get_progress_for_user_date(user_id: int, date: str) -> list[dict]:
-    """Возвращает прогресс пользователя за конкретную дату"""
     with get_connection() as conn:
-        rows = conn.execute("""
-            SELECT item_id, completed, completed_at
-            FROM checklist_progress
-            WHERE user_id = ? AND date = ?
-        """, (user_id, date)).fetchall()
+        rows = conn.execute(
+            "SELECT item_id, completed, completed_at FROM checklist_progress WHERE user_id = ? AND date = ?",
+            (user_id, date)
+        ).fetchall()
         return [dict(row) for row in rows]
 
 
 def add_checklist_item(item_type: str, location: str, category: str, day_of_week: int | None, text: str):
-    """Добавляет новый пункт в чек-лист с автоматическим sort_order"""
     with get_connection() as conn:
-        # Получаем максимальный sort_order для этой локации и категории
         row = conn.execute(
             "SELECT MAX(sort_order) as max_order FROM checklist_items WHERE location = ? AND category = ?",
             (location, category)
         ).fetchone()
         order = (row['max_order'] or 0) + 1
-        
         conn.execute(
             "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
             (item_type, location, category, day_of_week, order, text.strip())
@@ -196,27 +166,20 @@ def add_checklist_item(item_type: str, location: str, category: str, day_of_week
 
 
 def update_checklist_item(item_id: int, new_text: str):
-    """Обновляет текст существующего пункта"""
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE checklist_items SET text = ? WHERE id = ?", 
-            (new_text.strip(), item_id)
-        )
+        conn.execute("UPDATE checklist_items SET text = ? WHERE id = ?", (new_text.strip(), item_id))
         conn.commit()
 
 
 def delete_checklist_item(item_id: int):
-    """Удаляет пункт из чек-листа"""
     with get_connection() as conn:
         conn.execute("DELETE FROM checklist_items WHERE id = ?", (item_id,))
         conn.commit()
 
 
 def get_all_items() -> list[dict]:
-    """Возвращает ВСЕ пункты чек-листов (для админского редактора)"""
     with get_connection() as conn:
-        rows = conn.execute("""
-            SELECT * FROM checklist_items 
-            ORDER BY location, category, sort_order, id
-        """).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM checklist_items ORDER BY location, category, sort_order, id"
+        ).fetchall()
         return [dict(row) for row in rows]
