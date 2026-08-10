@@ -1,7 +1,7 @@
-# Состояния для админа
+# Состояния для админа (иерархия: Главная -> Сотрудники -> Календарь -> Прогресс)
 ADMIN_MAIN = 10
 ADMIN_SHIFTS = 11
-ADMIN_SELECT_EMPLOYEE = 20
+ADMIN_EMPLOYEE_LIST = 20
 ADMIN_CALENDAR = 35
 ADMIN_DAY_PROGRESS = 36
 
@@ -10,34 +10,42 @@ ADMIN_EDIT_CATEGORIES = 40
 ADMIN_EDIT_ITEMS_LIST = 41
 ADMIN_DELETE_CONFIRM = 42
 
-# Состояния для добавления/редактирования
-ADMIN_AWAIT_ITEM_TEXT = 26
+# Состояния для добавления/редактирования пункта
 ADMIN_AWAIT_ITEM_TYPE = 27
 ADMIN_AWAIT_ITEM_LOCATION = 28
 ADMIN_AWAIT_ITEM_CATEGORY = 29
 ADMIN_AWAIT_ITEM_DAY = 30
+ADMIN_AWAIT_ITEM_TEXT = 26
 ADMIN_AWAIT_EDIT_TEXT = 31
 
-# Callback data для редактора
+# === Callback Data ===
+
+# Навигация
+CB_ADMIN_BACK = "admin_back"
+CB_ADMIN_CANCEL = "admin_cancel"
+
+# Главное меню
+CB_ADMIN_SHIFTS = "admin_shifts"
+CB_ADMIN_PROGRESS = "admin_progress"
+CB_ADMIN_EDIT = "admin_edit"
+
+# Прогресс сотрудников
+CB_ADMIN_EMPLOYEE = "admin_employee_"
+CB_ADMIN_MONTH_PREV = "admin_month_prev"
+CB_ADMIN_MONTH_NEXT = "admin_month_next"
+CB_ADMIN_DAY = "admin_day_"
+CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"
+
+# Редактор чек-листов
 CB_ADMIN_EDIT_CATEGORY = "admin_edit_cat_"
 CB_ADMIN_EDIT_ITEM = "admin_edit_item_"
 CB_ADMIN_EDIT_DELETE = "admin_edit_delete_"
 CB_ADMIN_EDIT_BACK = "admin_edit_back"
 CB_ADMIN_EDIT_CONFIRM_DELETE = "admin_edit_confirm_delete_"
-
-# Остальные callback'и
-CB_ADMIN_SHIFTS = "admin_shifts"
-CB_ADMIN_PROGRESS = "admin_progress"
-CB_ADMIN_EDIT = "admin_edit"
-CB_ADMIN_BACK = "admin_back"
-CB_ADMIN_EMPLOYEE = "admin_employee_"
 CB_ADMIN_ADD_ITEM = "admin_add_item"
+
+# Добавление пункта
 CB_ADMIN_ITEM_TYPE = "admin_item_type_"
 CB_ADMIN_ITEM_LOCATION = "admin_item_location_"
 CB_ADMIN_ITEM_CATEGORY = "admin_item_category_"
 CB_ADMIN_ITEM_DAY = "admin_item_day_"
-CB_ADMIN_CANCEL = "admin_cancel"
-CB_ADMIN_MONTH_PREV = "admin_month_prev"
-CB_ADMIN_MONTH_NEXT = "admin_month_next"
-CB_ADMIN_DAY = "admin_day_"
-CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"

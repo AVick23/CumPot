@@ -1,6 +1,5 @@
 from db.shifts import get_shifts_for_date
 from db.checklist import get_items_for_location_and_day, get_progress_for_user_date, get_all_items, add_checklist_item, update_checklist_item, delete_checklist_item
-from db.users import get_user
 from datetime import datetime
 
 def get_today_shifts():
@@ -44,7 +43,6 @@ def get_employee_shift_days(employee_id, year, month):
         return [row['date'] for row in rows]
 
 def get_all_checklist_items():
-    """Возвращает все пункты чек-листа из БД"""
     return get_all_items()
 
 def save_new_item(item_type, location, category, day_of_week, text):
