@@ -90,6 +90,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return PROGRESS_VIEW
 
     elif data == CB_BACK_MAIN:
+        # Возврат в главное меню из любого места (корневой выход)
         shift = get_active_shift(user_id)
         context.user_data.pop('current_category', None)
         await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
@@ -113,7 +114,6 @@ async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
             cats = list({item['category'] for item in get_checklist_items(user_id, context) or []})
             await safe_edit(query, "В этой категории нет задач.", reply_markup=categories_keyboard(cats))
             return CATEGORY_SELECT
-        # Показываем список задач с кнопками для просмотра
         await safe_edit(query, f"📋 {CATEGORY_NAMES.get(category, category)}:\nНажми на задачу для подробностей.", reply_markup=checklist_keyboard(items))
         return CHECKLIST_VIEW
 
@@ -128,7 +128,6 @@ async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return MAIN_MENU
 
 async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать детальное описание задачи"""
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -140,7 +139,6 @@ async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not item:
             await safe_edit(query, "Задача не найдена.", reply_markup=main_menu_keyboard(has_shift=True))
             return MAIN_MENU
-        # Формируем текст деталей
         status_text = "✅ Выполнено" if item['completed'] else "⬜ Не выполнено"
         text = f"📌 {item['text']}\n\n"
         text += f"Статус: {status_text}\n"
@@ -149,20 +147,12 @@ async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += "Тип: недельная задача"
         else:
             text += "Тип: ежедневная задача"
-        # Показываем детали с кнопками
         await safe_edit(query, text, reply_markup=item_detail_keyboard(item_id, item['completed']))
         return ITEM_DETAIL
 
-    elif data == CB_BACK_TO_CATEGORIES:
-        # Возврат к списку категорий (или к списку задач, если категория сохранена)
+    elif data == CB_BACK_CATEGORIES:
+        # Возврат к выбору категорий
         user_id = query.from_user.id
-        category = context.user_data.get('current_category')
-        if category:
-            items = get_items_by_category(user_id, context, category)
-            if items:
-                await safe_edit(query, f"📋 {CATEGORY_NAMES.get(category, category)}:\nНажми на задачу для подробностей.", reply_markup=checklist_keyboard(items))
-                return CHECKLIST_VIEW
-        # Если категория не сохранена, идём к выбору категорий
         all_items = get_checklist_items(user_id, context)
         cats = list({item['category'] for item in all_items}) if all_items else []
         await safe_edit(query, "📋 Выбери категорию:", reply_markup=categories_keyboard(cats))
@@ -173,7 +163,6 @@ async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MAIN_MENU
 
 async def toggle_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Переключить статус задачи (выполнить/отменить)"""
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -185,7 +174,6 @@ async def toggle_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not item:
             await safe_edit(query, "Задача не найдена.", reply_markup=main_menu_keyboard(has_shift=True))
             return MAIN_MENU
-        # Переключаем статус
         if item['completed']:
             changed = mark_item_undone(user_id, item_id, context)
             if changed:
@@ -198,7 +186,6 @@ async def toggle_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer("Задача выполнена! 🎉")
             else:
                 await query.answer("Уже выполнено")
-        # Обновляем детали
         updated_item = get_item_by_id(user_id, item_id, context)
         status_text = "✅ Выполнено" if updated_item['completed'] else "⬜ Не выполнено"
         text = f"📌 {updated_item['text']}\n\n"
@@ -211,9 +198,32 @@ async def toggle_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, text, reply_markup=item_detail_keyboard(item_id, updated_item['completed']))
         return ITEM_DETAIL
 
+    elif data == CB_BACK_MAIN:
+        shift = get_active_shift(user_id)
+        context.user_data.pop('current_category', None)
+        await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
+        return MAIN_MENU
+
     else:
         await safe_edit(query, "Неизвестное действие", reply_markup=main_menu_keyboard(has_shift=True))
         return MAIN_MENU
+
+async def back_to_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Возврат к списку задач текущей категории"""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    category = context.user_data.get('current_category')
+    if category:
+        items = get_items_by_category(user_id, context, category)
+        if items:
+            await safe_edit(query, f"📋 {CATEGORY_NAMES.get(category, category)}:\nНажми на задачу для подробностей.", reply_markup=checklist_keyboard(items))
+            return CHECKLIST_VIEW
+    # Если категория не сохранена, идём к выбору категорий
+    all_items = get_checklist_items(user_id, context)
+    cats = list({item['category'] for item in all_items}) if all_items else []
+    await safe_edit(query, "📋 Выбери категорию:", reply_markup=categories_keyboard(cats))
+    return CATEGORY_SELECT
 
 async def location_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
