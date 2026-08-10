@@ -1,11 +1,13 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-def main_menu_keyboard():
+def main_menu_keyboard(has_shift=False):
+    """Главное меню: если смена есть – показываем все кнопки, иначе только отметку."""
     keyboard = [
-        [InlineKeyboardButton("✅ Отметиться на смене", callback_data="shift_mark")],
-        [InlineKeyboardButton("📋 Мои чек-листы", callback_data="checklist")],
-        [InlineKeyboardButton("📈 Мой прогресс", callback_data="progress")],
+        [InlineKeyboardButton("✅ Отметиться на смене", callback_data="shift_mark")]
     ]
+    if has_shift:
+        keyboard.append([InlineKeyboardButton("📋 Мои чек-листы", callback_data="checklist")])
+        keyboard.append([InlineKeyboardButton("📈 Мой прогресс", callback_data="progress")])
     return InlineKeyboardMarkup(keyboard)
 
 def location_keyboard():
@@ -17,13 +19,11 @@ def location_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def checklist_keyboard(items, date):
-    # items - список пунктов с полями id, text, completed (0/1), category
     keyboard = []
     current_category = None
     for item in items:
         if item['category'] != current_category:
             current_category = item['category']
-            # Добавляем заголовок категории (не кликабельный)
             keyboard.append([InlineKeyboardButton(f"--- {current_category.upper()} ---", callback_data="noop")])
         status = "✅" if item['completed'] else "⬜"
         callback = f"item_done_{item['id']}" if not item['completed'] else f"item_undo_{item['id']}"

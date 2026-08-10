@@ -4,23 +4,32 @@ from .constant import *
 from .keyboards import *
 from .utils import *
 from db.users import get_user
+from datetime import datetime
 
 async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start для сотрудника (вызывается после проверки роли)"""
     user = update.effective_user
-    text = f"👋 Привет, {user.first_name}!\nТы сотрудник. Отметься на смене, чтобы получить доступ к чек-листам."
-    await update.message.reply_text(text, reply_markup=main_menu_keyboard())
+    user_id = user.id
+    shift = get_active_shift(user_id)
+    text = f"👋 Привет, {user.first_name}!"
+    if shift:
+        text += f"\nТы на смене ({shift['location']}). Выбери действие:"
+    else:
+        text += "\nДля доступа к чек-листам сначала отметься на смене."
+    await update.message.reply_text(
+        text,
+        reply_markup=main_menu_keyboard(has_shift=bool(shift))
+    )
     return MAIN_MENU
 
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+    user_id = query.from_user.id
+
     if data == CB_SHIFT_MARK:
-        user_id = query.from_user.id
         shift = get_active_shift(user_id)
         if shift:
-            # Вместо редактирования показываем всплывающее уведомление и ничего не меняем
             await query.answer("Вы уже на смене!", show_alert=True)
             return MAIN_MENU
         else:
@@ -29,26 +38,24 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 reply_markup=location_keyboard()
             )
             return SELECT_LOCATION
+
     elif data == CB_CHECKLIST:
-        user_id = query.from_user.id
+        # Кнопка видна только если есть смена, но проверка на всякий случай
         shift = get_active_shift(user_id)
         if not shift:
-            await query.edit_message_text(
-                "Сначала отметься на смене!",
-                reply_markup=main_menu_keyboard()
-            )
+            await query.answer("Сначала отметься на смене!", show_alert=True)
             return MAIN_MENU
         items = get_checklist_items(user_id)
         if items is None:
             await query.edit_message_text(
                 "Ошибка получения чек-листа. Попробуйте позже.",
-                reply_markup=main_menu_keyboard()
+                reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
         if not items:
             await query.edit_message_text(
                 "На сегодня нет задач.",
-                reply_markup=main_menu_keyboard()
+                reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
         await query.edit_message_text(
@@ -56,20 +63,17 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=checklist_keyboard(items, datetime.now().strftime("%Y-%m-%d"))
         )
         return CHECKLIST_VIEW
+
     elif data == CB_PROGRESS:
-        user_id = query.from_user.id
         shift = get_active_shift(user_id)
         if not shift:
-            await query.edit_message_text(
-                "Сначала отметься на смене!",
-                reply_markup=main_menu_keyboard()
-            )
+            await query.answer("Сначала отметься на смене!", show_alert=True)
             return MAIN_MENU
         done, total, items = get_user_progress_summary(user_id)
         if done is None:
             await query.edit_message_text(
                 "Ошибка получения прогресса.",
-                reply_markup=main_menu_keyboard()
+                reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
         progress_text = f"📊 Твой прогресс: {done}/{total} выполнено ({int(done/total*100)}%)\n\n"
@@ -85,14 +89,17 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=progress_keyboard()
         )
         return PROGRESS_VIEW
+
     elif data == CB_BACK_MAIN:
+        shift = get_active_shift(user_id)
         await query.edit_message_text(
             "Главное меню:",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(has_shift=bool(shift))
         )
         return MAIN_MENU
+
     else:
-        await query.edit_message_text("Неизвестная команда", reply_markup=main_menu_keyboard())
+        await query.edit_message_text("Неизвестная команда", reply_markup=main_menu_keyboard(has_shift=bool(get_active_shift(user_id))))
         return MAIN_MENU
 
 async def location_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,26 +107,31 @@ async def location_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     data = query.data
     user_id = query.from_user.id
+
     if data == CB_SHIFT_BAR:
         mark_shift(user_id, "bar")
         await query.edit_message_text(
-            f"✅ Ты отметился на баре! Теперь доступны чек-листы.",
-            reply_markup=main_menu_keyboard()
+            "✅ Ты отметился на баре! Теперь доступны чек-листы.",
+            reply_markup=main_menu_keyboard(has_shift=True)
         )
         return MAIN_MENU
+
     elif data == CB_SHIFT_KITCHEN:
         mark_shift(user_id, "kitchen")
         await query.edit_message_text(
-            f"✅ Ты отметился на кухне! Теперь доступны чек-листы.",
-            reply_markup=main_menu_keyboard()
+            "✅ Ты отметился на кухне! Теперь доступны чек-листы.",
+            reply_markup=main_menu_keyboard(has_shift=True)
         )
         return MAIN_MENU
+
     elif data == CB_BACK_MAIN:
+        shift = get_active_shift(user_id)
         await query.edit_message_text(
             "Главное меню:",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(has_shift=bool(shift))
         )
         return MAIN_MENU
+
     else:
         await query.edit_message_text("Неизвестная локация", reply_markup=location_keyboard())
         return SELECT_LOCATION
@@ -129,6 +141,7 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     user_id = query.from_user.id
+
     if data.startswith(CB_ITEM_DONE):
         item_id = int(data.split("_")[-1])
         mark_item_done(user_id, item_id)
@@ -141,10 +154,11 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text(
                 "Чек-лист пуст.",
-                reply_markup=main_menu_keyboard()
+                reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
         return CHECKLIST_VIEW
+
     elif data.startswith(CB_ITEM_UNDO):
         item_id = int(data.split("_")[-1])
         mark_item_undone(user_id, item_id)
@@ -157,30 +171,35 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text(
                 "Чек-лист пуст.",
-                reply_markup=main_menu_keyboard()
+                reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
         return CHECKLIST_VIEW
+
     elif data == CB_BACK_MAIN:
+        shift = get_active_shift(user_id)
         await query.edit_message_text(
             "Главное меню:",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(has_shift=bool(shift))
         )
         return MAIN_MENU
+
     else:
-        await query.edit_message_text("Неизвестное действие", reply_markup=main_menu_keyboard())
+        await query.edit_message_text("Неизвестное действие", reply_markup=main_menu_keyboard(has_shift=True))
         return MAIN_MENU
 
 async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    shift = get_active_shift(user_id)
     await query.edit_message_text(
         "Главное меню:",
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(has_shift=bool(shift))
     )
     return MAIN_MENU
 
-# Заглушка для обработки неизвестных (для заголовков категорий)
+# Заглушка для заголовков категорий
 async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Это просто заголовок")
