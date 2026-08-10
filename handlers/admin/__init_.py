@@ -1,61 +1,84 @@
-from telegram.ext import Application, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from .handlers import admin_start, admin_callback, admin_text_input
-from .constant import *
+from telegram.ext import (
+    Application,
+    ConversationHandler,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+)
 
-def register_handlers(app: Application):
+from config import ADMIN_IDS
+
+from .constants import (
+    ADMIN_MAIN,
+    ADMIN_SHIFTS,
+    ADMIN_EMPLOYEES,
+    ADMIN_CALENDAR,
+    ADMIN_DAY_PROGRESS,
+    ADMIN_EDIT_LOCATION,
+    ADMIN_EDIT_CATEGORY,
+    ADMIN_EDIT_ITEMS,
+    ADMIN_ITEM_DETAIL,
+    ADMIN_DELETE_CONFIRM,
+    ADMIN_ADD_DAY,
+    ADMIN_AWAIT_NEW_TEXT,
+    ADMIN_AWAIT_EDIT_TEXT,
+    CB_CANCEL,
+    CB_CANCEL_EDIT,
+    CB_ADD_BACK_TEXT,
+    CB_HOME,
+)
+
+from .handlers import (
+    admin_start,
+    admin_callback,
+    admin_text_input,
+)
+
+
+TEXT_CALLBACK_PATTERN = f"^(?:{CB_CANCEL}|{CB_CANCEL_EDIT}|{CB_ADD_BACK_TEXT}|{CB_HOME})$"
+
+
+def register_admin(app: Application) -> None:
+    non_text_states = [
+        ADMIN_MAIN,
+        ADMIN_SHIFTS,
+        ADMIN_EMPLOYEES,
+        ADMIN_CALENDAR,
+        ADMIN_DAY_PROGRESS,
+        ADMIN_EDIT_LOCATION,
+        ADMIN_EDIT_CATEGORY,
+        ADMIN_EDIT_ITEMS,
+        ADMIN_ITEM_DETAIL,
+        ADMIN_DELETE_CONFIRM,
+        ADMIN_ADD_DAY,
+    ]
+
+    states = {
+        state: [CallbackQueryHandler(admin_callback)]
+        for state in non_text_states
+    }
+
+    states[ADMIN_AWAIT_NEW_TEXT] = [
+        MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
+        CallbackQueryHandler(admin_callback, pattern=TEXT_CALLBACK_PATTERN),
+    ]
+
+    states[ADMIN_AWAIT_EDIT_TEXT] = [
+        MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
+        CallbackQueryHandler(admin_callback, pattern=TEXT_CALLBACK_PATTERN),
+    ]
+
+    admin_filter = filters.User(user_id=ADMIN_IDS) if ADMIN_IDS else filters.User(user_id=set())
+
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", admin_start)],
-        states={
-            ADMIN_MAIN: [
-                CallbackQueryHandler(admin_callback, pattern="|".join([CB_ADMIN_SHIFTS, CB_ADMIN_PROGRESS, CB_ADMIN_EDIT, CB_ADMIN_BACK]))
-            ],
-            ADMIN_SHIFTS: [
-                CallbackQueryHandler(admin_callback, pattern=CB_ADMIN_BACK)
-            ],
-            ADMIN_EMPLOYEE_LIST: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_CALENDAR: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_MONTH_PREV}$|^{CB_ADMIN_MONTH_NEXT}$|^{CB_ADMIN_DAY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_BACK_TO_CALENDAR}$")
-            ],
-            ADMIN_DAY_PROGRESS: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK_TO_CALENDAR}$|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_EDIT_CATEGORIES: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_CATEGORY}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_EDIT_ITEMS_LIST: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_VIEW_ITEM}.*|^{CB_ADMIN_EDIT_BACK}$|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_VIEW_ITEM: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_EDIT_DELETE}.*|^{CB_ADMIN_EDIT_BACK}$|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_DELETE_CONFIRM: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_BACK}$|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_AWAIT_ITEM_TYPE: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_TYPE}.*|^{CB_ADMIN_CANCEL}$|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_AWAIT_ITEM_LOCATION: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_LOCATION}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
-            ],
-            ADMIN_AWAIT_ITEM_CATEGORY: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_CATEGORY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
-            ],
-            ADMIN_AWAIT_ITEM_DAY: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_DAY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
-            ],
-            ADMIN_AWAIT_ITEM_TEXT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
-            ],
-            ADMIN_AWAIT_EDIT_TEXT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
-            ],
-        },
-        fallbacks=[CommandHandler("start", admin_start)],
+        entry_points=[CommandHandler("start", admin_start, filters=admin_filter)],
+        states=states,
+        fallbacks=[CommandHandler("start", admin_start, filters=admin_filter)],
         per_user=True,
         per_chat=False,
+        allow_reentry=True,
     )
-    app.add_handler(conv_handler)
+
+    # Важно: добавляем админа первым, чтобы /start админа не перехватил employee-хендлер
+    app.add_handler(conv_handler, group=0)

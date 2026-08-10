@@ -1,53 +1,89 @@
-# Состояния для админа (иерархия)
-ADMIN_MAIN = 10
-ADMIN_SHIFTS = 11
-ADMIN_EMPLOYEE_LIST = 20
-ADMIN_CALENDAR = 35
-ADMIN_DAY_PROGRESS = 36
+# Состояния админа
+ADMIN_MAIN = 100
+ADMIN_SHIFTS = 101
+ADMIN_EMPLOYEES = 102
+ADMIN_CALENDAR = 103
+ADMIN_DAY_PROGRESS = 104
+ADMIN_EDIT_LOCATION = 105
+ADMIN_EDIT_CATEGORY = 106
+ADMIN_EDIT_ITEMS = 107
+ADMIN_ITEM_DETAIL = 108
+ADMIN_DELETE_CONFIRM = 109
+ADMIN_ADD_DAY = 110
+ADMIN_AWAIT_NEW_TEXT = 111
+ADMIN_AWAIT_EDIT_TEXT = 112
 
-# Состояния для редактора чек-листов
-ADMIN_EDIT_CATEGORIES = 40
-ADMIN_EDIT_ITEMS_LIST = 41
-ADMIN_VIEW_ITEM = 42          # детальный просмотр пункта
-ADMIN_DELETE_CONFIRM = 43
+# Callback data
+CB_NOOP = "noop"
 
-# Состояния для добавления/редактирования пункта
-ADMIN_AWAIT_ITEM_TYPE = 27
-ADMIN_AWAIT_ITEM_LOCATION = 28
-ADMIN_AWAIT_ITEM_CATEGORY = 29
-ADMIN_AWAIT_ITEM_DAY = 30
-ADMIN_AWAIT_ITEM_TEXT = 26
-ADMIN_AWAIT_EDIT_TEXT = 31
+CB_HOME = "home"
+CB_SHIFTS = "shifts"
+CB_EMPLOYEES = "employees"
+CB_EDIT = "edit"
 
-# === Callback Data ===
+CB_EMP_PREFIX = "user:"
 
-# Навигация
-CB_ADMIN_BACK = "admin_back"
-CB_ADMIN_CANCEL = "admin_cancel"
+CB_PREV_MONTH = "prev"
+CB_NEXT_MONTH = "next"
+CB_DAY_PREFIX = "day:"
 
-# Главное меню
-CB_ADMIN_SHIFTS = "admin_shifts"
-CB_ADMIN_PROGRESS = "admin_progress"
-CB_ADMIN_EDIT = "admin_edit"
+CB_TO_EMPLOYEES = "to_users"
+CB_TO_CALENDAR = "to_cal"
+CB_TO_EDIT = "to_edit"
+CB_TO_CATEGORIES = "to_cats"
+CB_TO_ITEMS = "to_items"
 
-# Прогресс сотрудников
-CB_ADMIN_EMPLOYEE = "admin_employee_"
-CB_ADMIN_MONTH_PREV = "admin_month_prev"
-CB_ADMIN_MONTH_NEXT = "admin_month_next"
-CB_ADMIN_DAY = "admin_day_"
-CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"
+CB_LOC_PREFIX = "loc:"
+CB_CAT_PREFIX = "cat:"
+CB_PAGE_PREFIX = "pg:"
 
-# Редактор чек-листов
-CB_ADMIN_EDIT_CATEGORY = "admin_edit_cat_"
-CB_ADMIN_VIEW_ITEM = "admin_view_item_"      # просмотр пункта
-CB_ADMIN_EDIT_ITEM = "admin_edit_item_"      # редактирование (ввод нового текста)
-CB_ADMIN_EDIT_DELETE = "admin_edit_delete_"
-CB_ADMIN_EDIT_BACK = "admin_edit_back"
-CB_ADMIN_EDIT_CONFIRM_DELETE = "admin_edit_confirm_delete_"
-CB_ADMIN_ADD_ITEM = "admin_add_item"
+CB_ITEM_PREFIX = "item:"
+CB_EDIT_ITEM_PREFIX = "edit_item:"
+CB_DELETE_ITEM_PREFIX = "del_item:"
+CB_CONFIRM_DELETE_PREFIX = "confirm_del:"
 
-# Добавление пункта
-CB_ADMIN_ITEM_TYPE = "admin_item_type_"
-CB_ADMIN_ITEM_LOCATION = "admin_item_location_"
-CB_ADMIN_ITEM_CATEGORY = "admin_item_category_"
-CB_ADMIN_ITEM_DAY = "admin_item_day_"
+CB_ADD = "add"
+CB_ADD_DAY_PREFIX = "add_day:"
+CB_ADD_BACK_TEXT = "add_back_text"
+
+CB_CANCEL = "cancel"
+CB_CANCEL_EDIT = "cancel_edit"
+
+# UI helpers
+PAGE_SIZE = 8
+TEXT_LIMIT = 200
+MSG_LIMIT = 3800
+
+LOCATIONS = {
+    "bar": "🍸 Бар",
+    "kitchen": "🍳 Кухня",
+}
+
+DAILY_CATEGORIES = [
+    ("opening", "☀️ Открытие"),
+    ("daytime", "🌤 В течение дня"),
+    ("closing", "🌙 Закрытие"),
+]
+
+CATEGORY_LABELS = {
+    "opening": "☀️ Открытие",
+    "daytime": "🌤 В течение дня",
+    "closing": "🌙 Закрытие",
+    "weekly": "📆 Недельные",
+}
+
+CATEGORY_ORDER = ["opening", "daytime", "closing", "weekly"]
+
+WEEKDAYS_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+MONTHS = [
+    "Январь", "Февраль", "Март", "Апрель",
+    "Май", "Июнь", "Июль", "Август",
+    "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+]
+
+MONTHS_GEN = [
+    "января", "февраля", "марта", "апреля",
+    "мая", "июня", "июля", "августа",
+    "сентября", "октября", "ноября", "декабря"
+]
