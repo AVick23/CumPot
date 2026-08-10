@@ -1,10 +1,9 @@
 from db.shifts import start_shift, get_active_shift, end_shift
-from db.checklist import get_items_for_location_and_day, save_progress, get_progress_for_user_date
 from datetime import datetime
 from .constant import get_daily_items, get_weekly_items
 
 # ------------------------------------------------------------
-# Функции работы со сменами (оставляем как есть)
+# Функции работы со сменами
 # ------------------------------------------------------------
 def mark_shift(user_id, location):
     start_shift(user_id, location)
@@ -16,9 +15,9 @@ def end_current_shift(user_id):
     end_shift(user_id)
 
 # ------------------------------------------------------------
-# Функции получения чек-листов из констант (без БД)
+# Функции получения чек-листов из констант с хранением прогресса в памяти
 # ------------------------------------------------------------
-def get_checklist_items(user_id):
+def get_checklist_items(user_id, context):
     shift = get_active_shift(user_id)
     if not shift:
         return None
@@ -32,7 +31,7 @@ def get_checklist_items(user_id):
     items = []
     for item in daily:
         items.append({
-            'id': None,  # временно без id, будем использовать индекс
+            'id': None,  # временно без id, используем индекс
             'category': item['category'],
             'text': item['text'],
             'completed': False,
@@ -47,28 +46,11 @@ def get_checklist_items(user_id):
             'completed_at': None,
         })
 
-    # Загружаем прогресс из БД для сегодняшней даты (чтобы сохранить отметки)
+    # Загружаем прогресс из context.user_data
     date = datetime.now().strftime("%Y-%m-%d")
-    progress = get_progress_for_user_date(user_id, date)  # Эта функция работает с БД, но мы используем её только для статуса
-    # Но у нас нет id, потому что мы не используем БД для пунктов. Поэтому мы будем хранить прогресс в памяти? Нет.
-    # Проще: для демонстрации мы будем хранить прогресс в БД, используя item_id, но у нас его нет.
-    # Поэтому мы переделаем: будем использовать индексы как идентификаторы.
-    # Для простоты сделаем так: сохраняем прогресс в словарь context.user_data.
-    # Это временное решение.
-    # Но проще: вообще убрать сохранение в БД для чек-листов, пока не импортированы данные.
-    # Мы можем хранить состояние в context.user_data.
-    # Однако в данном случае мы не будем сохранять прогресс в БД, а будем хранить его в памяти бота (в context.user_data).
-    # Это не персистентно, но для демонстрации подойдёт.
-    # Я покажу, как это сделать.
-
-    # Получаем прогресс из context.user_data
-    if not context or not hasattr(context, 'user_data'):
-        # Если контекст не передан, возвращаем как есть
-        return items
-
     key = f"progress_{user_id}_{date}"
     progress_data = context.user_data.get(key, {})
-    # progress_data будет словарем {index: True/False}
+    # progress_data - словарь {индекс: True/False}
     for idx, item in enumerate(items):
         if str(idx) in progress_data:
             item['completed'] = progress_data[str(idx)]
@@ -77,7 +59,6 @@ def get_checklist_items(user_id):
     return items
 
 def mark_item_done(user_id, item_id, context):
-    # item_id - это индекс (строка)
     date = datetime.now().strftime("%Y-%m-%d")
     key = f"progress_{user_id}_{date}"
     progress = context.user_data.get(key, {})

@@ -152,7 +152,7 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith(CB_ITEM_DONE):
         item_id = int(data.split("_")[-1])
-        mark_item_done(user_id, item_id, context)  # передаём context
+        mark_item_done(user_id, item_id, context)
         items = get_checklist_items(user_id, context)
         if items:
             await query.edit_message_text(
