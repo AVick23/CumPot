@@ -13,7 +13,7 @@ from .employee.handlers import (
     progress_back,
     noop
 )
-from .employee.constant import (
+from .employee.constants import (
     MAIN_MENU,
     SELECT_LOCATION,
     CHECKLIST_VIEW,
