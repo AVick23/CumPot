@@ -6,6 +6,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "bot.db")
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = OFF")  # временное отключение
     return conn
 
 def init_db():
@@ -33,10 +34,10 @@ def init_db():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT,       -- 'daily' или 'weekly'
-                location TEXT,   -- 'bar' или 'kitchen'
-                category TEXT,   -- 'opening', 'daytime', 'closing'
-                day_of_week INTEGER, -- 0-6 для weekly, для daily NULL
+                type TEXT,
+                location TEXT,
+                category TEXT,
+                day_of_week INTEGER,
                 sort_order INTEGER,
                 text TEXT
             )
@@ -48,9 +49,8 @@ def init_db():
                 item_id INTEGER,
                 date TEXT,
                 completed BOOLEAN DEFAULT 0,
-                completed_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(tg_id),
-                FOREIGN KEY (item_id) REFERENCES checklist_items(id)
+                completed_at TEXT
+                -- FOREIGN KEY (item_id) REFERENCES checklist_items(id)  -- временно убрали
             )
         """)
         conn.commit()

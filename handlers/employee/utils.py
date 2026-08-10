@@ -52,23 +52,21 @@ def get_items_by_category(user_id, context, category):
     return [item for item in all_items if item['category'] == category]
 
 def mark_item_done(user_id, item_id, context):
-    """Возвращает True, если состояние изменилось"""
     date = datetime.now().strftime("%Y-%m-%d")
     progress_list = get_progress_for_user_date(user_id, date)
     progress_dict = {p['item_id']: p['completed'] for p in progress_list}
-    current = progress_dict.get(item_id, False)
-    if current == True:
+    current = progress_dict.get(item_id, 0)  # 0 или 1
+    if current == 1:
         return False
     save_progress(user_id, item_id, True)
     return True
 
 def mark_item_undone(user_id, item_id, context):
-    """Возвращает True, если состояние изменилось"""
     date = datetime.now().strftime("%Y-%m-%d")
     progress_list = get_progress_for_user_date(user_id, date)
     progress_dict = {p['item_id']: p['completed'] for p in progress_list}
-    current = progress_dict.get(item_id, False)
-    if current == False:
+    current = progress_dict.get(item_id, 0)
+    if current == 0:
         return False
     save_progress(user_id, item_id, False)
     return True
