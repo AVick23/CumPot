@@ -8,7 +8,7 @@ from .handlers import (
     progress_back,
     noop
 )
-from .constant import *
+from .constants import *
 
 def register_handlers(app: Application):
     conv_handler = ConversationHandler(
