@@ -17,20 +17,11 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     data = query.data
     if data == CB_SHIFT_MARK:
-        # Проверим, есть ли уже активная смена
         user_id = query.from_user.id
         shift = get_active_shift(user_id)
         if shift:
-            await query.edit_message_text(
-                f"Вы уже на смене ({shift['location']}). Чтобы начать новую, сначала завершите текущую.",
-                reply_markup=location_keyboard()  # дадим возможность завершить? Пока проще: покажем кнопку "Назад"
-            )
-            # Заменим на клавиатуру с "Назад"
-            # Но для простоты просто сообщим и покажем главное меню
-            await query.edit_message_text(
-                "Вы уже на смене. Используйте главное меню.",
-                reply_markup=main_menu_keyboard()
-            )
+            # Вместо редактирования показываем всплывающее уведомление и ничего не меняем
+            await query.answer("Вы уже на смене!", show_alert=True)
             return MAIN_MENU
         else:
             await query.edit_message_text(
@@ -39,7 +30,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return SELECT_LOCATION
     elif data == CB_CHECKLIST:
-        # Проверяем, есть ли активная смена
         user_id = query.from_user.id
         shift = get_active_shift(user_id)
         if not shift:
@@ -61,7 +51,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 reply_markup=main_menu_keyboard()
             )
             return MAIN_MENU
-        # Покажем чек-лист
         await query.edit_message_text(
             "Ваш чек-лист на сегодня:",
             reply_markup=checklist_keyboard(items, datetime.now().strftime("%Y-%m-%d"))
@@ -143,7 +132,6 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith(CB_ITEM_DONE):
         item_id = int(data.split("_")[-1])
         mark_item_done(user_id, item_id)
-        # Обновим чек-лист
         items = get_checklist_items(user_id)
         if items:
             await query.edit_message_text(
@@ -192,7 +180,7 @@ async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return MAIN_MENU
 
-# Заглушка для обработки неизвестных
+# Заглушка для обработки неизвестных (для заголовков категорий)
 async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Это просто заголовок")
