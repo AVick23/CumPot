@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 from db.users import save_user, get_user
 from config import ADMIN_IDS
 
-# Импорты сотрудников (без изменений)
+# Импорты сотрудников
 from .employee.handlers import (
     start_menu,
     main_menu_callback,
@@ -32,30 +32,27 @@ from .employee.constants import (
     CB_BACK_CATEGORIES
 )
 
-# Импорты админа (обновлённые)
-from .admin.handlers import admin_start, admin_callback, admin_text_input
+# Импорты админа (исправлено – убрали admin_text_input)
+from .admin.handlers import admin_start, admin_callback
 from .admin.constant import (
     ADMIN_MAIN,
     ADMIN_SHIFTS,
-    ADMIN_SELECT_USER,
-    ADMIN_SELECT_DATE,
-    ADMIN_VIEW_PROGRESS,
-    ADMIN_EDIT_MENU,
-    ADMIN_ADD_ITEM,
+    ADMIN_SELECT_EMPLOYEE,
+    ADMIN_SHOW_PROGRESS,
+    ADMIN_EDIT_ITEMS,
     ADMIN_EDIT_ITEM,
     ADMIN_DELETE_ITEM,
-    ADMIN_INPUT_TEXT,
+    ADMIN_ADD_ITEM_MODE,
     CB_ADMIN_SHIFTS,
     CB_ADMIN_PROGRESS,
     CB_ADMIN_EDIT,
     CB_ADMIN_BACK,
-    CB_ADMIN_USER,
-    CB_ADMIN_DATE,
-    CB_ADMIN_EDIT_ACTION,
-    CB_ADMIN_ADD,
+    CB_ADMIN_EMPLOYEE,
     CB_ADMIN_EDIT_ITEM,
     CB_ADMIN_DELETE_ITEM,
-    CB_ADMIN_CONFIRM_DELETE
+    CB_ADMIN_CONFIRM_DELETE,
+    CB_ADMIN_ADD_ITEM,
+    CB_ADMIN_EDIT_ITEMS
 )
 
 async def start_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,37 +89,27 @@ def register_handlers(app: Application):
             PROGRESS_VIEW: [
                 CallbackQueryHandler(progress_back, pattern=f"^{CB_BACK_MAIN}$")
             ],
-            # Состояния для админа (добавлены все новые)
+            # Состояния для админа (исправлено: убрано ADMIN_INPUT_TEXT и MessageHandler)
             ADMIN_MAIN: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_SHIFTS}$|^{CB_ADMIN_PROGRESS}$|^{CB_ADMIN_EDIT}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_SHIFTS}$|^{CB_ADMIN_PROGRESS}$|^{CB_ADMIN_EDIT}$|^{CB_ADMIN_BACK}$")
             ],
             ADMIN_SHIFTS: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$")
             ],
-            ADMIN_SELECT_USER: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_USER}.*|^{CB_ADMIN_BACK}$")
+            ADMIN_SELECT_EMPLOYEE: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$")
             ],
-            ADMIN_SELECT_DATE: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_DATE}.*|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_VIEW_PROGRESS: [
+            ADMIN_SHOW_PROGRESS: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$")
             ],
-            ADMIN_EDIT_MENU: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ACTION}.*|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_ADD_ITEM: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$")
+            ADMIN_EDIT_ITEMS: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$|^{CB_ADMIN_EDIT_ITEMS}$")
             ],
             ADMIN_EDIT_ITEM: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_BACK}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_DELETE_ITEM}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
             ],
             ADMIN_DELETE_ITEM: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_DELETE_ITEM}.*|^{CB_ADMIN_CONFIRM_DELETE}.*|^{CB_ADMIN_BACK}$")
-            ],
-            ADMIN_INPUT_TEXT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
             ],
         },
         fallbacks=[CommandHandler("start", start_router)],
