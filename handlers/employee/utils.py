@@ -1,7 +1,7 @@
 from db.shifts import start_shift, get_active_shift, end_shift
 from db.checklist import get_items_for_location_and_day, save_progress, get_progress_for_user_date
 from datetime import datetime
-from .constants import get_daily_items, get_weekly_items
+from .constant import get_daily_items, get_weekly_items
 
 # ------------------------------------------------------------
 # Функции работы со сменами (оставляем как есть)
