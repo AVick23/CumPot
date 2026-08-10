@@ -1,22 +1,19 @@
 from db.shifts import get_shifts_for_date
-from db.checklist import get_items_for_location_and_day, get_progress_for_user_date
+from db.checklist import get_items_for_location_and_day, get_progress_for_user_date, add_checklist_item, update_checklist_item, delete_checklist_item
 from db.users import get_user
 from datetime import datetime
-from .constant import *
 
 def get_today_shifts():
     date = datetime.now().strftime("%Y-%m-%d")
     return get_shifts_for_date(date)
 
 def get_all_users():
-    """Возвращает всех сотрудников (не админов) для выбора"""
     from db import get_connection
     with get_connection() as conn:
         rows = conn.execute("SELECT tg_id, first_name, last_name FROM users WHERE is_admin = 0").fetchall()
         return [dict(row) for row in rows]
 
 def get_employee_progress(employee_id, date=None):
-    """Возвращает прогресс сотрудника по его активной смене"""
     from db.shifts import get_active_shift
     if not date:
         date = datetime.now().strftime("%Y-%m-%d")
@@ -43,3 +40,9 @@ def delete_checklist_item(item_id):
     with get_connection() as conn:
         conn.execute("DELETE FROM checklist_items WHERE id = ?", (item_id,))
         conn.commit()
+
+def save_new_item(item_type, location, category, day_of_week, text):
+    add_checklist_item(item_type, location, category, day_of_week, text)
+
+def update_item(item_id, new_text):
+    update_checklist_item(item_id, new_text)

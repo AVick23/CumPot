@@ -1,5 +1,5 @@
-from telegram.ext import Application, ConversationHandler, CommandHandler, CallbackQueryHandler
-from .handlers import admin_start, admin_callback, employee_selection, edit_items_callback
+from telegram.ext import Application, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from .handlers import admin_start, admin_callback, admin_text_input
 from .constant import *
 
 def register_handlers(app: Application):
@@ -13,19 +13,39 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(admin_callback, pattern=CB_ADMIN_BACK)
             ],
             ADMIN_SELECT_EMPLOYEE: [
-                CallbackQueryHandler(employee_selection, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$"),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$"),
             ],
             ADMIN_SHOW_PROGRESS: [
-                CallbackQueryHandler(employee_selection, pattern=CB_ADMIN_BACK),
+                CallbackQueryHandler(admin_callback, pattern=CB_ADMIN_BACK),
             ],
             ADMIN_EDIT_ITEMS: [
-                CallbackQueryHandler(edit_items_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$|^{CB_ADMIN_EDIT_ITEMS}$"),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$|^{CB_ADMIN_EDIT_ITEMS}$"),
             ],
             ADMIN_EDIT_ITEM: [
-                CallbackQueryHandler(edit_items_callback, pattern=f"^{CB_ADMIN_DELETE_ITEM}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$"),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_DELETE_ITEM}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$"),
             ],
             ADMIN_DELETE_ITEM: [
-                CallbackQueryHandler(edit_items_callback, pattern=f"^{CB_ADMIN_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$"),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$"),
+            ],
+            ADMIN_AWAIT_ITEM_TYPE: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_TYPE}.*|^{CB_ADMIN_CANCEL}$|^{CB_ADMIN_BACK}$"),
+            ],
+            ADMIN_AWAIT_ITEM_LOCATION: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_LOCATION}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$"),
+            ],
+            ADMIN_AWAIT_ITEM_CATEGORY: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_CATEGORY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$"),
+            ],
+            ADMIN_AWAIT_ITEM_DAY: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_DAY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$"),
+            ],
+            ADMIN_AWAIT_ITEM_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$"),
+            ],
+            ADMIN_AWAIT_EDIT_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$"),
             ],
         },
         fallbacks=[CommandHandler("start", admin_start)],

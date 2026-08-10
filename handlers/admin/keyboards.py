@@ -44,6 +44,41 @@ def confirm_delete_keyboard(item_id):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def add_item_keyboard():
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_EDIT_ITEMS)]]
+def add_item_type_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("📅 Ежедневная", callback_data=f"{CB_ADMIN_ITEM_TYPE}daily")],
+        [InlineKeyboardButton("📆 Недельная", callback_data=f"{CB_ADMIN_ITEM_TYPE}weekly")],
+        [InlineKeyboardButton("◀️ Отмена", callback_data=CB_ADMIN_CANCEL)],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def add_item_location_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("🍸 Бар", callback_data=f"{CB_ADMIN_ITEM_LOCATION}bar")],
+        [InlineKeyboardButton("🍳 Кухня", callback_data=f"{CB_ADMIN_ITEM_LOCATION}kitchen")],
+        [InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def add_item_category_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("☀️ Открытие", callback_data=f"{CB_ADMIN_ITEM_CATEGORY}opening")],
+        [InlineKeyboardButton("📅 В течение дня", callback_data=f"{CB_ADMIN_ITEM_CATEGORY}daytime")],
+        [InlineKeyboardButton("🌙 Закрытие", callback_data=f"{CB_ADMIN_ITEM_CATEGORY}closing")],
+        [InlineKeyboardButton("📆 Недельная", callback_data=f"{CB_ADMIN_ITEM_CATEGORY}weekly")],
+        [InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def add_item_day_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("ПН", callback_data=f"{CB_ADMIN_ITEM_DAY}0")],
+        [InlineKeyboardButton("ВТ", callback_data=f"{CB_ADMIN_ITEM_DAY}1")],
+        [InlineKeyboardButton("СР", callback_data=f"{CB_ADMIN_ITEM_DAY}2")],
+        [InlineKeyboardButton("ЧТ", callback_data=f"{CB_ADMIN_ITEM_DAY}3")],
+        [InlineKeyboardButton("ПТ", callback_data=f"{CB_ADMIN_ITEM_DAY}4")],
+        [InlineKeyboardButton("СБ", callback_data=f"{CB_ADMIN_ITEM_DAY}5")],
+        [InlineKeyboardButton("ВС", callback_data=f"{CB_ADMIN_ITEM_DAY}6")],
+        [InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)],
+    ]
     return InlineKeyboardMarkup(keyboard)

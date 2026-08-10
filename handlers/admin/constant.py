@@ -8,6 +8,14 @@ ADMIN_EDIT_ITEM = 23
 ADMIN_DELETE_ITEM = 24
 ADMIN_ADD_ITEM_MODE = 25
 
+# Состояния для добавления/редактирования
+ADMIN_AWAIT_ITEM_TEXT = 26
+ADMIN_AWAIT_ITEM_TYPE = 27
+ADMIN_AWAIT_ITEM_LOCATION = 28
+ADMIN_AWAIT_ITEM_CATEGORY = 29
+ADMIN_AWAIT_ITEM_DAY = 30
+ADMIN_AWAIT_EDIT_TEXT = 31
+
 # Callback data
 CB_ADMIN_SHIFTS = "admin_shifts"
 CB_ADMIN_PROGRESS = "admin_progress"
@@ -19,3 +27,9 @@ CB_ADMIN_DELETE_ITEM = "admin_delete_item_"
 CB_ADMIN_CONFIRM_DELETE = "admin_confirm_delete_"
 CB_ADMIN_ADD_ITEM = "admin_add_item"
 CB_ADMIN_EDIT_ITEMS = "admin_edit_items"
+CB_ADMIN_ITEM_TYPE = "admin_item_type_"    # daily/weekly
+CB_ADMIN_ITEM_LOCATION = "admin_item_location_"  # bar/kitchen
+CB_ADMIN_ITEM_CATEGORY = "admin_item_category_"  # opening/daytime/closing/weekly
+CB_ADMIN_ITEM_DAY = "admin_item_day_"  # 0-6
+CB_ADMIN_SAVE_ITEM = "admin_save_item"
+CB_ADMIN_CANCEL = "admin_cancel"

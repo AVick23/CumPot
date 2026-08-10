@@ -124,3 +124,22 @@ def get_progress_for_user_date(user_id, date):
             WHERE user_id = ? AND date = ?
         """, (user_id, date)).fetchall()
         return [dict(row) for row in rows]
+    
+def add_checklist_item(item_type, location, category, day_of_week, text):
+    with get_connection() as conn:
+        # Получаем максимальный sort_order для этой локации и категории
+        row = conn.execute(
+            "SELECT MAX(sort_order) as max_order FROM checklist_items WHERE location=? AND category=?",
+            (location, category)
+        ).fetchone()
+        order = (row['max_order'] or 0) + 1
+        conn.execute(
+            "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
+            (item_type, location, category, day_of_week, order, text)
+        )
+        conn.commit()
+
+def update_checklist_item(item_id, new_text):
+    with get_connection() as conn:
+        conn.execute("UPDATE checklist_items SET text = ? WHERE id = ?", (new_text, item_id))
+        conn.commit()
