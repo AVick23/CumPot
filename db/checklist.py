@@ -143,3 +143,8 @@ def update_checklist_item(item_id, new_text):
     with get_connection() as conn:
         conn.execute("UPDATE checklist_items SET text = ? WHERE id = ?", (new_text, item_id))
         conn.commit()
+
+def delete_checklist_item(item_id):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM checklist_items WHERE id = ?", (item_id,))
+        conn.commit()
