@@ -32,13 +32,14 @@ from .employee.constants import (
     CB_BACK_CATEGORIES
 )
 
-# Импорты админа – только admin_start, admin_callback и admin_text_input
+# Импорты админа
 from .admin.handlers import admin_start, admin_callback, admin_text_input
 from .admin.constant import (
     ADMIN_MAIN,
     ADMIN_SHIFTS,
     ADMIN_SELECT_EMPLOYEE,
-    ADMIN_SHOW_PROGRESS,
+    ADMIN_CALENDAR,
+    ADMIN_DAY_PROGRESS,
     ADMIN_EDIT_ITEMS,
     ADMIN_EDIT_ITEM,
     ADMIN_DELETE_ITEM,
@@ -62,7 +63,11 @@ from .admin.constant import (
     CB_ADMIN_ITEM_LOCATION,
     CB_ADMIN_ITEM_CATEGORY,
     CB_ADMIN_ITEM_DAY,
-    CB_ADMIN_CANCEL
+    CB_ADMIN_CANCEL,
+    CB_ADMIN_MONTH_PREV,
+    CB_ADMIN_MONTH_NEXT,
+    CB_ADMIN_DAY,
+    CB_ADMIN_BACK_TO_CALENDAR,
 )
 
 async def start_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,7 +105,7 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(progress_back, pattern=f"^{CB_BACK_MAIN}$")
             ],
 
-            # Состояния для админа – все обрабатываются через admin_callback
+            # Состояния для админа
             ADMIN_MAIN: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_SHIFTS}$|^{CB_ADMIN_PROGRESS}$|^{CB_ADMIN_EDIT}$|^{CB_ADMIN_BACK}$")
             ],
@@ -110,8 +115,11 @@ def register_handlers(app: Application):
             ADMIN_SELECT_EMPLOYEE: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$")
             ],
-            ADMIN_SHOW_PROGRESS: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$")
+            ADMIN_CALENDAR: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_MONTH_PREV}$|^{CB_ADMIN_MONTH_NEXT}$|^{CB_ADMIN_DAY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_BACK_TO_CALENDAR}$")
+            ],
+            ADMIN_DAY_PROGRESS: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK_TO_CALENDAR}$|^{CB_ADMIN_BACK}$")
             ],
             ADMIN_EDIT_ITEMS: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$|^{CB_ADMIN_EDIT_ITEMS}$")
