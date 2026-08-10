@@ -37,3 +37,26 @@ def get_shifts_for_date(date):
             (date,)
         ).fetchall()
         return [dict(row) for row in rows]
+    
+def get_shift_for_date(user_id, date):
+    """Возвращает смену пользователя за конкретную дату (активную)"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM shifts WHERE user_id = ? AND date = ? AND active = 1",
+            (user_id, date)
+        ).fetchone()
+        return dict(row) if row else None
+
+def get_shifts_for_month(user_id, year, month):
+    """Возвращает список дат (строки) за месяц, где была активная смена"""
+    start_date = f"{year}-{month:02d}-01"
+    if month == 12:
+        end_date = f"{year+1}-01-01"
+    else:
+        end_date = f"{year}-{month+1:02d}-01"
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT date FROM shifts WHERE user_id = ? AND active = 1 AND date >= ? AND date < ?",
+            (user_id, start_date, end_date)
+        ).fetchall()
+        return [row['date'] for row in rows]
