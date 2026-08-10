@@ -33,12 +33,11 @@ def save_progress(user_id, item_id, completed=True):
         conn.commit()
 
 def get_progress_for_user_date(user_id, date):
-    """Возвращает все пункты и их статус выполнения для пользователя за дату"""
+    """Возвращает прогресс из checklist_progress (без JOIN с checklist_items)"""
     with get_connection() as conn:
         rows = conn.execute("""
-            SELECT ci.*, cp.completed, cp.completed_at
-            FROM checklist_items ci
-            LEFT JOIN checklist_progress cp ON ci.id = cp.item_id AND cp.user_id = ? AND cp.date = ?
-            ORDER BY ci.category, ci.sort_order
+            SELECT item_id, completed, completed_at
+            FROM checklist_progress
+            WHERE user_id = ? AND date = ?
         """, (user_id, date)).fetchall()
         return [dict(row) for row in rows]
