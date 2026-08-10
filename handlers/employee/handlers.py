@@ -5,8 +5,13 @@ from .constants import *
 from .keyboards import *
 from .utils import *
 from datetime import datetime
+import logging
 
-# Вспомогательная функция для безопасного редактирования сообщений
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Вспомогательная функция для безопасного редактирования
 async def safe_edit(query, text, reply_markup=None):
     try:
         await query.edit_message_text(text, reply_markup=reply_markup)
@@ -131,46 +136,69 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith(CB_ITEM_DONE):
         idx = int(data.split("_")[-1])
+        logger.info(f"Отметка DONE: user={user_id}, idx={idx}")
         changed = mark_item_done(user_id, idx, context)
         if not changed:
             await query.answer("Уже выполнено", show_alert=False)
             return CHECKLIST_VIEW
+
+        # Принудительно обновляем текущую категорию
         current_category = context.user_data.get('current_category')
         if not current_category:
             all_items = get_checklist_items(user_id, context)
             cats = list({item['category'] for item in all_items}) if all_items else []
             await safe_edit(query, "Выбери категорию:", reply_markup=categories_keyboard(cats))
             return CATEGORY_SELECT
+
+        # Перечитываем пункты с обновлённым прогрессом
         items = get_items_by_category(user_id, context, current_category)
-        if items:
-            await safe_edit(query, f"📋 {CATEGORY_NAMES.get(current_category, current_category)}:", reply_markup=checklist_keyboard(items, current_category))
-        else:
+        if not items:
             all_items = get_checklist_items(user_id, context)
             cats = list({item['category'] for item in all_items}) if all_items else []
             await safe_edit(query, "Выбери категорию:", reply_markup=categories_keyboard(cats))
             return CATEGORY_SELECT
+
+        # Проверяем, изменился ли прогресс (для отладки)
+        for it in items:
+            if it['completed']:
+                logger.info(f"✅ Пункт выполнен: {it['text'][:30]}")
+            else:
+                logger.info(f"⬜ Пункт не выполнен: {it['text'][:30]}")
+
+        await safe_edit(
+            query,
+            f"📋 {CATEGORY_NAMES.get(current_category, current_category)}:",
+            reply_markup=checklist_keyboard(items, current_category)
+        )
         return CHECKLIST_VIEW
 
     elif data.startswith(CB_ITEM_UNDO):
         idx = int(data.split("_")[-1])
+        logger.info(f"Отмена DONE: user={user_id}, idx={idx}")
         changed = mark_item_undone(user_id, idx, context)
         if not changed:
             await query.answer("Уже не выполнено", show_alert=False)
             return CHECKLIST_VIEW
+
         current_category = context.user_data.get('current_category')
         if not current_category:
             all_items = get_checklist_items(user_id, context)
             cats = list({item['category'] for item in all_items}) if all_items else []
             await safe_edit(query, "Выбери категорию:", reply_markup=categories_keyboard(cats))
             return CATEGORY_SELECT
+
         items = get_items_by_category(user_id, context, current_category)
-        if items:
-            await safe_edit(query, f"📋 {CATEGORY_NAMES.get(current_category, current_category)}:", reply_markup=checklist_keyboard(items, current_category))
-        else:
+        if not items:
             all_items = get_checklist_items(user_id, context)
             cats = list({item['category'] for item in all_items}) if all_items else []
             await safe_edit(query, "Выбери категорию:", reply_markup=categories_keyboard(cats))
             return CATEGORY_SELECT
+
+        await safe_edit(
+            query,
+            f"📋 {CATEGORY_NAMES.get(current_category, current_category)}:",
+            reply_markup=checklist_keyboard(items, current_category)
+        )
         return CHECKLIST_VIEW
 
     elif data == CB_BACK_CATEGORIES:
