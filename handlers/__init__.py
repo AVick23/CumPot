@@ -4,13 +4,14 @@ from telegram.ext import ContextTypes
 from db.users import save_user, get_user
 from config import ADMIN_IDS
 
-# Импорты сотрудников
+# Импорты сотрудников (обновлены: checklist_action заменён на view_item и toggle_item)
 from .employee.handlers import (
     start_menu,
     main_menu_callback,
     location_selection,
     category_selection,
-    checklist_action,
+    view_item,          # вместо checklist_action
+    toggle_item,        # вместо checklist_action
     progress_back,
     noop
 )
@@ -20,19 +21,21 @@ from .employee.constants import (
     CHECKLIST_VIEW,
     PROGRESS_VIEW,
     CATEGORY_SELECT,
+    ITEM_DETAIL,        # новое состояние
     CB_BACK_MAIN,
     CB_SHIFT_MARK,
     CB_CHECKLIST,
     CB_PROGRESS,
     CB_SHIFT_BAR,
     CB_SHIFT_KITCHEN,
-    CB_ITEM_DONE,
-    CB_ITEM_UNDO,
+    CB_ITEM_VIEW,       # новый callback
+    CB_ITEM_TOGGLE,     # новый callback
     CB_CATEGORY,
-    CB_BACK_CATEGORIES
+    CB_BACK_CATEGORIES,
+    CB_BACK_TO_CATEGORIES,
 )
 
-# Импорты админа
+# Импорты админа (без изменений)
 from .admin.handlers import admin_start, admin_callback, admin_text_input
 from .admin.constant import (
     ADMIN_MAIN,
@@ -87,7 +90,7 @@ def register_handlers(app: Application):
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_router)],
         states={
-            # Состояния для сотрудников
+            # Состояния для сотрудников (обновлены)
             MAIN_MENU: [
                 CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_SHIFT_MARK}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MAIN}$")
             ],
@@ -98,14 +101,17 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(category_selection, pattern=f"^{CB_CATEGORY}.*|^{CB_BACK_MAIN}$")
             ],
             CHECKLIST_VIEW: [
-                CallbackQueryHandler(checklist_action, pattern=f"^{CB_ITEM_DONE}.*|^{CB_ITEM_UNDO}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MAIN}$"),
+                CallbackQueryHandler(view_item, pattern=f"^{CB_ITEM_VIEW}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MAIN}$"),
                 CallbackQueryHandler(noop, pattern="^noop$")
+            ],
+            ITEM_DETAIL: [
+                CallbackQueryHandler(toggle_item, pattern=f"^{CB_ITEM_TOGGLE}.*|^{CB_BACK_TO_CATEGORIES}$|^{CB_BACK_MAIN}$"),
             ],
             PROGRESS_VIEW: [
                 CallbackQueryHandler(progress_back, pattern=f"^{CB_BACK_MAIN}$")
             ],
 
-            # Состояния для админа
+            # Состояния для админа (без изменений)
             ADMIN_MAIN: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_SHIFTS}$|^{CB_ADMIN_PROGRESS}$|^{CB_ADMIN_EDIT}$|^{CB_ADMIN_BACK}$")
             ],
