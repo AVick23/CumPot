@@ -32,13 +32,13 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
-    # Обработка выбора сотрудника для просмотра прогресса
+    # ---- Прогресс сотрудников ----
     if data == CB_ADMIN_PROGRESS:
         employees = get_all_users()
         if not employees:
             await safe_edit(query, "Нет сотрудников.", reply_markup=admin_back_keyboard())
             return ADMIN_MAIN
-        await safe_edit(query, "Выбери сотрудника для просмотра прогресса:", reply_markup=employee_list_keyboard(employees))
+        await safe_edit(query, "👤 Выбери сотрудника:", reply_markup=employee_list_keyboard(employees))
         return ADMIN_SELECT_EMPLOYEE
 
     elif data.startswith(CB_ADMIN_EMPLOYEE):
@@ -47,13 +47,11 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.now()
         context.user_data['calendar_year'] = now.year
         context.user_data['calendar_month'] = now.month
-        # Получаем дни смен
         shift_days = get_employee_shift_days(employee_id, now.year, now.month)
-        await safe_edit(query, f"📅 Выбери день в календаре (✅ — были на смене):",
+        await safe_edit(query, f"📅 Выбери день (✅ – были на смене):",
                         reply_markup=calendar_keyboard(now.year, now.month, shift_days))
         return ADMIN_CALENDAR
 
-    # Навигация по календарю
     elif data == CB_ADMIN_MONTH_PREV:
         year = context.user_data.get('calendar_year')
         month = context.user_data.get('calendar_month')
@@ -66,7 +64,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['calendar_month'] = month
         employee_id = context.user_data.get('selected_employee')
         shift_days = get_employee_shift_days(employee_id, year, month)
-        await safe_edit(query, f"📅 Выбери день в календаре (✅ — были на смене):",
+        await safe_edit(query, f"📅 Выбери день (✅ – были на смене):",
                         reply_markup=calendar_keyboard(year, month, shift_days))
         return ADMIN_CALENDAR
 
@@ -82,43 +80,56 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['calendar_month'] = month
         employee_id = context.user_data.get('selected_employee')
         shift_days = get_employee_shift_days(employee_id, year, month)
-        await safe_edit(query, f"📅 Выбери день в календаре (✅ — были на смене):",
+        await safe_edit(query, f"📅 Выбери день (✅ – были на смене):",
                         reply_markup=calendar_keyboard(year, month, shift_days))
         return ADMIN_CALENDAR
 
-    # Выбор конкретного дня
     elif data.startswith(CB_ADMIN_DAY):
         date_str = data.split("_")[-1]
         employee_id = context.user_data.get('selected_employee')
-        items, progress = get_employee_progress(employee_id, date_str)
-        if items is None:
-            await safe_edit(query, "В этот день у сотрудника не было смены или нет данных.", reply_markup=admin_back_keyboard())
+        grouped, _ = get_employee_progress(employee_id, date_str)
+        if grouped is None:
+            await safe_edit(query, "В этот день у сотрудника не было смены.", reply_markup=admin_back_keyboard())
             return ADMIN_MAIN
-        if not items:
-            await safe_edit(query, "В этот день у сотрудника не было задач.", reply_markup=admin_back_keyboard())
+        if not grouped:
+            await safe_edit(query, "В этот день не было задач.", reply_markup=admin_back_keyboard())
             return ADMIN_MAIN
-        # Формируем отчёт
-        text = f"📊 Прогресс сотрудника за {date_str}:\n\n"
-        done = sum(1 for item in items if item['completed'])
-        total = len(items)
-        text += f"Выполнено: {done}/{total} ({int(done/total*100) if total else 0}%)\n\n"
-        for item in items:
-            status = "✅" if item['completed'] else "⬜"
-            text += f"{status} {item['text']}\n"
+        # Формируем красивый отчёт с группировкой по категориям
+        text = f"📊 Прогресс за {date_str}:\n\n"
+        total = 0
+        done = 0
+        for cat, items in grouped.items():
+            cat_name = CATEGORY_NAMES.get(cat, cat)
+            cat_total = len(items)
+            cat_done = sum(1 for i in items if i['completed'])
+            total += cat_total
+            done += cat_done
+            text += f"• {cat_name}: {cat_done}/{cat_total}\n"
+            for item in items:
+                status = "✅" if item['completed'] else "⬜"
+                text += f"  {status} {item['text']}\n"
+        text = f"📊 Прогресс за {date_str}:\nВсего: {done}/{total} ({int(done/total*100) if total else 0}%)\n\n" + text
         await safe_edit(query, text, reply_markup=progress_detail_keyboard(employee_id, date_str))
         return ADMIN_DAY_PROGRESS
 
-    # Возврат к календарю из деталей прогресса
     elif data == CB_ADMIN_BACK_TO_CALENDAR:
         employee_id = context.user_data.get('selected_employee')
         year = context.user_data.get('calendar_year')
         month = context.user_data.get('calendar_month')
         shift_days = get_employee_shift_days(employee_id, year, month)
-        await safe_edit(query, f"📅 Выбери день в календаре (✅ — были на смене):",
+        await safe_edit(query, f"📅 Выбери день (✅ – были на смене):",
                         reply_markup=calendar_keyboard(year, month, shift_days))
         return ADMIN_CALENDAR
 
-    # Остальные функции (редактор, смены сегодня и т.д.) без изменений
+    elif data == CB_ADMIN_BACK_TO_EMPLOYEE_LIST:
+        employees = get_all_users()
+        if not employees:
+            await safe_edit(query, "Нет сотрудников.", reply_markup=admin_back_keyboard())
+            return ADMIN_MAIN
+        await safe_edit(query, "👤 Выбери сотрудника:", reply_markup=employee_list_keyboard(employees))
+        return ADMIN_SELECT_EMPLOYEE
+
+    # ---- Смены сегодня ----
     elif data == CB_ADMIN_SHIFTS:
         shifts = get_today_shifts()
         if shifts:
@@ -130,43 +141,44 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, text, reply_markup=admin_back_keyboard())
         return ADMIN_SHIFTS
 
+    # ---- Редактор чек-листов ----
     elif data == CB_ADMIN_EDIT:
-        items = get_all_checklist_items()
-        if not items:
-            await safe_edit(query, "Чек-листы пусты. Нажми «➕ Добавить пункт», чтобы создать первый.", reply_markup=edit_items_keyboard(items))
+        grouped = get_all_checklist_items_grouped()
+        if not grouped:
+            await safe_edit(query, "Чек-листы пусты. Нажми «➕ Добавить пункт».", reply_markup=edit_items_keyboard({}))
             return ADMIN_EDIT_ITEMS
-        await safe_edit(query, "📋 Редактор чек-листов (нажми на пункт для редактирования):", reply_markup=edit_items_keyboard(items))
+        await safe_edit(query, "📋 Редактор чек-листов:", reply_markup=edit_items_keyboard(grouped))
         return ADMIN_EDIT_ITEMS
 
-    # Редактирование пунктов (без изменений)
     elif data.startswith(CB_ADMIN_EDIT_ITEM):
         item_id = int(data.split("_")[-1])
         context.user_data['edit_item_id'] = item_id
-        await safe_edit(query, "Отправь новый текст для этого пункта одним сообщением:", reply_markup=admin_back_keyboard())
+        await safe_edit(query, "✏️ Введи новый текст:", reply_markup=admin_back_keyboard())
         return ADMIN_AWAIT_EDIT_TEXT
 
     elif data.startswith(CB_ADMIN_DELETE_ITEM):
         item_id = int(data.split("_")[-1])
-        item = next((i for i in get_all_checklist_items() if i['id'] == item_id), None)
+        item = next((i for i in get_all_items() if i['id'] == item_id), None)
         if not item:
             await safe_edit(query, "Пункт не найден.", reply_markup=admin_back_keyboard())
             return ADMIN_MAIN
-        await safe_edit(query, f"Удалить пункт: '{item['text'][:50]}'?\nЭто действие необратимо.", reply_markup=confirm_delete_keyboard(item_id))
+        await safe_edit(query, f"Удалить пункт: '{item['text'][:50]}'?\nЭто действие необратимо.",
+                        reply_markup=confirm_delete_keyboard(item_id))
         return ADMIN_DELETE_ITEM
 
     elif data.startswith(CB_ADMIN_CONFIRM_DELETE):
         item_id = int(data.split("_")[-1])
         delete_checklist_item(item_id)
-        items = get_all_checklist_items()
-        if not items:
+        grouped = get_all_checklist_items_grouped()
+        if not grouped:
             await safe_edit(query, "✅ Пункт удалён. Чек-листы пусты.", reply_markup=admin_back_keyboard())
             return ADMIN_MAIN
-        await safe_edit(query, "✅ Пункт удалён. Список обновлён:", reply_markup=edit_items_keyboard(items))
+        await safe_edit(query, "✅ Пункт удалён.", reply_markup=edit_items_keyboard(grouped))
         return ADMIN_EDIT_ITEMS
 
     elif data == CB_ADMIN_ADD_ITEM:
         context.user_data['new_item'] = {}
-        await safe_edit(query, "Выбери тип пункта:", reply_markup=add_item_type_keyboard())
+        await safe_edit(query, "Выбери тип:", reply_markup=add_item_type_keyboard())
         return ADMIN_AWAIT_ITEM_TYPE
 
     elif data.startswith(CB_ADMIN_ITEM_TYPE):
@@ -185,25 +197,25 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         category = data.split("_")[-1]
         context.user_data['new_item']['category'] = category
         if context.user_data['new_item']['type'] == 'weekly':
-            await safe_edit(query, "Выбери день недели:", reply_markup=add_item_day_keyboard())
+            await safe_edit(query, "Выбери день:", reply_markup=add_item_day_keyboard())
             return ADMIN_AWAIT_ITEM_DAY
         else:
             context.user_data['new_item']['day_of_week'] = None
-            await safe_edit(query, "Отправь текст нового пункта одним сообщением:", reply_markup=admin_back_keyboard())
+            await safe_edit(query, "Введи текст пункта:", reply_markup=admin_back_keyboard())
             return ADMIN_AWAIT_ITEM_TEXT
 
     elif data.startswith(CB_ADMIN_ITEM_DAY):
         day = int(data.split("_")[-1])
         context.user_data['new_item']['day_of_week'] = day
-        await safe_edit(query, "Отправь текст нового пункта одним сообщением:", reply_markup=admin_back_keyboard())
+        await safe_edit(query, "Введи текст пункта:", reply_markup=admin_back_keyboard())
         return ADMIN_AWAIT_ITEM_TEXT
 
     elif data == CB_ADMIN_EDIT_ITEMS:
-        items = get_all_checklist_items()
-        if not items:
+        grouped = get_all_checklist_items_grouped()
+        if not grouped:
             await safe_edit(query, "Чек-листы пусты.", reply_markup=admin_back_keyboard())
             return ADMIN_MAIN
-        await safe_edit(query, "📋 Редактор чек-листов:", reply_markup=edit_items_keyboard(items))
+        await safe_edit(query, "📋 Редактор чек-листов:", reply_markup=edit_items_keyboard(grouped))
         return ADMIN_EDIT_ITEMS
 
     elif data == CB_ADMIN_CANCEL:
@@ -213,7 +225,6 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADMIN_MAIN
 
     elif data == CB_ADMIN_BACK:
-        # Возврат в главное меню из любого места
         await safe_edit(query, "Главное меню админа:", reply_markup=admin_main_keyboard())
         return ADMIN_MAIN
 
@@ -222,28 +233,16 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADMIN_MAIN
 
 async def admin_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстового ввода (новый пункт или редактирование)"""
     text = update.message.text
-    user_id = update.effective_user.id
-
-    # Редактирование существующего пункта
     if 'edit_item_id' in context.user_data:
         item_id = context.user_data.pop('edit_item_id')
         update_checklist_item(item_id, text)
         await update.message.reply_text("✅ Пункт обновлён!", reply_markup=admin_main_keyboard())
-        context.user_data.pop('edit_item_id', None)
         return ADMIN_MAIN
-
-    # Добавление нового пункта
     if 'new_item' in context.user_data:
         item_data = context.user_data.pop('new_item')
-        item_type = item_data.get('type')
-        location = item_data.get('location')
-        category = item_data.get('category')
-        day_of_week = item_data.get('day_of_week')
-        add_checklist_item(item_type, location, category, day_of_week, text)
-        await update.message.reply_text("✅ Новый пункт добавлен!", reply_markup=admin_main_keyboard())
+        add_checklist_item(item_data['type'], item_data['location'], item_data['category'], item_data.get('day_of_week'), text)
+        await update.message.reply_text("✅ Пункт добавлен!", reply_markup=admin_main_keyboard())
         return ADMIN_MAIN
-
     await update.message.reply_text("Ошибка: неизвестное действие.", reply_markup=admin_main_keyboard())
     return ADMIN_MAIN

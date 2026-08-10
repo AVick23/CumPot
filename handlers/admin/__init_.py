@@ -13,10 +13,10 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(admin_callback, pattern=CB_ADMIN_BACK)
             ],
             ADMIN_SELECT_EMPLOYEE: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$"),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK_TO_EMPLOYEE_LIST}$|^{CB_ADMIN_BACK}$"),
             ],
             ADMIN_CALENDAR: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_MONTH_PREV}$|^{CB_ADMIN_MONTH_NEXT}$|^{CB_ADMIN_DAY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_BACK_TO_CALENDAR}$"),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_MONTH_PREV}$|^{CB_ADMIN_MONTH_NEXT}$|^{CB_ADMIN_DAY}.*|^{CB_ADMIN_BACK_TO_EMPLOYEE_LIST}$|^{CB_ADMIN_BACK_TO_CALENDAR}$|^{CB_ADMIN_BACK}$"),
             ],
             ADMIN_DAY_PROGRESS: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK_TO_CALENDAR}$|^{CB_ADMIN_BACK}$"),

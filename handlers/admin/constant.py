@@ -20,7 +20,7 @@ ADMIN_AWAIT_EDIT_TEXT = 31
 # Callback data для календаря
 CB_ADMIN_MONTH_PREV = "admin_month_prev"
 CB_ADMIN_MONTH_NEXT = "admin_month_next"
-CB_ADMIN_DAY = "admin_day_"          # + день, например admin_day_15
+CB_ADMIN_DAY = "admin_day_"
 CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"
 
 # Остальные callback'и
@@ -39,3 +39,14 @@ CB_ADMIN_ITEM_LOCATION = "admin_item_location_"
 CB_ADMIN_ITEM_CATEGORY = "admin_item_category_"
 CB_ADMIN_ITEM_DAY = "admin_item_day_"
 CB_ADMIN_CANCEL = "admin_cancel"
+
+CB_ADMIN_BACK_TO_EMPLOYEE_LIST = "admin_back_to_employee_list"
+CB_ADMIN_BACK_TO_EDIT_MENU = "admin_back_to_edit_menu"
+
+# Читаемые названия категорий (для отображения)
+CATEGORY_NAMES = {
+    "opening": "☀️ Открытие",
+    "daytime": "📅 В течение дня",
+    "closing": "🌙 Закрытие",
+    "weekly": "📆 Недельные задачи",
+}

@@ -1,7 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constant import *
-from datetime import datetime, timedelta
 import calendar
+from datetime import datetime
 
 def admin_main_keyboard():
     keyboard = [
@@ -11,8 +11,8 @@ def admin_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def admin_back_keyboard():
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)]]
+def admin_back_keyboard(callback=CB_ADMIN_BACK):
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data=callback)]]
     return InlineKeyboardMarkup(keyboard)
 
 def employee_list_keyboard(employees):
@@ -24,42 +24,33 @@ def employee_list_keyboard(employees):
     return InlineKeyboardMarkup(keyboard)
 
 def calendar_keyboard(year, month, shift_days):
-    """Создаёт клавиатуру-календарь на месяц.
-    shift_days — список строк дат (YYYY-MM-DD), когда была смена."""
     keyboard = []
-    # Заголовок с месяцем и годом + навигация
     month_name = calendar.month_name[month]
     keyboard.append([
         InlineKeyboardButton("◀️", callback_data=CB_ADMIN_MONTH_PREV),
         InlineKeyboardButton(f"{month_name} {year}", callback_data="noop"),
         InlineKeyboardButton("▶️", callback_data=CB_ADMIN_MONTH_NEXT),
     ])
-    # Дни недели
     weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     keyboard.append([InlineKeyboardButton(day, callback_data="noop") for day in weekdays])
-    # Дни месяца
     first_day = datetime(year, month, 1)
-    start_weekday = first_day.weekday()  # 0-6, понедельник = 0
+    start_weekday = first_day.weekday()
     _, days_in_month = calendar.monthrange(year, month)
     row = []
-    # Пустые ячейки до первого дня
     for _ in range(start_weekday):
         row.append(InlineKeyboardButton(" ", callback_data="noop"))
     for day in range(1, days_in_month + 1):
         date_str = f"{year}-{month:02d}-{day:02d}"
-        # Если день есть в shift_days, ставим значок
         label = f"✅{day}" if date_str in shift_days else str(day)
         row.append(InlineKeyboardButton(label, callback_data=f"{CB_ADMIN_DAY}{date_str}"))
         if len(row) == 7:
             keyboard.append(row)
             row = []
-    # Если остались ячейки, заполняем пустыми
     if row:
         while len(row) < 7:
             row.append(InlineKeyboardButton(" ", callback_data="noop"))
         keyboard.append(row)
-    # Кнопка назад
-    keyboard.append([InlineKeyboardButton("◀️ Выбрать другого сотрудника", callback_data=CB_ADMIN_BACK)])
+    keyboard.append([InlineKeyboardButton("◀️ Выбрать другого сотрудника", callback_data=CB_ADMIN_BACK_TO_EMPLOYEE_LIST)])
     return InlineKeyboardMarkup(keyboard)
 
 def progress_detail_keyboard(employee_id, date_str):
@@ -68,11 +59,18 @@ def progress_detail_keyboard(employee_id, date_str):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def edit_items_keyboard(items):
+def edit_items_keyboard(grouped_items):
+    """Клавиатура для редактирования с группировкой по локациям и категориям"""
     keyboard = []
-    for item in items:
-        text = item['text'][:30] + "..." if len(item['text']) > 30 else item['text']
-        keyboard.append([InlineKeyboardButton(f"✏️ {text}", callback_data=f"{CB_ADMIN_EDIT_ITEM}{item['id']}")])
+    for location, categories in grouped_items.items():
+        loc_label = "🍸 Бар" if location == "bar" else "🍳 Кухня"
+        keyboard.append([InlineKeyboardButton(f"📍 {loc_label}", callback_data="noop")])
+        for cat, items in categories.items():
+            cat_label = CATEGORY_NAMES.get(cat, cat)
+            keyboard.append([InlineKeyboardButton(f"   ─ {cat_label}", callback_data="noop")])
+            for item in items:
+                text = item['text'][:25] + "..." if len(item['text']) > 25 else item['text']
+                keyboard.append([InlineKeyboardButton(f"   ✏️ {text}", callback_data=f"{CB_ADMIN_EDIT_ITEM}{item['id']}")])
     keyboard.append([InlineKeyboardButton("➕ Добавить пункт", callback_data=CB_ADMIN_ADD_ITEM)])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)])
     return InlineKeyboardMarkup(keyboard)
