@@ -43,7 +43,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not shift:
             await query.answer("Сначала отметься на смене!", show_alert=True)
             return MAIN_MENU
-        # Получаем все пункты и определяем доступные категории
         all_items = get_checklist_items(user_id, context)
         if not all_items:
             await query.edit_message_text(
@@ -51,7 +50,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
-        # Уникальные категории
         cats = list({item['category'] for item in all_items})
         if not cats:
             await query.edit_message_text(
@@ -59,6 +57,8 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 reply_markup=main_menu_keyboard(has_shift=True)
             )
             return MAIN_MENU
+        # Очищаем сохранённую категорию при новом входе в чек-листы
+        context.user_data.pop('current_category', None)
         await query.edit_message_text(
             "📋 Выбери категорию:",
             reply_markup=categories_keyboard(cats)
@@ -78,7 +78,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return MAIN_MENU
         progress_text = f"📊 Твой прогресс: {done}/{total} выполнено ({int(done/total*100)}%)\n\n"
-        # Детали по категориям
         for cat, stats in categories.items():
             cat_name = CATEGORY_NAMES.get(cat, cat)
             progress_text += f"• {cat_name}: {stats['done']}/{stats['total']}\n"
@@ -100,6 +99,8 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     elif data == CB_BACK_MAIN:
         shift = get_active_shift(user_id)
+        # Очищаем сохранённую категорию при возврате в главное меню
+        context.user_data.pop('current_category', None)
         await query.edit_message_text(
             "Главное меню:",
             reply_markup=main_menu_keyboard(has_shift=bool(shift))
@@ -119,6 +120,8 @@ async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data.startswith(CB_CATEGORY):
         category = data.split("_")[1]
+        # СОХРАНЯЕМ ВЫБРАННУЮ КАТЕГОРИЮ
+        context.user_data['current_category'] = category
         items = get_items_by_category(user_id, context, category)
         if not items:
             await query.edit_message_text(
@@ -134,6 +137,7 @@ async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     elif data == CB_BACK_MAIN:
         shift = get_active_shift(user_id)
+        context.user_data.pop('current_category', None)
         await query.edit_message_text(
             "Главное меню:",
             reply_markup=main_menu_keyboard(has_shift=bool(shift))
@@ -153,11 +157,8 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith(CB_ITEM_DONE):
         idx = int(data.split("_")[-1])
         mark_item_done(user_id, idx, context)
-        # Определяем текущую категорию: нужно знать, в какой категории мы находимся.
-        # Мы можем сохранить в context.user_data текущую категорию.
         current_category = context.user_data.get('current_category')
         if not current_category:
-            # Если не знаем, показываем категории
             all_items = get_checklist_items(user_id, context)
             cats = list({item['category'] for item in all_items}) if all_items else []
             await query.edit_message_text(
@@ -172,7 +173,6 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=checklist_keyboard(items, current_category)
             )
         else:
-            # Если пунктов нет, возвращаем к категориям
             all_items = get_checklist_items(user_id, context)
             cats = list({item['category'] for item in all_items}) if all_items else []
             await query.edit_message_text(
@@ -211,7 +211,8 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CHECKLIST_VIEW
 
     elif data == CB_BACK_CATEGORIES:
-        # Возврат к выбору категорий
+        # Возврат к выбору категорий – очищаем сохранённую категорию
+        context.user_data.pop('current_category', None)
         all_items = get_checklist_items(user_id, context)
         cats = list({item['category'] for item in all_items}) if all_items else []
         await query.edit_message_text(
@@ -222,6 +223,7 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == CB_BACK_MAIN:
         shift = get_active_shift(user_id)
+        context.user_data.pop('current_category', None)
         await query.edit_message_text(
             "Главное меню:",
             reply_markup=main_menu_keyboard(has_shift=bool(shift))
@@ -256,6 +258,7 @@ async def location_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     elif data == CB_BACK_MAIN:
         shift = get_active_shift(user_id)
+        context.user_data.pop('current_category', None)
         await query.edit_message_text(
             "Главное меню:",
             reply_markup=main_menu_keyboard(has_shift=bool(shift))
@@ -271,6 +274,7 @@ async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     shift = get_active_shift(user_id)
+    context.user_data.pop('current_category', None)
     await query.edit_message_text(
         "Главное меню:",
         reply_markup=main_menu_keyboard(has_shift=bool(shift))
