@@ -32,8 +32,8 @@ from .employee.constants import (
     CB_BACK_CATEGORIES
 )
 
-# Импорты админа – теперь с employee_selection и edit_items_callback
-from .admin.handlers import admin_start, admin_callback, employee_selection, edit_items_callback
+# Импорты админа – только admin_start, admin_callback и admin_text_input
+from .admin.handlers import admin_start, admin_callback, admin_text_input
 from .admin.constant import (
     ADMIN_MAIN,
     ADMIN_SHIFTS,
@@ -42,7 +42,12 @@ from .admin.constant import (
     ADMIN_EDIT_ITEMS,
     ADMIN_EDIT_ITEM,
     ADMIN_DELETE_ITEM,
-    ADMIN_ADD_ITEM_MODE,
+    ADMIN_AWAIT_ITEM_TYPE,
+    ADMIN_AWAIT_ITEM_LOCATION,
+    ADMIN_AWAIT_ITEM_CATEGORY,
+    ADMIN_AWAIT_ITEM_DAY,
+    ADMIN_AWAIT_ITEM_TEXT,
+    ADMIN_AWAIT_EDIT_TEXT,
     CB_ADMIN_SHIFTS,
     CB_ADMIN_PROGRESS,
     CB_ADMIN_EDIT,
@@ -52,7 +57,12 @@ from .admin.constant import (
     CB_ADMIN_DELETE_ITEM,
     CB_ADMIN_CONFIRM_DELETE,
     CB_ADMIN_ADD_ITEM,
-    CB_ADMIN_EDIT_ITEMS
+    CB_ADMIN_EDIT_ITEMS,
+    CB_ADMIN_ITEM_TYPE,
+    CB_ADMIN_ITEM_LOCATION,
+    CB_ADMIN_ITEM_CATEGORY,
+    CB_ADMIN_ITEM_DAY,
+    CB_ADMIN_CANCEL
 )
 
 async def start_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,7 +82,7 @@ def register_handlers(app: Application):
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_router)],
         states={
-            # Состояния для сотрудников (без изменений)
+            # Состояния для сотрудников
             MAIN_MENU: [
                 CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_SHIFT_MARK}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MAIN}$")
             ],
@@ -90,7 +100,7 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(progress_back, pattern=f"^{CB_BACK_MAIN}$")
             ],
 
-            # Состояния для админа (исправлены обработчики)
+            # Состояния для админа – все обрабатываются через admin_callback
             ADMIN_MAIN: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_SHIFTS}$|^{CB_ADMIN_PROGRESS}$|^{CB_ADMIN_EDIT}$|^{CB_ADMIN_BACK}$")
             ],
@@ -98,19 +108,39 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$")
             ],
             ADMIN_SELECT_EMPLOYEE: [
-                CallbackQueryHandler(employee_selection, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EMPLOYEE}.*|^{CB_ADMIN_BACK}$")
             ],
             ADMIN_SHOW_PROGRESS: [
-                CallbackQueryHandler(employee_selection, pattern=f"^{CB_ADMIN_BACK}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$")
             ],
             ADMIN_EDIT_ITEMS: [
-                CallbackQueryHandler(edit_items_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$|^{CB_ADMIN_EDIT_ITEMS}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$|^{CB_ADMIN_EDIT_ITEMS}$")
             ],
             ADMIN_EDIT_ITEM: [
-                CallbackQueryHandler(edit_items_callback, pattern=f"^{CB_ADMIN_DELETE_ITEM}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_DELETE_ITEM}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
             ],
             ADMIN_DELETE_ITEM: [
-                CallbackQueryHandler(edit_items_callback, pattern=f"^{CB_ADMIN_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
+            ],
+            ADMIN_AWAIT_ITEM_TYPE: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_TYPE}.*|^{CB_ADMIN_CANCEL}$|^{CB_ADMIN_BACK}$")
+            ],
+            ADMIN_AWAIT_ITEM_LOCATION: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_LOCATION}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
+            ],
+            ADMIN_AWAIT_ITEM_CATEGORY: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_CATEGORY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
+            ],
+            ADMIN_AWAIT_ITEM_DAY: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_DAY}.*|^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
+            ],
+            ADMIN_AWAIT_ITEM_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
+            ],
+            ADMIN_AWAIT_EDIT_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK}$|^{CB_ADMIN_CANCEL}$")
             ],
         },
         fallbacks=[CommandHandler("start", start_router)],
