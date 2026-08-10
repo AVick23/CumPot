@@ -26,15 +26,25 @@ def categories_keyboard(available_categories):
     keyboard.append([InlineKeyboardButton("◀️ В главное меню", callback_data="back_main")])
     return InlineKeyboardMarkup(keyboard)
 
-def checklist_keyboard(items, category, back_callback="back_categories"):
+def checklist_keyboard(items):
+    """Клавиатура для списка задач (только краткое название, без статуса)"""
     keyboard = []
     for item in items:
-        status = "✅" if item['completed'] else "⬜"
-        # Используем реальный id из БД
-        callback = f"item_done_{item['id']}" if not item['completed'] else f"item_undo_{item['id']}"
-        text = item['text'][:40] + "..." if len(item['text']) > 40 else item['text']
-        keyboard.append([InlineKeyboardButton(f"{status} {text}", callback_data=callback)])
-    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data=back_callback)])
+        # Обрезаем до 30 символов для кнопки
+        text = item['text'][:30] + "..." if len(item['text']) > 30 else item['text']
+        # Добавляем эмодзи статуса
+        status_emoji = "✅" if item['completed'] else "⬜"
+        keyboard.append([InlineKeyboardButton(f"{status_emoji} {text}", callback_data=f"{CB_ITEM_VIEW}{item['id']}")])
+    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data="back_categories")])
+    return InlineKeyboardMarkup(keyboard)
+
+def item_detail_keyboard(item_id, is_completed):
+    """Клавиатура для детального просмотра задачи"""
+    toggle_label = "✅ Выполнить" if not is_completed else "❌ Отменить"
+    keyboard = [
+        [InlineKeyboardButton(toggle_label, callback_data=f"{CB_ITEM_TOGGLE}{item_id}")],
+        [InlineKeyboardButton("◀️ Назад к списку", callback_data="back_to_categories")],
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 def progress_keyboard():

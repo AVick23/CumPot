@@ -4,7 +4,8 @@ from .handlers import (
     main_menu_callback,
     location_selection,
     category_selection,
-    checklist_action,
+    view_item,          # новый обработчик
+    toggle_item,        # новый обработчик
     progress_back,
     noop
 )
@@ -24,8 +25,11 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(category_selection, pattern=f"^{CB_CATEGORY}.*|^{CB_BACK_MAIN}$"),
             ],
             CHECKLIST_VIEW: [
-                CallbackQueryHandler(checklist_action, pattern=f"^{CB_ITEM_DONE}.*|^{CB_ITEM_UNDO}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MAIN}$"),
+                CallbackQueryHandler(view_item, pattern=f"^{CB_ITEM_VIEW}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MAIN}$"),
                 CallbackQueryHandler(noop, pattern="^noop$"),
+            ],
+            ITEM_DETAIL: [
+                CallbackQueryHandler(toggle_item, pattern=f"^{CB_ITEM_TOGGLE}.*|^{CB_BACK_TO_CATEGORIES}$|^{CB_BACK_MAIN}$"),
             ],
             PROGRESS_VIEW: [
                 CallbackQueryHandler(progress_back, pattern=CB_BACK_MAIN),

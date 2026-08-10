@@ -19,16 +19,13 @@ def get_checklist_items(user_id, context):
     day_of_week = datetime.now().weekday()
     date = datetime.now().strftime("%Y-%m-%d")
 
-    # Получаем пункты из БД
     items = get_items_for_location_and_day(location, day_of_week)
     if not items:
         return []
 
-    # Получаем прогресс
     progress = get_progress_for_user_date(user_id, date)
     progress_dict = {p['item_id']: p['completed'] for p in progress}
 
-    # Добавляем статус выполнения
     for item in items:
         item['completed'] = progress_dict.get(item['id'], 0) == 1
 
@@ -39,6 +36,15 @@ def get_items_by_category(user_id, context, category):
     if not all_items:
         return None
     return [item for item in all_items if item['category'] == category]
+
+def get_item_by_id(user_id, item_id, context):
+    all_items = get_checklist_items(user_id, context)
+    if not all_items:
+        return None
+    for item in all_items:
+        if item['id'] == item_id:
+            return item
+    return None
 
 def mark_item_done(user_id, item_id, context):
     date = datetime.now().strftime("%Y-%m-%d")
