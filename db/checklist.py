@@ -148,3 +148,9 @@ def delete_checklist_item(item_id):
     with get_connection() as conn:
         conn.execute("DELETE FROM checklist_items WHERE id = ?", (item_id,))
         conn.commit()
+        
+def get_all_items():
+    """Возвращает все пункты чек-листов из БД (без фильтрации)"""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM checklist_items ORDER BY location, category, sort_order").fetchall()
+        return [dict(row) for row in rows]
