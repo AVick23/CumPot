@@ -1,7 +1,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constant import *
-import calendar
+from ..employee.constants import CATEGORY_NAMES  # импортируем названия категорий
 from datetime import datetime
+import calendar
 
 def admin_main_keyboard():
     keyboard = [
@@ -11,8 +12,8 @@ def admin_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def admin_back_keyboard(callback=CB_ADMIN_BACK):
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data=callback)]]
+def admin_back_keyboard():
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)]]
     return InlineKeyboardMarkup(keyboard)
 
 def employee_list_keyboard(employees):
@@ -24,6 +25,7 @@ def employee_list_keyboard(employees):
     return InlineKeyboardMarkup(keyboard)
 
 def calendar_keyboard(year, month, shift_days):
+    """Создаёт клавиатуру-календарь на месяц."""
     keyboard = []
     month_name = calendar.month_name[month]
     keyboard.append([
@@ -50,7 +52,7 @@ def calendar_keyboard(year, month, shift_days):
         while len(row) < 7:
             row.append(InlineKeyboardButton(" ", callback_data="noop"))
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("◀️ Выбрать другого сотрудника", callback_data=CB_ADMIN_BACK_TO_EMPLOYEE_LIST)])
+    keyboard.append([InlineKeyboardButton("◀️ Выбрать другого сотрудника", callback_data=CB_ADMIN_BACK)])
     return InlineKeyboardMarkup(keyboard)
 
 def progress_detail_keyboard(employee_id, date_str):
@@ -59,33 +61,32 @@ def progress_detail_keyboard(employee_id, date_str):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def edit_items_keyboard(grouped_items):
-    """Клавиатура для редактирования с группировкой по локациям и категориям"""
+# --- Новые клавиатуры для редактора ---
+
+def edit_categories_keyboard(available_categories):
     keyboard = []
-    for location, categories in grouped_items.items():
-        loc_label = "🍸 Бар" if location == "bar" else "🍳 Кухня"
-        keyboard.append([InlineKeyboardButton(f"📍 {loc_label}", callback_data="noop")])
-        for cat, items in categories.items():
-            cat_label = CATEGORY_NAMES.get(cat, cat)
-            keyboard.append([InlineKeyboardButton(f"   ─ {cat_label}", callback_data="noop")])
-            for item in items:
-                text = item['text'][:25] + "..." if len(item['text']) > 25 else item['text']
-                keyboard.append([InlineKeyboardButton(f"   ✏️ {text}", callback_data=f"{CB_ADMIN_EDIT_ITEM}{item['id']}")])
+    for cat in available_categories:
+        label = CATEGORY_NAMES.get(cat, cat)
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"{CB_ADMIN_EDIT_CATEGORY}{cat}")])
     keyboard.append([InlineKeyboardButton("➕ Добавить пункт", callback_data=CB_ADMIN_ADD_ITEM)])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data=CB_ADMIN_BACK)])
     return InlineKeyboardMarkup(keyboard)
 
-def edit_item_detail_keyboard(item_id):
-    keyboard = [
-        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"{CB_ADMIN_DELETE_ITEM}{item_id}")],
-        [InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_ADMIN_EDIT_ITEMS)],
-    ]
+def edit_items_list_keyboard(items, category):
+    keyboard = []
+    for item in items:
+        text = item['text'][:30] + "..." if len(item['text']) > 30 else item['text']
+        keyboard.append([
+            InlineKeyboardButton(f"✏️ {text}", callback_data=f"{CB_ADMIN_EDIT_ITEM}{item['id']}"),
+            InlineKeyboardButton("🗑️", callback_data=f"{CB_ADMIN_EDIT_DELETE}{item['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data=CB_ADMIN_EDIT_BACK)])
     return InlineKeyboardMarkup(keyboard)
 
 def confirm_delete_keyboard(item_id):
     keyboard = [
-        [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_ADMIN_CONFIRM_DELETE}{item_id}")],
-        [InlineKeyboardButton("❌ Отмена", callback_data=CB_ADMIN_EDIT_ITEMS)],
+        [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_ADMIN_EDIT_CONFIRM_DELETE}{item_id}")],
+        [InlineKeyboardButton("❌ Отмена", callback_data=CB_ADMIN_EDIT_BACK)],
     ]
     return InlineKeyboardMarkup(keyboard)
 

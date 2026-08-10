@@ -4,10 +4,11 @@ ADMIN_SHIFTS = 11
 ADMIN_SELECT_EMPLOYEE = 20
 ADMIN_CALENDAR = 35
 ADMIN_DAY_PROGRESS = 36
-ADMIN_EDIT_ITEMS = 22
-ADMIN_EDIT_ITEM = 23
-ADMIN_DELETE_ITEM = 24
-ADMIN_ADD_ITEM_MODE = 25
+
+# Состояния для редактора чек-листов
+ADMIN_EDIT_CATEGORIES = 40
+ADMIN_EDIT_ITEMS_LIST = 41
+ADMIN_DELETE_CONFIRM = 42
 
 # Состояния для добавления/редактирования
 ADMIN_AWAIT_ITEM_TEXT = 26
@@ -17,11 +18,12 @@ ADMIN_AWAIT_ITEM_CATEGORY = 29
 ADMIN_AWAIT_ITEM_DAY = 30
 ADMIN_AWAIT_EDIT_TEXT = 31
 
-# Callback data для календаря
-CB_ADMIN_MONTH_PREV = "admin_month_prev"
-CB_ADMIN_MONTH_NEXT = "admin_month_next"
-CB_ADMIN_DAY = "admin_day_"
-CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"
+# Callback data для редактора
+CB_ADMIN_EDIT_CATEGORY = "admin_edit_cat_"
+CB_ADMIN_EDIT_ITEM = "admin_edit_item_"
+CB_ADMIN_EDIT_DELETE = "admin_edit_delete_"
+CB_ADMIN_EDIT_BACK = "admin_edit_back"
+CB_ADMIN_EDIT_CONFIRM_DELETE = "admin_edit_confirm_delete_"
 
 # Остальные callback'и
 CB_ADMIN_SHIFTS = "admin_shifts"
@@ -29,24 +31,13 @@ CB_ADMIN_PROGRESS = "admin_progress"
 CB_ADMIN_EDIT = "admin_edit"
 CB_ADMIN_BACK = "admin_back"
 CB_ADMIN_EMPLOYEE = "admin_employee_"
-CB_ADMIN_EDIT_ITEM = "admin_edit_item_"
-CB_ADMIN_DELETE_ITEM = "admin_delete_item_"
-CB_ADMIN_CONFIRM_DELETE = "admin_confirm_delete_"
 CB_ADMIN_ADD_ITEM = "admin_add_item"
-CB_ADMIN_EDIT_ITEMS = "admin_edit_items"
 CB_ADMIN_ITEM_TYPE = "admin_item_type_"
 CB_ADMIN_ITEM_LOCATION = "admin_item_location_"
 CB_ADMIN_ITEM_CATEGORY = "admin_item_category_"
 CB_ADMIN_ITEM_DAY = "admin_item_day_"
 CB_ADMIN_CANCEL = "admin_cancel"
-
-CB_ADMIN_BACK_TO_EMPLOYEE_LIST = "admin_back_to_employee_list"
-CB_ADMIN_BACK_TO_EDIT_MENU = "admin_back_to_edit_menu"
-
-# Читаемые названия категорий (для отображения)
-CATEGORY_NAMES = {
-    "opening": "☀️ Открытие",
-    "daytime": "📅 В течение дня",
-    "closing": "🌙 Закрытие",
-    "weekly": "📆 Недельные задачи",
-}
+CB_ADMIN_MONTH_PREV = "admin_month_prev"
+CB_ADMIN_MONTH_NEXT = "admin_month_next"
+CB_ADMIN_DAY = "admin_day_"
+CB_ADMIN_BACK_TO_CALENDAR = "admin_back_to_calendar"

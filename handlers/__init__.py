@@ -12,7 +12,7 @@ from .employee.handlers import (
     category_selection,
     view_item,
     toggle_item,
-    back_to_list,          # добавлен
+    back_to_list,
     progress_back,
     noop
 )
@@ -36,7 +36,7 @@ from .employee.constants import (
     CB_BACK_TO_CATEGORIES,
 )
 
-# Импорты админа
+# Импорты админа (обновлённые)
 from .admin.handlers import admin_start, admin_callback, admin_text_input
 from .admin.constant import (
     ADMIN_MAIN,
@@ -44,9 +44,9 @@ from .admin.constant import (
     ADMIN_SELECT_EMPLOYEE,
     ADMIN_CALENDAR,
     ADMIN_DAY_PROGRESS,
-    ADMIN_EDIT_ITEMS,
-    ADMIN_EDIT_ITEM,
-    ADMIN_DELETE_ITEM,
+    ADMIN_EDIT_CATEGORIES,
+    ADMIN_EDIT_ITEMS_LIST,
+    ADMIN_DELETE_CONFIRM,
     ADMIN_AWAIT_ITEM_TYPE,
     ADMIN_AWAIT_ITEM_LOCATION,
     ADMIN_AWAIT_ITEM_CATEGORY,
@@ -58,11 +58,12 @@ from .admin.constant import (
     CB_ADMIN_EDIT,
     CB_ADMIN_BACK,
     CB_ADMIN_EMPLOYEE,
+    CB_ADMIN_EDIT_CATEGORY,
     CB_ADMIN_EDIT_ITEM,
-    CB_ADMIN_DELETE_ITEM,
-    CB_ADMIN_CONFIRM_DELETE,
+    CB_ADMIN_EDIT_DELETE,
+    CB_ADMIN_EDIT_BACK,
+    CB_ADMIN_EDIT_CONFIRM_DELETE,
     CB_ADMIN_ADD_ITEM,
-    CB_ADMIN_EDIT_ITEMS,
     CB_ADMIN_ITEM_TYPE,
     CB_ADMIN_ITEM_LOCATION,
     CB_ADMIN_ITEM_CATEGORY,
@@ -91,7 +92,7 @@ def register_handlers(app: Application):
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_router)],
         states={
-            # Состояния для сотрудников
+            # Состояния для сотрудников (без изменений)
             MAIN_MENU: [
                 CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_SHIFT_MARK}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MAIN}$")
             ],
@@ -113,7 +114,7 @@ def register_handlers(app: Application):
                 CallbackQueryHandler(progress_back, pattern=f"^{CB_BACK_MAIN}$")
             ],
 
-            # Состояния для админа
+            # Состояния для админа (обновлены)
             ADMIN_MAIN: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_SHIFTS}$|^{CB_ADMIN_PROGRESS}$|^{CB_ADMIN_EDIT}$|^{CB_ADMIN_BACK}$")
             ],
@@ -129,15 +130,17 @@ def register_handlers(app: Application):
             ADMIN_DAY_PROGRESS: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_BACK_TO_CALENDAR}$|^{CB_ADMIN_BACK}$")
             ],
-            ADMIN_EDIT_ITEMS: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$|^{CB_ADMIN_EDIT_ITEMS}$")
+            # Новые состояния для редактора чек-листов
+            ADMIN_EDIT_CATEGORIES: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_CATEGORY}.*|^{CB_ADMIN_ADD_ITEM}$|^{CB_ADMIN_BACK}$")
             ],
-            ADMIN_EDIT_ITEM: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_DELETE_ITEM}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
+            ADMIN_EDIT_ITEMS_LIST: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_ITEM}.*|^{CB_ADMIN_EDIT_DELETE}.*|^{CB_ADMIN_EDIT_BACK}$|^{CB_ADMIN_BACK}$")
             ],
-            ADMIN_DELETE_ITEM: [
-                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_ITEMS}$|^{CB_ADMIN_BACK}$")
+            ADMIN_DELETE_CONFIRM: [
+                CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_EDIT_CONFIRM_DELETE}.*|^{CB_ADMIN_EDIT_BACK}$|^{CB_ADMIN_BACK}$")
             ],
+            # Состояния для добавления/редактирования (без изменений)
             ADMIN_AWAIT_ITEM_TYPE: [
                 CallbackQueryHandler(admin_callback, pattern=f"^{CB_ADMIN_ITEM_TYPE}.*|^{CB_ADMIN_CANCEL}$|^{CB_ADMIN_BACK}$")
             ],
