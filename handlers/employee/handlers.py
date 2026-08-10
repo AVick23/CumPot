@@ -6,7 +6,7 @@ from .keyboards import *
 from .utils import *
 from datetime import datetime
 
-# Вспомогательная функция для безопасного редактирования сообщений
+# Вспомогательная функция для безопасного редактирования
 async def safe_edit(query, text, reply_markup=None):
     try:
         await query.edit_message_text(text, reply_markup=reply_markup)
@@ -143,6 +143,7 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return CATEGORY_SELECT
         items = get_items_by_category(user_id, context, current_category)
         if items:
+            # ✅ ИСПРАВЛЕНО: используем safe_edit
             await safe_edit(query, f"📋 {CATEGORY_NAMES.get(current_category, current_category)}:", reply_markup=checklist_keyboard(items, current_category))
         else:
             all_items = get_checklist_items(user_id, context)
@@ -165,6 +166,7 @@ async def checklist_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return CATEGORY_SELECT
         items = get_items_by_category(user_id, context, current_category)
         if items:
+            # ✅ ИСПРАВЛЕНО: используем safe_edit
             await safe_edit(query, f"📋 {CATEGORY_NAMES.get(current_category, current_category)}:", reply_markup=checklist_keyboard(items, current_category))
         else:
             all_items = get_checklist_items(user_id, context)
