@@ -9,7 +9,7 @@ from db.checklist import (
     delete_checklist_item as db_delete_item,
     get_items_for_location_and_day,
     get_progress_for_user_date,
-    get_photos_for_user_date,  # ← НОВЫЙ ИМПОРТ
+    get_photos_for_user_date,  # ← ДОБАВЛЕНО
 )
 from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN
 
@@ -17,15 +17,12 @@ from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN
 def full_name(user: dict | None) -> str:
     if not user:
         return "Пользователь"
-
     full = (user.get("full_name") or "").strip()
     if full:
         return full
-
     first = (user.get("first_name") or "").strip()
     last = (user.get("last_name") or "").strip()
     username = (user.get("username") or "").strip()
-
     name = " ".join([x for x in [first, last] if x]).strip()
     if name:
         return name
@@ -39,8 +36,7 @@ def get_employees() -> list[dict]:
         rows = conn.execute(
             """
             SELECT tg_id, username, first_name, last_name, full_name
-            FROM users
-            WHERE is_admin = 0
+            FROM users WHERE is_admin = 0
             ORDER BY COALESCE(full_name, first_name, username)
             """
         ).fetchall()
@@ -60,23 +56,16 @@ def get_today_shifts_full() -> list[dict]:
             """
             SELECT s.id, s.user_id, s.date, s.location, s.start_time, s.active,
                    u.username, u.first_name, u.last_name, u.full_name
-            FROM shifts s
-            LEFT JOIN users u ON u.tg_id = s.user_id
-            WHERE s.date = ?
-            ORDER BY s.start_time
-            """,
-            (today,)
+            FROM shifts s LEFT JOIN users u ON u.tg_id = s.user_id
+            WHERE s.date = ? ORDER BY s.start_time
+            """, (today,)
         ).fetchall()
         return [dict(row) for row in rows]
 
 
 def get_employee_shift_days(employee_id: int, year: int, month: int) -> set[str]:
     start_date = f"{year:04d}-{month:02d}-01"
-    if month == 12:
-        end_date = f"{year + 1}-01-01"
-    else:
-        end_date = f"{year:04d}-{month + 1:02d}-01"
-
+    end_date = f"{year + 1}-01-01" if month == 12 else f"{year:04d}-{month + 1:02d}-01"
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT DISTINCT date FROM shifts WHERE user_id = ? AND date >= ? AND date < ?",
@@ -95,10 +84,6 @@ def get_shift_for_date_any(user_id: int, date_str: str) -> dict | None:
 
 
 def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
-    """
-    Возвращает прогресс сотрудника за дату.
-    ТЕПЕРЬ ВКЛЮЧАЕТ ИНФОРМАЦИЮ О ФОТО для каждой задачи.
-    """
     shift = get_shift_for_date_any(employee_id, date_str)
     if not shift:
         return None
@@ -106,12 +91,9 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
     day_of_week = datetime.strptime(date_str, "%Y-%m-%d").weekday()
     items = get_items_for_location_and_day(shift["location"], day_of_week)
     progress = get_progress_for_user_date(employee_id, date_str)
-    
-    # ← НОВОЕ: Получаем все фото за этот день
-    photos = get_photos_for_user_date(employee_id, date_str)
-    
-    progress_dict = {p["item_id"]: p["completed"] for p in progress}
+    photos = get_photos_for_user_date(employee_id, date_str)  # ← ДОБАВЛЕНО
 
+    progress_dict = {p["item_id"]: p["completed"] for p in progress}
     grouped = {}
     done = 0
     total = 0
@@ -120,8 +102,8 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
         item = dict(item)
         completed = progress_dict.get(item["id"], 0) == 1
         item["completed"] = completed
-        
-        # ← НОВОЕ: Привязываем фото к задаче
+
+        # ← ДОБАВЛЕНО: привязка фото
         photo = photos.get(item["id"])
         item["has_photo"] = bool(photo)
         item["photo_file_id"] = photo["file_id"] if photo else None
@@ -129,15 +111,18 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
         total += 1
         if completed:
             done += 1
-            
         cat = item.get("category") or "weekly"
         grouped.setdefault(cat, []).append(item)
 
-    ordered_grouped = {
-        cat: grouped[cat]
-        for cat in CATEGORY_ORDER
-        if cat in grouped
-    }
+    ordered_grouped = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
+
+    # ← ДОБАВЛЕНО: список всех file_id для быстрой отправки
+    all_photo_file_ids = [
+        item["photo_file_id"]
+        for items_list in ordered_grouped.values()
+        for item in items_list
+        if item.get("photo_file_id")
+    ]
 
     return {
         "shift": shift,
@@ -145,6 +130,7 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
         "done": done,
         "total": total,
         "items": items,
+        "photo_file_ids": all_photo_file_ids,  # ← НОВОЕ ПОЛЕ
     }
 
 

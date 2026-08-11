@@ -198,8 +198,14 @@ async def show_day_progress(update, context, date_str, message_id=None, notice=N
     bar = progress_bar(done, total)
     pct = percent(done, total)
 
-    lines = [f"👤 {name}", f"📅 {format_date_ru(date_str)}", f"📍 {loc_label}", "",
-             f"{bar} {done}/{total} · {pct}%", ""]
+    lines = [
+        f"👤 {name}",
+        f"📅 {format_date_ru(date_str)}",
+        f"📍 {loc_label}",
+        "",
+        f"{bar} {done}/{total} · {pct}%",
+        "",
+    ]
 
     if total == 0:
         lines.append("Задач на этот день нет.")
@@ -208,20 +214,53 @@ async def show_day_progress(update, context, date_str, message_id=None, notice=N
             cat_done = sum(1 for x in items if x.get("completed"))
             lines.append(f"{CATEGORY_LABELS.get(cat, cat)} · {cat_done}/{len(items)}")
             lines.append("")
-            
             for item in items:
                 status = "✅" if item.get("completed") else "⚪️"
-                # ← НОВОЕ: Показываем иконку фото если оно прикреплено
                 photo_mark = " 🖼" if item.get("has_photo") else ""
                 lines.append(f"{status}{photo_mark} {item.get('text')}")
-                
             lines.append("")
 
     text = "\n".join(lines).strip()
     if notice:
         text = f"{notice}\n\n{text}"
 
-    await render(update, context, text, day_progress_keyboard(), message_id)
+    # Отправляем/редактируем текстовый отчет
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    
+    if chat_id and message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text=text, reply_markup=day_progress_keyboard()
+            )
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                logger.warning("Edit failed: %s", e)
+    elif chat_id:
+        await context.bot.send_message(
+            chat_id=chat_id, text=text, reply_markup=day_progress_keyboard()
+        )
+
+    # ← НОВОЕ: Автоматически отправляем все прикреплённые фото
+    photo_file_ids = data.get("photo_file_ids", [])
+    if photo_file_ids and chat_id:
+        try:
+            # Небольшая задержка, чтобы фото пришли ПОСЛЕ текста
+            import asyncio
+            await asyncio.sleep(0.3)
+            
+            for i, file_id in enumerate(photo_file_ids):
+                caption = f"📷 Фото {i + 1} из {len(photo_file_ids)}" if len(photo_file_ids) > 1 else "📷 Прикреплённое фото"
+                await context.bot.send_photo(chat_id=chat_id, photo=file_id, caption=caption)
+                await asyncio.sleep(0.2)  # Пауза между фото для правильного порядка
+        except Exception as e:
+            logger.error("Failed to send photos to admin: %s", e)
+            if chat_id:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="⚠️ Не удалось отправить некоторые фото. Проверьте доступ бота к каналу."
+                )
+
     return set_state(context, ADMIN_DAY_PROGRESS)
 
 
