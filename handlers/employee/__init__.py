@@ -4,7 +4,6 @@ from telegram.ext import (
     filters,
 )
 
-# Внутренние импорты пакета employee
 from .handlers import (
     employee_start,
     onboarding_name_input,
@@ -14,7 +13,6 @@ from .handlers import (
     view_item,
     toggle_item_callback,
     progress_back,
-    end_shift_decision,
     noop as employee_noop,
 )
 
@@ -26,9 +24,7 @@ from .constants import (
     CHECKLIST_VIEW,
     ITEM_DETAIL,
     PROGRESS_VIEW,
-    END_SHIFT_CONFIRM,
     CB_START_SHIFT,
-    CB_END_SHIFT,
     CB_CHECKLIST,
     CB_PROGRESS,
     CB_POSITION_PREFIX,
@@ -37,13 +33,11 @@ from .constants import (
     CB_TOGGLE_PREFIX,
     CB_BACK_MENU,
     CB_BACK_CATEGORIES,
-    CB_END_SHIFT_CONFIRM,
-    CB_END_SHIFT_CANCEL,
 )
 
 
 def get_employee_entry_point():
-    """Возвращает точку входа для сотрудника (используется в start_router)"""
+    """Возвращает точку входа для сотрудника"""
     return employee_start
 
 
@@ -52,15 +46,14 @@ def register_employee_states(states: dict):
     Регистрирует все состояния сотрудника в переданный словарь states.
     Корневой роутер не знает о деталях реализации employee.
     """
-    
+
     def emp_state(handler, pattern: str):
-        """Хелпер для добавления noop-обработчика к каждому состоянию"""
         return [
             CallbackQueryHandler(handler, pattern=pattern),
             CallbackQueryHandler(employee_noop, pattern="^noop$"),
         ]
 
-    # Состояния онбординга
+    # Онбординг
     states[ONBOARD_NAME] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_name_input),
     ]
@@ -70,10 +63,10 @@ def register_employee_states(states: dict):
         f"^{CB_POSITION_PREFIX}.*"
     )
 
-    # Основное меню
+    # Главное меню (БЕЗ CB_END_SHIFT)
     states[MAIN_MENU] = emp_state(
         main_menu_callback,
-        f"^{CB_START_SHIFT}$|^{CB_END_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$"
+        f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$"
     )
 
     # Чек-листы
@@ -96,10 +89,4 @@ def register_employee_states(states: dict):
     states[PROGRESS_VIEW] = emp_state(
         progress_back,
         f"^{CB_BACK_MENU}$"
-    )
-
-    # Завершение смены
-    states[END_SHIFT_CONFIRM] = emp_state(
-        end_shift_decision,
-        f"^{CB_END_SHIFT_CONFIRM}$|^{CB_END_SHIFT_CANCEL}$"
     )

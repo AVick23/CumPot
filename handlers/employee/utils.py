@@ -39,8 +39,8 @@ def get_checklist_items(user_id: int) -> list[dict] | None:
         return None
 
     location = shift["location"]
-    day_of_week = now_msk().weekday()       # ← МСК
-    date_str = today_msk_str()              # ← МСК
+    day_of_week = now_msk().weekday()
+    date_str = today_msk_str()
 
     items = get_items_for_location_and_day(location, day_of_week)
     if not items:
