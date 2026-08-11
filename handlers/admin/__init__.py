@@ -1,13 +1,10 @@
 from telegram.ext import (
-    Application,
-    ConversationHandler,
-    CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
     filters,
 )
-from config import ADMIN_IDS
 
+from .handlers import admin_start, admin_callback, admin_text_input
 from .constants import (
     ADMIN_MAIN, ADMIN_SHIFTS, ADMIN_EMPLOYEES, ADMIN_CALENDAR,
     ADMIN_DAY_PROGRESS, ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY,
@@ -15,30 +12,24 @@ from .constants import (
     ADMIN_ADD_DAY, ADMIN_AWAIT_NEW_TEXT, ADMIN_AWAIT_EDIT_TEXT,
     CB_CANCEL, CB_CANCEL_EDIT, CB_ADD_BACK_TEXT, CB_HOME,
 )
-from .handlers import admin_start, admin_callback, admin_text_input
 
 
 def get_admin_entry_point():
-    """Возвращает точку входа для админа (используется в start_router)"""
+    """Возвращает точку входа для админа"""
     return admin_start
 
 
 def register_admin_states(states: dict):
-    """
-    Регистрирует все состояния админа в переданный словарь states.
-    Корневой роутер не знает о деталях реализации admin.
-    """
-    # Паттерн для текстовых состояний (кнопки отмены/назад + noop)
+    """Регистрирует все состояния админа в переданный словарь states."""
+    
     text_cb_pattern = f"^(?:{CB_CANCEL}|{CB_CANCEL_EDIT}|{CB_ADD_BACK_TEXT}|{CB_HOME}|noop)$"
 
     def admin_state(pattern: str):
-        """Хелпер: основной handler + noop для предотвращения спиннера"""
         return [
             CallbackQueryHandler(admin_callback, pattern=pattern),
             CallbackQueryHandler(admin_callback, pattern="^noop$"),
         ]
 
-    # Импортируем константы callback_data локально, чтобы не засорять глобальный импорт корневого модуля
     from .constants import (
         CB_SHIFTS, CB_EMPLOYEES, CB_EDIT, CB_EMP_PREFIX,
         CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX, CB_TO_EMPLOYEES,

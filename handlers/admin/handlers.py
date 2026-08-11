@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
 from db.users import save_user
+
 from .constants import (
     ADMIN_MAIN, ADMIN_SHIFTS, ADMIN_EMPLOYEES, ADMIN_CALENDAR,
     ADMIN_DAY_PROGRESS, ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY,
@@ -21,6 +22,7 @@ from .constants import (
     LOCATIONS, CATEGORY_LABELS, WEEKDAYS_SHORT, MONTHS,
     TEXT_LIMIT, MSG_LIMIT,
 )
+
 from .keyboards import (
     main_menu_keyboard, shifts_keyboard, employee_list_keyboard,
     calendar_keyboard, day_progress_keyboard, edit_location_keyboard,
@@ -28,6 +30,7 @@ from .keyboards import (
     confirm_delete_keyboard, add_day_keyboard, text_prompt_keyboard,
     back_home_keyboard,
 )
+
 from .utils import (
     full_name, get_employees, get_user_by_id, get_today_shifts_full,
     get_employee_shift_days, get_employee_progress, get_location_counts,
@@ -159,17 +162,21 @@ async def show_calendar(update, context, message_id=None, notice=None) -> int:
     employee_id = context.user_data.get("selected_employee")
     if not employee_id:
         return await show_employees(update, context, message_id, notice)
+
     now = datetime.now()
     year = context.user_data.get("calendar_year", now.year)
     month = context.user_data.get("calendar_month", now.month)
     context.user_data["calendar_year"] = year
     context.user_data["calendar_month"] = month
+
     employee = get_user_by_id(employee_id)
     name = full_name(employee)
     shift_days = get_employee_shift_days(employee_id, year, month)
+
     text = f"👤 {name}\n📅 {MONTHS[month - 1]} {year}\n\n✅ — день со сменой\nНажмите на день."
     if notice:
         text = f"{notice}\n\n{text}"
+
     await render(update, context, text, calendar_keyboard(year, month, shift_days), message_id)
     return set_state(context, ADMIN_CALENDAR)
 
@@ -179,17 +186,21 @@ async def show_day_progress(update, context, date_str, message_id=None, notice=N
     employee_id = context.user_data.get("selected_employee")
     if not employee_id:
         return await show_employees(update, context, message_id)
+
     data = get_employee_progress(employee_id, date_str)
     if not data:
         return await show_calendar(update, context, message_id, notice="⚠️ В этот день смены не было.")
+
     employee = get_user_by_id(employee_id)
     name = full_name(employee)
     loc_label = LOCATIONS.get(data["shift"].get("location"), data["shift"].get("location"))
     done, total = data["done"], data["total"]
     bar = progress_bar(done, total)
     pct = percent(done, total)
+
     lines = [f"👤 {name}", f"📅 {format_date_ru(date_str)}", f"📍 {loc_label}", "",
              f"{bar} {done}/{total} · {pct}%", ""]
+
     if total == 0:
         lines.append("Задач на этот день нет.")
     else:
@@ -197,13 +208,19 @@ async def show_day_progress(update, context, date_str, message_id=None, notice=N
             cat_done = sum(1 for x in items if x.get("completed"))
             lines.append(f"{CATEGORY_LABELS.get(cat, cat)} · {cat_done}/{len(items)}")
             lines.append("")
+            
             for item in items:
                 status = "✅" if item.get("completed") else "⚪️"
-                lines.append(f"{status} {item.get('text')}")
+                # ← НОВОЕ: Показываем иконку фото если оно прикреплено
+                photo_mark = " 🖼" if item.get("has_photo") else ""
+                lines.append(f"{status}{photo_mark} {item.get('text')}")
+                
             lines.append("")
+
     text = "\n".join(lines).strip()
     if notice:
         text = f"{notice}\n\n{text}"
+
     await render(update, context, text, day_progress_keyboard(), message_id)
     return set_state(context, ADMIN_DAY_PROGRESS)
 

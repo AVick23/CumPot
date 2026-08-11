@@ -5,8 +5,11 @@ from db.checklist import (
     get_items_for_location_and_day,
     save_progress,
     get_progress_for_user_date,
+    save_progress_photo,
+    get_photos_for_user_date,
 )
 from db.users import get_user
+
 from .constants import CATEGORY_ORDER, LOCATIONS
 
 
@@ -18,9 +21,11 @@ def start_shift_for_user(user_id: int) -> bool:
     user = get_user(user_id)
     if not user:
         return False
+
     position = user.get("position")
     if position not in LOCATIONS:
         return False
+
     start_shift(user_id, position)
     return True
 
@@ -49,11 +54,20 @@ def get_checklist_items(user_id: int) -> list[dict] | None:
     progress = get_progress_for_user_date(user_id, date_str)
     progress_dict = {p["item_id"]: p["completed"] for p in progress}
 
+    photos = get_photos_for_user_date(user_id, date_str)
+
     result = []
+
     for item in items:
         item = dict(item)
         item["completed"] = progress_dict.get(item["id"], 0) == 1
+
+        photo = photos.get(item["id"])
+        item["has_photo"] = bool(photo)
+        item["photo_file_id"] = photo["file_id"] if photo else None
+
         result.append(item)
+
     return result
 
 
@@ -63,13 +77,18 @@ def get_categories_stats(user_id: int) -> dict[str, dict] | None:
         return None
 
     stats: dict[str, dict] = {}
+
     for item in items:
         cat = item.get("category") or "weekly"
+
         if cat not in stats:
             stats[cat] = {"done": 0, "total": 0}
+
         stats[cat]["total"] += 1
+
         if item.get("completed"):
             stats[cat]["done"] += 1
+
     return stats
 
 
@@ -77,6 +96,7 @@ def get_items_by_category(user_id: int, category: str) -> list[dict] | None:
     items = get_checklist_items(user_id)
     if items is None:
         return None
+
     return [item for item in items if item.get("category") == category]
 
 
@@ -84,9 +104,11 @@ def get_item_by_id(user_id: int, item_id: int) -> dict | None:
     items = get_checklist_items(user_id)
     if items is None:
         return None
+
     for item in items:
         if item["id"] == item_id:
             return item
+
     return None
 
 
@@ -94,9 +116,28 @@ def toggle_item(user_id: int, item_id: int) -> bool | None:
     item = get_item_by_id(user_id, item_id)
     if item is None:
         return None
+
     new_state = not bool(item.get("completed"))
     save_progress(user_id, item_id, new_state)
+
     return new_state
+
+
+def attach_photo_to_task(
+    user_id: int,
+    item_id: int,
+    file_id: str,
+    channel_message_id: int,
+    mark_done: bool = False
+) -> None:
+    """
+    Привязывает фото к задаче.
+    Если mark_done=True, дополнительно отмечает задачу выполненной.
+    """
+    if mark_done:
+        save_progress(user_id, item_id, True)
+
+    save_progress_photo(user_id, item_id, file_id, channel_message_id)
 
 
 def get_user_progress_summary(user_id: int) -> tuple[int, int, list[dict], dict[str, dict]] | None:
@@ -108,11 +149,15 @@ def get_user_progress_summary(user_id: int) -> tuple[int, int, list[dict], dict[
     done = sum(1 for item in items if item.get("completed"))
 
     categories: dict[str, dict] = {}
+
     for item in items:
         cat = item.get("category") or "weekly"
+
         if cat not in categories:
             categories[cat] = {"done": 0, "total": 0}
+
         categories[cat]["total"] += 1
+
         if item.get("completed"):
             categories[cat]["done"] += 1
 
@@ -121,14 +166,17 @@ def get_user_progress_summary(user_id: int) -> tuple[int, int, list[dict], dict[
         for cat in CATEGORY_ORDER
         if cat in categories
     }
+
     return done, total, items, ordered_categories
 
 
 def progress_bar(done: int, total: int, size: int = 10) -> str:
     if total <= 0:
         return "▱" * size
+
     filled = round(size * done / total)
     filled = max(0, min(size, filled))
+
     return "▰" * filled + "▱" * (size - filled)
 
 

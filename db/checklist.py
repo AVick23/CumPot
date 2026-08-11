@@ -4,10 +4,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ==========================================
-# ДАННЫЕ ДЛЯ ИМПОРТА (БЕЗ ПРОБЕЛОВ В КЛЮЧАХ!)
-# ==========================================
-
 BAR_DAILY_ITEMS = [
     {"category": "opening", "text": "Включить свет и электричество (рубильники 10-16, 23-29)"},
     {"category": "opening", "text": "Включить бойлер, кофемашину, кофемолку, ледогенератор, свет витрины, кассу, колонку"},
@@ -155,6 +151,93 @@ def get_progress_for_user_date(user_id: int, date: str) -> list[dict]:
             (user_id, date)
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+def save_progress_photo(
+    user_id: int,
+    item_id: int,
+    file_id: str,
+    channel_message_id: int
+):
+    """
+    Сохраняет фото, привязанное к задаче за сегодня.
+    Если фото уже было — заменяет его.
+    """
+    date = today_msk_str()
+    created_at = time_msk_str()
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM checklist_progress_photos
+            WHERE user_id = ? AND item_id = ? AND date = ?
+            """,
+            (user_id, item_id, date)
+        ).fetchone()
+
+        if row:
+            conn.execute(
+                """
+                UPDATE checklist_progress_photos
+                SET file_id = ?, channel_message_id = ?, created_at = ?
+                WHERE id = ?
+                """,
+                (file_id, channel_message_id, created_at, row['id'])
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO checklist_progress_photos
+                (user_id, item_id, date, file_id, channel_message_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, item_id, date, file_id, channel_message_id, created_at)
+            )
+
+        conn.commit()
+
+
+def get_progress_photo(user_id: int, item_id: int, date: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM checklist_progress_photos
+            WHERE user_id = ? AND item_id = ? AND date = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id, item_id, date)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_photos_for_user_date(user_id: int, date: str) -> dict[int, dict]:
+    """
+    Возвращает фото пользователя за дату.
+    Формат:
+    {
+        item_id: photo_row,
+        ...
+    }
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM checklist_progress_photos
+            WHERE user_id = ? AND date = ?
+            """,
+            (user_id, date)
+        ).fetchall()
+
+        result = {}
+        for row in rows:
+            row = dict(row)
+            result[row["item_id"]] = row
+
+        return result
 
 
 def add_checklist_item(item_type: str, location: str, category: str, day_of_week: int | None, text: str):

@@ -1,4 +1,6 @@
-# Состояния админа
+# ==========================================
+# СОСТОЯНИЯ АДМИНА
+# ==========================================
 ADMIN_MAIN = 100
 ADMIN_SHIFTS = 101
 ADMIN_EMPLOYEES = 102
@@ -13,7 +15,9 @@ ADMIN_ADD_DAY = 110
 ADMIN_AWAIT_NEW_TEXT = 111
 ADMIN_AWAIT_EDIT_TEXT = 112
 
-# Callback data (без пробелов!)
+# ==========================================
+# CALLBACK DATA (без пробелов!)
+# ==========================================
 CB_NOOP = "noop"
 CB_HOME = "home"
 CB_SHIFTS = "shifts"
@@ -41,7 +45,9 @@ CB_ADD_BACK_TEXT = "add_back_text"
 CB_CANCEL = "cancel"
 CB_CANCEL_EDIT = "cancel_edit"
 
-# UI константы (БЕЗ ПРОБЕЛОВ!)
+# ==========================================
+# UI КОНСТАНТЫ (БЕЗ ПРОБЕЛОВ!)
+# ==========================================
 PAGE_SIZE = 8
 TEXT_LIMIT = 200
 MSG_LIMIT = 3800

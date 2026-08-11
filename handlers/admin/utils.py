@@ -1,5 +1,5 @@
 import math
-from utils.time_utils import now_msk, today_msk_str
+from datetime import datetime
 
 from db import get_connection
 from db.checklist import (
@@ -9,6 +9,7 @@ from db.checklist import (
     delete_checklist_item as db_delete_item,
     get_items_for_location_and_day,
     get_progress_for_user_date,
+    get_photos_for_user_date,  # ← НОВЫЙ ИМПОРТ
 )
 from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN
 
@@ -17,7 +18,6 @@ def full_name(user: dict | None) -> str:
     if not user:
         return "Пользователь"
 
-    # Приоритет: full_name > first+last > username > tg_id
     full = (user.get("full_name") or "").strip()
     if full:
         return full
@@ -54,7 +54,7 @@ def get_user_by_id(user_id: int) -> dict | None:
 
 
 def get_today_shifts_full() -> list[dict]:
-    today = today_msk_str()  # ← МСК
+    today = datetime.now().strftime("%Y-%m-%d")
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -95,15 +95,21 @@ def get_shift_for_date_any(user_id: int, date_str: str) -> dict | None:
 
 
 def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
+    """
+    Возвращает прогресс сотрудника за дату.
+    ТЕПЕРЬ ВКЛЮЧАЕТ ИНФОРМАЦИЮ О ФОТО для каждой задачи.
+    """
     shift = get_shift_for_date_any(employee_id, date_str)
     if not shift:
         return None
 
-    day_of_week = now_msk().weekday() if date_str == today_msk_str() \
-        else __import__("datetime").datetime.strptime(date_str, "%Y-%m-%d").weekday()
-
+    day_of_week = datetime.strptime(date_str, "%Y-%m-%d").weekday()
     items = get_items_for_location_and_day(shift["location"], day_of_week)
     progress = get_progress_for_user_date(employee_id, date_str)
+    
+    # ← НОВОЕ: Получаем все фото за этот день
+    photos = get_photos_for_user_date(employee_id, date_str)
+    
     progress_dict = {p["item_id"]: p["completed"] for p in progress}
 
     grouped = {}
@@ -114,18 +120,36 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
         item = dict(item)
         completed = progress_dict.get(item["id"], 0) == 1
         item["completed"] = completed
+        
+        # ← НОВОЕ: Привязываем фото к задаче
+        photo = photos.get(item["id"])
+        item["has_photo"] = bool(photo)
+        item["photo_file_id"] = photo["file_id"] if photo else None
+
         total += 1
         if completed:
             done += 1
+            
         cat = item.get("category") or "weekly"
         grouped.setdefault(cat, []).append(item)
 
-    ordered_grouped = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
-    return {"shift": shift, "grouped": ordered_grouped, "done": done, "total": total, "items": items}
+    ordered_grouped = {
+        cat: grouped[cat]
+        for cat in CATEGORY_ORDER
+        if cat in grouped
+    }
+
+    return {
+        "shift": shift,
+        "grouped": ordered_grouped,
+        "done": done,
+        "total": total,
+        "items": items,
+    }
 
 
 def get_location_counts() -> dict[str, int]:
-    counts = {"bar": 0, "kitchen": 0}  # ← без пробелов
+    counts = {"bar": 0, "kitchen": 0}
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT location, COUNT(*) AS cnt FROM checklist_items GROUP BY location"
@@ -203,7 +227,7 @@ def clip(text: str | None, limit: int = 35) -> str:
 
 def format_date_ru(date_str: str) -> str:
     try:
-        dt = __import__("datetime").datetime.strptime(date_str, "%Y-%m-%d")
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
         return f"{dt.day} {MONTHS_GEN[dt.month - 1]} {dt.year}"
     except Exception:
         return date_str
