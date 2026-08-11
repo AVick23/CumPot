@@ -1,5 +1,13 @@
-from telegram.ext import Application, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    ConversationHandler,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+)
 from config import ADMIN_IDS
+
 from .constants import (
     ADMIN_MAIN, ADMIN_SHIFTS, ADMIN_EMPLOYEES, ADMIN_CALENDAR,
     ADMIN_DAY_PROGRESS, ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY,
@@ -9,29 +17,64 @@ from .constants import (
 )
 from .handlers import admin_start, admin_callback, admin_text_input
 
-TEXT_CALLBACK_PATTERN = f"^(?:{CB_CANCEL}|{CB_CANCEL_EDIT}|{CB_ADD_BACK_TEXT}|{CB_HOME})$"
+
+def get_admin_entry_point():
+    """Возвращает точку входа для админа (используется в start_router)"""
+    return admin_start
 
 
-def register_admin(app: Application) -> None:
-    non_text_states = [
-        ADMIN_MAIN, ADMIN_SHIFTS, ADMIN_EMPLOYEES, ADMIN_CALENDAR,
-        ADMIN_DAY_PROGRESS, ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY,
-        ADMIN_EDIT_ITEMS, ADMIN_ITEM_DETAIL, ADMIN_DELETE_CONFIRM, ADMIN_ADD_DAY,
-    ]
-    states = {state: [CallbackQueryHandler(admin_callback)] for state in non_text_states}
+def register_admin_states(states: dict):
+    """
+    Регистрирует все состояния админа в переданный словарь states.
+    Корневой роутер не знает о деталях реализации admin.
+    """
+    # Паттерн для текстовых состояний (кнопки отмены/назад + noop)
+    text_cb_pattern = f"^(?:{CB_CANCEL}|{CB_CANCEL_EDIT}|{CB_ADD_BACK_TEXT}|{CB_HOME}|noop)$"
+
+    def admin_state(pattern: str):
+        """Хелпер: основной handler + noop для предотвращения спиннера"""
+        return [
+            CallbackQueryHandler(admin_callback, pattern=pattern),
+            CallbackQueryHandler(admin_callback, pattern="^noop$"),
+        ]
+
+    # Импортируем константы callback_data локально, чтобы не засорять глобальный импорт корневого модуля
+    from .constants import (
+        CB_SHIFTS, CB_EMPLOYEES, CB_EDIT, CB_EMP_PREFIX,
+        CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX, CB_TO_EMPLOYEES,
+        CB_TO_CALENDAR, CB_TO_EDIT, CB_TO_CATEGORIES, CB_TO_ITEMS,
+        CB_LOC_PREFIX, CB_CAT_PREFIX, CB_PAGE_PREFIX,
+        CB_ITEM_PREFIX as CB_ADMIN_ITEM_PREFIX,
+        CB_EDIT_ITEM_PREFIX, CB_DELETE_ITEM_PREFIX, CB_CONFIRM_DELETE_PREFIX,
+        CB_ADD, CB_ADD_DAY_PREFIX,
+    )
+
+    states[ADMIN_MAIN] = admin_state(f"^{CB_SHIFTS}$|^{CB_EMPLOYEES}$|^{CB_EDIT}$|^{CB_HOME}$")
+    states[ADMIN_SHIFTS] = admin_state(f"^{CB_HOME}$")
+    states[ADMIN_EMPLOYEES] = admin_state(f"^{CB_EMP_PREFIX}.*|^{CB_HOME}$")
+    states[ADMIN_CALENDAR] = admin_state(
+        f"^{CB_PREV_MONTH}$|^{CB_NEXT_MONTH}$|^{CB_DAY_PREFIX}.*|^{CB_TO_EMPLOYEES}$|^{CB_HOME}$"
+    )
+    states[ADMIN_DAY_PROGRESS] = admin_state(f"^{CB_TO_CALENDAR}$|^{CB_TO_EMPLOYEES}$|^{CB_HOME}$")
+    states[ADMIN_EDIT_LOCATION] = admin_state(f"^{CB_LOC_PREFIX}.*|^{CB_HOME}$")
+    states[ADMIN_EDIT_CATEGORY] = admin_state(f"^{CB_CAT_PREFIX}.*|^{CB_TO_EDIT}$|^{CB_HOME}$")
+    states[ADMIN_EDIT_ITEMS] = admin_state(
+        f"^{CB_ADMIN_ITEM_PREFIX}.*|^{CB_PAGE_PREFIX}.*|^{CB_ADD}$|^{CB_TO_CATEGORIES}$|^{CB_HOME}$"
+    )
+    states[ADMIN_ITEM_DETAIL] = admin_state(
+        f"^{CB_EDIT_ITEM_PREFIX}.*|^{CB_DELETE_ITEM_PREFIX}.*|^{CB_TO_ITEMS}$"
+    )
+    states[ADMIN_DELETE_CONFIRM] = admin_state(
+        f"^{CB_CONFIRM_DELETE_PREFIX}.*|^{CB_ADMIN_ITEM_PREFIX}.*"
+    )
+    states[ADMIN_ADD_DAY] = admin_state(
+        f"^{CB_ADD_DAY_PREFIX}.*|^{CB_TO_ITEMS}$|^{CB_CANCEL}$"
+    )
     states[ADMIN_AWAIT_NEW_TEXT] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
-        CallbackQueryHandler(admin_callback, pattern=TEXT_CALLBACK_PATTERN),
+        CallbackQueryHandler(admin_callback, pattern=text_cb_pattern),
     ]
     states[ADMIN_AWAIT_EDIT_TEXT] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input),
-        CallbackQueryHandler(admin_callback, pattern=TEXT_CALLBACK_PATTERN),
+        CallbackQueryHandler(admin_callback, pattern=text_cb_pattern),
     ]
-    admin_filter = filters.User(user_id=ADMIN_IDS) if ADMIN_IDS else filters.User(user_id=set())
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", admin_start, filters=admin_filter)],
-        states=states,
-        fallbacks=[CommandHandler("start", admin_start, filters=admin_filter)],
-        per_user=True, per_chat=False, allow_reentry=True,
-    )
-    app.add_handler(conv_handler, group=0)

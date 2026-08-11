@@ -1,42 +1,105 @@
-from telegram.ext import Application, ConversationHandler, CommandHandler, CallbackQueryHandler
-from .handlers import (
-    start_menu,
-    main_menu_callback,
-    location_selection,
-    category_selection,
-    view_item,          # новый обработчик
-    toggle_item,        # новый обработчик
-    progress_back,
-    noop
+from telegram.ext import (
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
 )
-from .constants import *
 
-def register_handlers(app: Application):
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start_menu)],
-        states={
-            MAIN_MENU: [
-                CallbackQueryHandler(main_menu_callback, pattern="|".join([CB_SHIFT_MARK, CB_CHECKLIST, CB_PROGRESS, CB_BACK_MAIN]))
-            ],
-            SELECT_LOCATION: [
-                CallbackQueryHandler(location_selection, pattern="|".join([CB_SHIFT_BAR, CB_SHIFT_KITCHEN, CB_BACK_MAIN]))
-            ],
-            CATEGORY_SELECT: [
-                CallbackQueryHandler(category_selection, pattern=f"^{CB_CATEGORY}.*|^{CB_BACK_MAIN}$"),
-            ],
-            CHECKLIST_VIEW: [
-                CallbackQueryHandler(view_item, pattern=f"^{CB_ITEM_VIEW}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MAIN}$"),
-                CallbackQueryHandler(noop, pattern="^noop$"),
-            ],
-            ITEM_DETAIL: [
-                CallbackQueryHandler(toggle_item, pattern=f"^{CB_ITEM_TOGGLE}.*|^{CB_BACK_TO_CATEGORIES}$|^{CB_BACK_MAIN}$"),
-            ],
-            PROGRESS_VIEW: [
-                CallbackQueryHandler(progress_back, pattern=CB_BACK_MAIN),
-            ],
-        },
-        fallbacks=[CommandHandler("start", start_menu)],
-        per_user=True,
-        per_chat=False,
+# Внутренние импорты пакета employee
+from .handlers import (
+    employee_start,
+    onboarding_name_input,
+    onboarding_position,
+    main_menu_callback,
+    category_selection,
+    view_item,
+    toggle_item_callback,
+    progress_back,
+    end_shift_decision,
+    noop as employee_noop,
+)
+
+from .constants import (
+    ONBOARD_NAME,
+    ONBOARD_POSITION,
+    MAIN_MENU,
+    CATEGORY_SELECT,
+    CHECKLIST_VIEW,
+    ITEM_DETAIL,
+    PROGRESS_VIEW,
+    END_SHIFT_CONFIRM,
+    CB_START_SHIFT,
+    CB_END_SHIFT,
+    CB_CHECKLIST,
+    CB_PROGRESS,
+    CB_POSITION_PREFIX,
+    CB_CATEGORY_PREFIX,
+    CB_ITEM_PREFIX,
+    CB_TOGGLE_PREFIX,
+    CB_BACK_MENU,
+    CB_BACK_CATEGORIES,
+    CB_END_SHIFT_CONFIRM,
+    CB_END_SHIFT_CANCEL,
+)
+
+
+def get_employee_entry_point():
+    """Возвращает точку входа для сотрудника (используется в start_router)"""
+    return employee_start
+
+
+def register_employee_states(states: dict):
+    """
+    Регистрирует все состояния сотрудника в переданный словарь states.
+    Корневой роутер не знает о деталях реализации employee.
+    """
+    
+    def emp_state(handler, pattern: str):
+        """Хелпер для добавления noop-обработчика к каждому состоянию"""
+        return [
+            CallbackQueryHandler(handler, pattern=pattern),
+            CallbackQueryHandler(employee_noop, pattern="^noop$"),
+        ]
+
+    # Состояния онбординга
+    states[ONBOARD_NAME] = [
+        MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_name_input),
+    ]
+
+    states[ONBOARD_POSITION] = emp_state(
+        onboarding_position,
+        f"^{CB_POSITION_PREFIX}.*"
     )
-    app.add_handler(conv_handler)
+
+    # Основное меню
+    states[MAIN_MENU] = emp_state(
+        main_menu_callback,
+        f"^{CB_START_SHIFT}$|^{CB_END_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$"
+    )
+
+    # Чек-листы
+    states[CATEGORY_SELECT] = emp_state(
+        category_selection,
+        f"^{CB_CATEGORY_PREFIX}.*|^{CB_BACK_MENU}$"
+    )
+
+    states[CHECKLIST_VIEW] = emp_state(
+        view_item,
+        f"^{CB_ITEM_PREFIX}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MENU}$"
+    )
+
+    states[ITEM_DETAIL] = emp_state(
+        toggle_item_callback,
+        f"^{CB_TOGGLE_PREFIX}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MENU}$"
+    )
+
+    # Прогресс
+    states[PROGRESS_VIEW] = emp_state(
+        progress_back,
+        f"^{CB_BACK_MENU}$"
+    )
+
+    # Завершение смены
+    states[END_SHIFT_CONFIRM] = emp_state(
+        end_shift_decision,
+        f"^{CB_END_SHIFT_CONFIRM}$|^{CB_END_SHIFT_CANCEL}$"
+    )
