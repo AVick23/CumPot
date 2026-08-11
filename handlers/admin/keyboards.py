@@ -63,8 +63,13 @@ def shifts_keyboard() -> InlineKeyboardMarkup:
 
 def employee_list_keyboard(employees: list[dict]) -> InlineKeyboardMarkup:
     rows = []
+
     for emp in employees:
-        name = " ".join([emp.get("first_name") or "", emp.get("last_name") or ""]).strip()
+        name = (emp.get("full_name") or "").strip()
+
+        if not name:
+            name = " ".join([emp.get("first_name") or "", emp.get("last_name") or ""]).strip()
+
         if not name:
             name = emp.get("username") or str(emp.get("tg_id"))
 

@@ -1,265 +1,719 @@
-from telegram import Update, CallbackQuery
-from telegram.ext import ContextTypes, ConversationHandler
-from telegram.error import BadRequest
-from .constants import *
-from .keyboards import *
-from .utils import *
-from datetime import datetime
 import logging
 
-logging.basicConfig(level=logging.INFO)
+from telegram import Update
+from telegram.ext import ContextTypes
+from telegram.error import BadRequest
+
+from db.users import get_user, update_user_profile
+
+from .constants import (
+    ONBOARD_NAME,
+    ONBOARD_POSITION,
+    MAIN_MENU,
+    CATEGORY_SELECT,
+    CHECKLIST_VIEW,
+    ITEM_DETAIL,
+    PROGRESS_VIEW,
+    END_SHIFT_CONFIRM,
+    CB_NOOP,
+    CB_START_SHIFT,
+    CB_END_SHIFT,
+    CB_END_SHIFT_CONFIRM,
+    CB_END_SHIFT_CANCEL,
+    CB_CHECKLIST,
+    CB_PROGRESS,
+    CB_POSITION_PREFIX,
+    CB_CATEGORY_PREFIX,
+    CB_ITEM_PREFIX,
+    CB_TOGGLE_PREFIX,
+    CB_BACK_MENU,
+    CB_BACK_CATEGORIES,
+    LOCATIONS,
+    CATEGORY_NAMES,
+    MSG_LIMIT,
+    FULL_NAME_LIMIT,
+)
+
+from .keyboards import (
+    position_keyboard,
+    main_menu_keyboard,
+    back_menu_keyboard,
+    categories_keyboard,
+    checklist_keyboard,
+    item_detail_keyboard,
+    progress_keyboard,
+    end_shift_keyboard,
+)
+
+from .utils import (
+    get_position_label,
+    start_shift_for_user,
+    get_current_shift,
+    end_current_shift,
+    get_categories_stats,
+    get_items_by_category,
+    get_item_by_id,
+    toggle_item,
+    get_user_progress_summary,
+    progress_bar,
+    percent,
+)
+
 logger = logging.getLogger(__name__)
 
-async def safe_edit(query, text, reply_markup=None):
+
+def set_state(context: ContextTypes.DEFAULT_TYPE, state: int) -> int:
+    context.user_data["employee_state"] = state
+    return state
+
+
+def current_state(context: ContextTypes.DEFAULT_TYPE) -> int:
+    return context.user_data.get("employee_state", MAIN_MENU)
+
+
+def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit - 1].rstrip() + "…"
+
+
+async def answer(query, text: str | None = None) -> None:
     try:
-        await query.edit_message_text(text, reply_markup=reply_markup)
-    except BadRequest as e:
-        if "Message is not modified" in str(e):
-            await query.answer("Уже отображено", show_alert=False)
-        else:
-            raise e
+        await query.answer(text or "")
+    except Exception:
+        pass
 
-async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
-    shift = get_active_shift(user_id)
-    text = f"👋 Привет, {user.first_name}!"
-    if shift:
-        text += f"\nТы на смене ({shift['location']}). Выбери действие:"
-    else:
-        text += "\nДля доступа к чек-листам сначала отметься на смене."
-    await update.message.reply_text(
-        text,
-        reply_markup=main_menu_keyboard(has_shift=bool(shift))
+
+async def render(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    reply_markup=None,
+    message_id: int | None = None,
+) -> int | None:
+    text = truncate_text(text, MSG_LIMIT)
+    chat_id = update.effective_chat.id if update.effective_chat else None
+
+    if chat_id and message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=reply_markup,
+            )
+            return message_id
+        except BadRequest as e:
+            if "Message is not modified" in str(e):
+                return message_id
+            logger.warning("Employee edit failed: %s", e)
+
+    if chat_id:
+        msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=reply_markup,
+        )
+        return msg.message_id
+
+    return None
+
+
+# =========================
+# ONBOARDING
+# =========================
+
+async def ask_name(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+    error: str | None = None,
+) -> int:
+    text = (
+        "👋 Добро пожаловать!\n\n"
+        "Чтобы продолжить, укажите ваше ФИО полностью.\n\n"
+        "Например:\n"
+        "Иванов Иван Иванович"
     )
-    return MAIN_MENU
 
-async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if error:
+        text = f"⚠️ {error}\n\n{text}"
+
+    new_message_id = await render(update, context, text, None, message_id)
+    context.user_data["onboarding_msg_id"] = new_message_id
+
+    return set_state(context, ONBOARD_NAME)
+
+
+async def ask_position(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+    error: str | None = None,
+) -> int:
+    text = "Отлично! Теперь выберите, где вы работаете."
+
+    if error:
+        text = f"⚠️ {error}\n\n{text}"
+
+    new_message_id = await render(update, context, text, position_keyboard(), message_id)
+    context.user_data["onboarding_msg_id"] = new_message_id
+
+    return set_state(context, ONBOARD_POSITION)
+
+
+async def employee_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Точка входа для сотрудника.
+    Если ФИО и позиция не заполнены — начинаем онбординг.
+    """
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    user_db = get_user(user.id)
+
+    context.user_data.pop("onboarding_full_name", None)
+    context.user_data.pop("onboarding_msg_id", None)
+    context.user_data.pop("current_category", None)
+
+    if not user_db or not (user_db.get("full_name") or "").strip():
+        return await ask_name(update, context)
+
+    if not (user_db.get("position") or "").strip():
+        context.user_data["onboarding_full_name"] = user_db.get("full_name")
+        return await ask_position(update, context)
+
+    return await show_main_menu(update, context)
+
+
+async def onboarding_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not update.message:
+        return set_state(context, ONBOARD_NAME)
+
+    message_id = context.user_data.get("onboarding_msg_id")
+
+    raw_text = (update.message.text or "").strip()
+    full_name = " ".join(raw_text.split())
+
+    if len(full_name) < 5 or len(full_name.split()) < 2:
+        return await ask_name(
+            update,
+            context,
+            message_id,
+            error="Пожалуйста, укажите ФИО полностью: минимум фамилия и имя."
+        )
+
+    if len(full_name) > FULL_NAME_LIMIT:
+        return await ask_name(
+            update,
+            context,
+            message_id,
+            error=f"Слишком длинно. Максимум {FULL_NAME_LIMIT} символов."
+        )
+
+    context.user_data["onboarding_full_name"] = full_name
+    return await ask_position(update, context, message_id)
+
+
+async def onboarding_position(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
+    data = query.data or ""
 
-    if data == CB_SHIFT_MARK:
-        shift = get_active_shift(user_id)
-        if shift:
-            await query.answer("Вы уже на смене!", show_alert=True)
-            return MAIN_MENU
-        else:
-            await safe_edit(query, "Выбери локацию:", reply_markup=location_keyboard())
-            return SELECT_LOCATION
+    await answer(query)
 
-    elif data == CB_CHECKLIST:
-        shift = get_active_shift(user_id)
-        if not shift:
-            await query.answer("Сначала отметься на смене!", show_alert=True)
-            return MAIN_MENU
-        all_items = get_checklist_items(user_id, context)
-        if all_items is None:
-            await safe_edit(query, "Ошибка получения чек-листа.", reply_markup=main_menu_keyboard(has_shift=True))
-            return MAIN_MENU
-        cats = list({item['category'] for item in all_items})
-        if not cats:
-            await safe_edit(query, "На сегодня нет задач.", reply_markup=main_menu_keyboard(has_shift=True))
-            return MAIN_MENU
-        context.user_data.pop('current_category', None)
-        await safe_edit(query, "📋 Выбери категорию:", reply_markup=categories_keyboard(cats))
-        return CATEGORY_SELECT
+    message_id = query.message.message_id if query.message else context.user_data.get("onboarding_msg_id")
 
-    elif data == CB_PROGRESS:
-        shift = get_active_shift(user_id)
-        if not shift:
-            await query.answer("Сначала отметься на смене!", show_alert=True)
-            return MAIN_MENU
-        done, total, items, categories = get_user_progress_summary(user_id, context)
-        if done is None:
-            await safe_edit(query, "Ошибка получения прогресса.", reply_markup=main_menu_keyboard(has_shift=True))
-            return MAIN_MENU
-        progress_text = f"📊 Твой прогресс: {done}/{total} выполнено ({int(done/total*100) if total else 0}%)\n\n"
+    if not data.startswith(CB_POSITION_PREFIX):
+        return await ask_position(update, context, message_id, error="Выберите одну из позиций.")
+
+    position = data.split(":", 1)[1]
+
+    if position not in LOCATIONS:
+        return await ask_position(update, context, message_id, error="Выберите одну из позиций.")
+
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    user_db = get_user(user.id)
+    full_name = context.user_data.get("onboarding_full_name") or (user_db.get("full_name") if user_db else None)
+
+    if not full_name:
+        return await ask_name(update, context, message_id, error="Сначала укажите ФИО.")
+
+    update_user_profile(user.id, full_name=full_name, position=position)
+
+    context.user_data.pop("onboarding_full_name", None)
+    context.user_data.pop("onboarding_msg_id", None)
+    context.user_data.pop("current_category", None)
+
+    return await show_main_menu(
+        update,
+        context,
+        message_id,
+        notice="✅ Профиль сохранён. Теперь можно начинать смену."
+    )
+
+
+# =========================
+# MAIN MENU
+# =========================
+
+async def show_main_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+    notice: str | None = None,
+) -> int:
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    user_db = get_user(user.id)
+
+    if not user_db or not (user_db.get("full_name") or "").strip():
+        return await ask_name(update, context, message_id)
+
+    if not (user_db.get("position") or "").strip():
+        context.user_data["onboarding_full_name"] = user_db.get("full_name")
+        return await ask_position(update, context, message_id)
+
+    context.user_data.pop("current_category", None)
+
+    shift = get_current_shift(user.id)
+    full_name = user_db.get("full_name") or "Сотрудник"
+
+    if shift:
+        shift_location_label = get_position_label(shift.get("location"))
+        text = (
+            "🟢 Смена открыта\n"
+            f"📍 {shift_location_label} · с {shift.get('start_time', '—')}\n\n"
+            "Выберите действие."
+        )
+        kb = main_menu_keyboard(has_shift=True)
+    else:
+        position_label = get_position_label(user_db.get("position"))
+        text = (
+            f"👋 {full_name}\n"
+            f"Ваша позиция: {position_label}\n\n"
+            "Сейчас вы не на смене.\n"
+            "Когда будете готовы, начните смену."
+        )
+        kb = main_menu_keyboard(has_shift=False)
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    await render(update, context, text, kb, message_id)
+    return set_state(context, MAIN_MENU)
+
+
+async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data or ""
+
+    await answer(query)
+
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    message_id = query.message.message_id if query.message else None
+
+    if data == CB_START_SHIFT:
+        active_shift = get_current_shift(user.id)
+
+        if active_shift:
+            return await show_main_menu(update, context, message_id, notice="Вы уже на смене.")
+
+        user_db = get_user(user.id)
+        if not user_db or not user_db.get("position"):
+            return await employee_start(update, context)
+
+        started = start_shift_for_user(user.id)
+
+        if not started:
+            return await show_main_menu(update, context, message_id, notice="⚠️ Не удалось начать смену.")
+
+        return await show_main_menu(update, context, message_id, notice="✅ Смена открыта. Хорошей смены!")
+
+    if data == CB_END_SHIFT:
+        return await show_end_confirm(update, context, message_id)
+
+    if data == CB_CHECKLIST:
+        return await show_categories(update, context, message_id)
+
+    if data == CB_PROGRESS:
+        return await show_progress(update, context, message_id)
+
+    if data == CB_BACK_MENU:
+        return await show_main_menu(update, context, message_id)
+
+    return await show_main_menu(update, context, message_id)
+
+
+# =========================
+# CHECKLIST CATEGORIES
+# =========================
+
+async def show_categories(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+    notice: str | None = None,
+) -> int:
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    shift = get_current_shift(user.id)
+    if not shift:
+        return await show_main_menu(update, context, message_id, notice="Сначала начните смену.")
+
+    stats = get_categories_stats(user.id)
+
+    if stats is None:
+        return await show_main_menu(update, context, message_id, notice="Сначала начните смену.")
+
+    if not stats:
+        text = "📋 Чек-лист\n\nНа сегодня задач нет."
+        if notice:
+            text = f"{notice}\n\n{text}"
+
+        await render(update, context, text, back_menu_keyboard(), message_id)
+        return set_state(context, CATEGORY_SELECT)
+
+    text = "📋 Чек-лист\n\nВыберите категорию."
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    kb = categories_keyboard(stats)
+    await render(update, context, text, kb, message_id)
+
+    return set_state(context, CATEGORY_SELECT)
+
+
+async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data or ""
+
+    await answer(query)
+
+    message_id = query.message.message_id if query.message else None
+
+    if data.startswith(CB_CATEGORY_PREFIX):
+        category = data.split(":", 1)[1]
+        context.user_data["current_category"] = category
+        return await show_checklist(update, context, category, message_id)
+
+    if data == CB_BACK_MENU:
+        return await show_main_menu(update, context, message_id)
+
+    return await show_categories(update, context, message_id)
+
+
+# =========================
+# CHECKLIST LIST
+# =========================
+
+async def show_checklist(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    category: str,
+    message_id: int | None = None,
+    notice: str | None = None,
+) -> int:
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    items = get_items_by_category(user.id, category)
+
+    if items is None:
+        return await show_main_menu(update, context, message_id, notice="Сначала начните смену.")
+
+    if not items:
+        return await show_categories(update, context, message_id, notice="В этой категории нет задач.")
+
+    context.user_data["current_category"] = category
+
+    done = sum(1 for item in items if item.get("completed"))
+    total = len(items)
+    bar = progress_bar(done, total)
+
+    category_label = CATEGORY_NAMES.get(category, category)
+
+    text = (
+        f"📋 {category_label}\n"
+        f"{bar} {done}/{total} · {percent(done, total)}%\n\n"
+        "Нажмите на задачу, чтобы открыть её."
+    )
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    kb = checklist_keyboard(items)
+    await render(update, context, text, kb, message_id)
+
+    return set_state(context, CHECKLIST_VIEW)
+
+
+async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data or ""
+
+    await answer(query)
+
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    message_id = query.message.message_id if query.message else None
+
+    if data.startswith(CB_ITEM_PREFIX):
+        try:
+            item_id = int(data.split(":", 1)[1])
+        except (TypeError, ValueError):
+            return await show_categories(update, context, message_id)
+
+        item = get_item_by_id(user.id, item_id)
+
+        if not item:
+            return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
+
+        status_text = "✅ Выполнено" if item.get("completed") else "⚪️ Не выполнено"
+        category_label = CATEGORY_NAMES.get(item.get("category"), item.get("category"))
+
+        text = (
+            "📌 Задача\n\n"
+            f"{item.get('text')}\n\n"
+            f"Статус: {status_text}\n"
+            f"Категория: {category_label}"
+        )
+
+        kb = item_detail_keyboard(item_id, bool(item.get("completed")))
+        await render(update, context, text, kb, message_id)
+
+        return set_state(context, ITEM_DETAIL)
+
+    if data == CB_BACK_CATEGORIES:
+        return await show_categories(update, context, message_id)
+
+    if data == CB_BACK_MENU:
+        return await show_main_menu(update, context, message_id)
+
+    return await show_current_checklist(update, context, message_id)
+
+
+async def show_current_checklist(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+    notice: str | None = None,
+) -> int:
+    category = context.user_data.get("current_category")
+
+    if not category:
+        return await show_categories(update, context, message_id, notice)
+
+    return await show_checklist(update, context, category, message_id, notice)
+
+
+async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data or ""
+
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    message_id = query.message.message_id if query.message else None
+
+    if data.startswith(CB_TOGGLE_PREFIX):
+        try:
+            item_id = int(data.split(":", 1)[1])
+        except (TypeError, ValueError):
+            await answer(query)
+            return await show_current_checklist(update, context, message_id)
+
+        new_state = toggle_item(user.id, item_id)
+
+        if new_state is None:
+            await answer(query)
+            return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
+
+        toast = "✅ Выполнено" if new_state else "↩️ Отменено"
+        await answer(query, toast)
+
+        item = get_item_by_id(user.id, item_id)
+
+        if not item:
+            return await show_current_checklist(update, context, message_id)
+
+        status_text = "✅ Выполнено" if item.get("completed") else "⚪️ Не выполнено"
+        category_label = CATEGORY_NAMES.get(item.get("category"), item.get("category"))
+
+        text = (
+            "📌 Задача\n\n"
+            f"{item.get('text')}\n\n"
+            f"Статус: {status_text}\n"
+            f"Категория: {category_label}"
+        )
+
+        kb = item_detail_keyboard(item_id, bool(item.get("completed")))
+        await render(update, context, text, kb, message_id)
+
+        return set_state(context, ITEM_DETAIL)
+
+    await answer(query)
+
+    if data == CB_BACK_CATEGORIES:
+        return await show_current_checklist(update, context, message_id)
+
+    if data == CB_BACK_MENU:
+        return await show_main_menu(update, context, message_id)
+
+    return await show_current_checklist(update, context, message_id)
+
+
+# =========================
+# PROGRESS
+# =========================
+
+async def show_progress(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+    notice: str | None = None,
+) -> int:
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    summary = get_user_progress_summary(user.id)
+
+    if summary is None:
+        return await show_main_menu(update, context, message_id, notice="Сначала начните смену.")
+
+    done, total, items, categories = summary
+
+    if total == 0:
+        text = "📊 Прогресс\n\nНа сегодня задач нет."
+        kb = back_menu_keyboard()
+    else:
+        bar = progress_bar(done, total)
+        pct = percent(done, total)
+
+        lines = [
+            "📊 Прогресс",
+            "",
+            f"{bar} {done}/{total} · {pct}%",
+            "",
+        ]
+
         for cat, stats in categories.items():
-            cat_name = CATEGORY_NAMES.get(cat, cat)
-            progress_text += f"• {cat_name}: {stats['done']}/{stats['total']}\n"
-        if done < total:
-            undone = [item for item in items if not item['completed']]
-            progress_text += "\n❌ Осталось:\n" + "\n".join([f"- {item['text']}" for item in undone[:10]])
-            if len(undone) > 10:
-                progress_text += f"\n...и ещё {len(undone)-10} пунктов"
+            cat_label = CATEGORY_NAMES.get(cat, cat)
+            lines.append(f"{cat_label} · {stats['done']}/{stats['total']}")
+
+        if done == total:
+            lines.append("")
+            lines.append("🎉 Все задачи выполнены!")
         else:
-            progress_text += "\n🎉 Все задачи выполнены!"
-        await safe_edit(query, progress_text, reply_markup=progress_keyboard())
-        return PROGRESS_VIEW
+            undone = [item for item in items if not item.get("completed")]
+            lines.append("")
+            lines.append(f"Осталось: {len(undone)}")
 
-    elif data == CB_BACK_MAIN:
-        # Возврат в главное меню из любого места (корневой выход)
-        shift = get_active_shift(user_id)
-        context.user_data.pop('current_category', None)
-        await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
-        return MAIN_MENU
+        text = "\n".join(lines)
+        kb = progress_keyboard()
 
-    else:
-        await safe_edit(query, "Неизвестная команда", reply_markup=main_menu_keyboard(has_shift=bool(get_active_shift(user_id))))
-        return MAIN_MENU
+    if notice:
+        text = f"{notice}\n\n{text}"
 
-async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await render(update, context, text, kb, message_id)
+    return set_state(context, PROGRESS_VIEW)
+
+
+async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
+    await answer(query)
 
-    if data.startswith(CB_CATEGORY):
-        category = data.split("_")[1]
-        context.user_data['current_category'] = category
-        items = get_items_by_category(user_id, context, category)
-        if not items:
-            cats = list({item['category'] for item in get_checklist_items(user_id, context) or []})
-            await safe_edit(query, "В этой категории нет задач.", reply_markup=categories_keyboard(cats))
-            return CATEGORY_SELECT
-        await safe_edit(query, f"📋 {CATEGORY_NAMES.get(category, category)}:\nНажми на задачу для подробностей.", reply_markup=checklist_keyboard(items))
-        return CHECKLIST_VIEW
+    message_id = query.message.message_id if query.message else None
+    return await show_main_menu(update, context, message_id)
 
-    elif data == CB_BACK_MAIN:
-        shift = get_active_shift(user_id)
-        context.user_data.pop('current_category', None)
-        await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
+
+# =========================
+# END SHIFT
+# =========================
+
+async def show_end_confirm(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+) -> int:
+    user = update.effective_user
+    if not user:
         return MAIN_MENU
 
+    shift = get_current_shift(user.id)
+    if not shift:
+        return await show_main_menu(update, context, message_id, notice="Смена ещё не начата.")
+
+    summary = get_user_progress_summary(user.id)
+
+    text = "🏁 Завершить смену?\n\n"
+
+    if summary is None:
+        text += "Не удалось получить прогресс."
     else:
-        await safe_edit(query, "Неизвестный выбор", reply_markup=main_menu_keyboard(has_shift=bool(get_active_shift(user_id))))
-        return MAIN_MENU
+        done, total, items, categories = summary
 
-async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
-
-    if data.startswith(CB_ITEM_VIEW):
-        item_id = int(data.split("_")[-1])
-        item = get_item_by_id(user_id, item_id, context)
-        if not item:
-            await safe_edit(query, "Задача не найдена.", reply_markup=main_menu_keyboard(has_shift=True))
-            return MAIN_MENU
-        status_text = "✅ Выполнено" if item['completed'] else "⬜ Не выполнено"
-        text = f"📌 {item['text']}\n\n"
-        text += f"Статус: {status_text}\n"
-        text += f"Категория: {CATEGORY_NAMES.get(item['category'], item['category'])}\n"
-        if item['type'] == 'weekly':
-            text += "Тип: недельная задача"
+        if total == 0:
+            text += "На сегодня задач нет."
         else:
-            text += "Тип: ежедневная задача"
-        await safe_edit(query, text, reply_markup=item_detail_keyboard(item_id, item['completed']))
-        return ITEM_DETAIL
+            bar = progress_bar(done, total)
+            text += f"{bar} {done}/{total} · {percent(done, total)}%\n\n"
 
-    elif data == CB_BACK_CATEGORIES:
-        # Возврат к выбору категорий
-        user_id = query.from_user.id
-        all_items = get_checklist_items(user_id, context)
-        cats = list({item['category'] for item in all_items}) if all_items else []
-        await safe_edit(query, "📋 Выбери категорию:", reply_markup=categories_keyboard(cats))
-        return CATEGORY_SELECT
-
-    else:
-        await safe_edit(query, "Неизвестное действие", reply_markup=main_menu_keyboard(has_shift=True))
-        return MAIN_MENU
-
-async def toggle_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
-
-    if data.startswith(CB_ITEM_TOGGLE):
-        item_id = int(data.split("_")[-1])
-        item = get_item_by_id(user_id, item_id, context)
-        if not item:
-            await safe_edit(query, "Задача не найдена.", reply_markup=main_menu_keyboard(has_shift=True))
-            return MAIN_MENU
-        if item['completed']:
-            changed = mark_item_undone(user_id, item_id, context)
-            if changed:
-                await query.answer("Задача отменена")
+            if done < total:
+                text += f"⚠️ Осталось задач: {total - done}."
             else:
-                await query.answer("Уже не выполнено")
-        else:
-            changed = mark_item_done(user_id, item_id, context)
-            if changed:
-                await query.answer("Задача выполнена! 🎉")
-            else:
-                await query.answer("Уже выполнено")
-        updated_item = get_item_by_id(user_id, item_id, context)
-        status_text = "✅ Выполнено" if updated_item['completed'] else "⬜ Не выполнено"
-        text = f"📌 {updated_item['text']}\n\n"
-        text += f"Статус: {status_text}\n"
-        text += f"Категория: {CATEGORY_NAMES.get(updated_item['category'], updated_item['category'])}\n"
-        if updated_item['type'] == 'weekly':
-            text += "Тип: недельная задача"
-        else:
-            text += "Тип: ежедневная задача"
-        await safe_edit(query, text, reply_markup=item_detail_keyboard(item_id, updated_item['completed']))
-        return ITEM_DETAIL
+                text += "🎉 Все задачи выполнены."
 
-    elif data == CB_BACK_MAIN:
-        shift = get_active_shift(user_id)
-        context.user_data.pop('current_category', None)
-        await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
-        return MAIN_MENU
+    kb = end_shift_keyboard()
+    await render(update, context, text, kb, message_id)
 
-    else:
-        await safe_edit(query, "Неизвестное действие", reply_markup=main_menu_keyboard(has_shift=True))
-        return MAIN_MENU
+    return set_state(context, END_SHIFT_CONFIRM)
 
-async def back_to_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Возврат к списку задач текущей категории"""
+
+async def end_shift_decision(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    category = context.user_data.get('current_category')
-    if category:
-        items = get_items_by_category(user_id, context, category)
-        if items:
-            await safe_edit(query, f"📋 {CATEGORY_NAMES.get(category, category)}:\nНажми на задачу для подробностей.", reply_markup=checklist_keyboard(items))
-            return CHECKLIST_VIEW
-    # Если категория не сохранена, идём к выбору категорий
-    all_items = get_checklist_items(user_id, context)
-    cats = list({item['category'] for item in all_items}) if all_items else []
-    await safe_edit(query, "📋 Выбери категорию:", reply_markup=categories_keyboard(cats))
-    return CATEGORY_SELECT
+    data = query.data or ""
 
-async def location_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
+    await answer(query)
 
-    if data == CB_SHIFT_BAR:
-        mark_shift(user_id, "bar")
-        await safe_edit(query, "✅ Ты отметился на баре! Теперь доступны чек-листы.", reply_markup=main_menu_keyboard(has_shift=True))
+    user = update.effective_user
+    if not user:
         return MAIN_MENU
 
-    elif data == CB_SHIFT_KITCHEN:
-        mark_shift(user_id, "kitchen")
-        await safe_edit(query, "✅ Ты отметился на кухне! Теперь доступны чек-листы.", reply_markup=main_menu_keyboard(has_shift=True))
-        return MAIN_MENU
+    message_id = query.message.message_id if query.message else None
 
-    elif data == CB_BACK_MAIN:
-        shift = get_active_shift(user_id)
-        context.user_data.pop('current_category', None)
-        await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
-        return MAIN_MENU
+    if data == CB_END_SHIFT_CONFIRM:
+        end_current_shift(user.id)
+        return await show_main_menu(update, context, message_id, notice="✅ Смена завершена.")
 
-    else:
-        await safe_edit(query, "Неизвестная локация", reply_markup=location_keyboard())
-        return SELECT_LOCATION
+    if data == CB_END_SHIFT_CANCEL:
+        return await show_main_menu(update, context, message_id)
 
-async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await show_end_confirm(update, context, message_id)
+
+
+# =========================
+# NOOP
+# =========================
+
+async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    shift = get_active_shift(user_id)
-    context.user_data.pop('current_category', None)
-    await safe_edit(query, "Главное меню:", reply_markup=main_menu_keyboard(has_shift=bool(shift)))
-    return MAIN_MENU
-
-async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer("Это просто заголовок")
+    await answer(query)
+    return current_state(context)

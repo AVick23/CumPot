@@ -1,29 +1,47 @@
-# Состояния для ConversationHandler
-SELECT_LOCATION = 1
-MAIN_MENU = 2
-CHECKLIST_VIEW = 3
-MARK_ITEM = 4
-PROGRESS_VIEW = 5
-CATEGORY_SELECT = 6
-ITEM_DETAIL = 7
+# Состояния сотрудника
+ONBOARD_NAME = 1
+ONBOARD_POSITION = 2
+MAIN_MENU = 3
+CATEGORY_SELECT = 4
+CHECKLIST_VIEW = 5
+ITEM_DETAIL = 6
+PROGRESS_VIEW = 7
+END_SHIFT_CONFIRM = 8
 
-# Callback data для кнопок
-CB_SHIFT_MARK = "shift_mark"
-CB_SHIFT_BAR = "shift_bar"
-CB_SHIFT_KITCHEN = "shift_kitchen"
+# Callback data
+CB_NOOP = "noop"
+
+CB_START_SHIFT = "start_shift"
+CB_END_SHIFT = "end_shift"
+
+CB_END_SHIFT_CONFIRM = "end_confirm"
+CB_END_SHIFT_CANCEL = "end_cancel"
+
 CB_CHECKLIST = "checklist"
 CB_PROGRESS = "progress"
-CB_ITEM_VIEW = "item_view_"
-CB_ITEM_TOGGLE = "item_toggle_"
-CB_BACK_MAIN = "back_main"
-CB_CATEGORY = "category_"
-CB_BACK_CATEGORIES = "back_categories"
-CB_BACK_TO_CATEGORIES = "back_to_categories"
 
-# Читаемые названия категорий
+CB_POSITION_PREFIX = "pos:"
+CB_CATEGORY_PREFIX = "cat:"
+CB_ITEM_PREFIX = "item:"
+CB_TOGGLE_PREFIX = "toggle:"
+
+CB_BACK_MENU = "back_menu"
+CB_BACK_CATEGORIES = "back_cats"
+
+# UI
+LOCATIONS = {
+    "bar": "🍸 Бар",
+    "kitchen": "🍳 Кухня",
+}
+
 CATEGORY_NAMES = {
     "opening": "☀️ Открытие",
-    "daytime": "📅 В течение дня",
+    "daytime": "🌤 В течение дня",
     "closing": "🌙 Закрытие",
-    "weekly": "📆 Недельная задача",
+    "weekly": "📆 Недельные",
 }
+
+CATEGORY_ORDER = ["opening", "daytime", "closing", "weekly"]
+
+MSG_LIMIT = 3800
+FULL_NAME_LIMIT = 100

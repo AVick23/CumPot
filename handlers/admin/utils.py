@@ -16,21 +16,34 @@ from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN
 def full_name(user: dict | None) -> str:
     if not user:
         return "Пользователь"
+
+    full = (user.get("full_name") or "").strip()
+    if full:
+        return full
+
     first = (user.get("first_name") or "").strip()
     last = (user.get("last_name") or "").strip()
     username = (user.get("username") or "").strip()
+
     name = " ".join([x for x in [first, last] if x]).strip()
     if name:
         return name
+
     if username:
         return f"@{username}"
+
     return str(user.get("tg_id", "Пользователь"))
 
 
 def get_employees() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT tg_id, username, first_name, last_name FROM users WHERE is_admin = 0 ORDER BY first_name"
+            """
+            SELECT tg_id, username, first_name, last_name, full_name
+            FROM users
+            WHERE is_admin = 0
+            ORDER BY COALESCE(full_name, first_name, username)
+            """
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -44,14 +57,26 @@ def get_user_by_id(user_id: int) -> dict | None:
 def get_today_shifts_full() -> list[dict]:
     today = datetime.now().strftime("%Y-%m-%d")
     with get_connection() as conn:
-        rows = conn.execute("""
-            SELECT s.id, s.user_id, s.date, s.location, s.start_time, s.active,
-                   u.username, u.first_name, u.last_name
+        rows = conn.execute(
+            """
+            SELECT
+                s.id,
+                s.user_id,
+                s.date,
+                s.location,
+                s.start_time,
+                s.active,
+                u.username,
+                u.first_name,
+                u.last_name,
+                u.full_name
             FROM shifts s
             LEFT JOIN users u ON u.tg_id = s.user_id
             WHERE s.date = ?
             ORDER BY s.start_time
-        """, (today,)).fetchall()
+            """,
+            (today,)
+        ).fetchall()
         return [dict(row) for row in rows]
 
 
