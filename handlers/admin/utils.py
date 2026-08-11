@@ -1,5 +1,5 @@
 import math
-from datetime import datetime
+from utils.time_utils import now_msk, today_msk_str
 
 from db import get_connection
 from db.checklist import (
@@ -17,6 +17,7 @@ def full_name(user: dict | None) -> str:
     if not user:
         return "Пользователь"
 
+    # Приоритет: full_name > first+last > username > tg_id
     full = (user.get("full_name") or "").strip()
     if full:
         return full
@@ -28,10 +29,8 @@ def full_name(user: dict | None) -> str:
     name = " ".join([x for x in [first, last] if x]).strip()
     if name:
         return name
-
     if username:
         return f"@{username}"
-
     return str(user.get("tg_id", "Пользователь"))
 
 
@@ -55,21 +54,12 @@ def get_user_by_id(user_id: int) -> dict | None:
 
 
 def get_today_shifts_full() -> list[dict]:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = today_msk_str()  # ← МСК
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT
-                s.id,
-                s.user_id,
-                s.date,
-                s.location,
-                s.start_time,
-                s.active,
-                u.username,
-                u.first_name,
-                u.last_name,
-                u.full_name
+            SELECT s.id, s.user_id, s.date, s.location, s.start_time, s.active,
+                   u.username, u.first_name, u.last_name, u.full_name
             FROM shifts s
             LEFT JOIN users u ON u.tg_id = s.user_id
             WHERE s.date = ?
@@ -86,6 +76,7 @@ def get_employee_shift_days(employee_id: int, year: int, month: int) -> set[str]
         end_date = f"{year + 1}-01-01"
     else:
         end_date = f"{year:04d}-{month + 1:02d}-01"
+
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT DISTINCT date FROM shifts WHERE user_id = ? AND date >= ? AND date < ?",
@@ -107,7 +98,10 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
     shift = get_shift_for_date_any(employee_id, date_str)
     if not shift:
         return None
-    day_of_week = datetime.strptime(date_str, "%Y-%m-%d").weekday()
+
+    day_of_week = now_msk().weekday() if date_str == today_msk_str() \
+        else __import__("datetime").datetime.strptime(date_str, "%Y-%m-%d").weekday()
+
     items = get_items_for_location_and_day(shift["location"], day_of_week)
     progress = get_progress_for_user_date(employee_id, date_str)
     progress_dict = {p["item_id"]: p["completed"] for p in progress}
@@ -115,6 +109,7 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
     grouped = {}
     done = 0
     total = 0
+
     for item in items:
         item = dict(item)
         completed = progress_dict.get(item["id"], 0) == 1
@@ -130,7 +125,7 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
 
 
 def get_location_counts() -> dict[str, int]:
-    counts = {"bar": 0, "kitchen": 0}
+    counts = {"bar": 0, "kitchen": 0}  # ← без пробелов
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT location, COUNT(*) AS cnt FROM checklist_items GROUP BY location"
@@ -208,7 +203,7 @@ def clip(text: str | None, limit: int = 35) -> str:
 
 def format_date_ru(date_str: str) -> str:
     try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        dt = __import__("datetime").datetime.strptime(date_str, "%Y-%m-%d")
         return f"{dt.day} {MONTHS_GEN[dt.month - 1]} {dt.year}"
     except Exception:
         return date_str

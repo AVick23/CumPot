@@ -29,7 +29,6 @@ def init_db():
                 is_admin BOOLEAN DEFAULT 0
             )
         """)
-
         conn.execute("""
             CREATE TABLE IF NOT EXISTS shifts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +40,6 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(tg_id)
             )
         """)
-
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +51,6 @@ def init_db():
                 text TEXT
             )
         """)
-
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,12 +62,10 @@ def init_db():
             )
         """)
 
-        # Миграция для старой базы
+        # Безопасная миграция
         user_columns = _get_columns(conn, "users")
-
         if "full_name" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT")
-
         if "position" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN position TEXT")
 

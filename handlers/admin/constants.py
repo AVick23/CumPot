@@ -41,7 +41,7 @@ CB_ADD_BACK_TEXT = "add_back_text"
 CB_CANCEL = "cancel"
 CB_CANCEL_EDIT = "cancel_edit"
 
-# UI константы
+# UI константы (БЕЗ ПРОБЕЛОВ!)
 PAGE_SIZE = 8
 TEXT_LIMIT = 200
 MSG_LIMIT = 3800

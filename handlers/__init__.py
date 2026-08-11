@@ -1,28 +1,19 @@
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ConversationHandler,
-)
+from telegram.ext import Application, CommandHandler, ConversationHandler
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from db.users import save_user, get_user
 
-# ===================== ИЗОЛИРОВАННЫЕ ПАКЕТЫ =====================
+# ИЗОЛИРОВАННЫЕ ПАКЕТЫ
 from .employee import get_employee_entry_point, register_employee_states
 from .admin import get_admin_entry_point, register_admin_states
 
 
 async def start_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Единая точка входа.
-    Роутит пользователя к точке входа админа или сотрудника.
-    """
     user = update.effective_user
     if not user:
         return ConversationHandler.END
 
-    # Не берём имя из Telegram как основной профиль
     save_user(user.id, user.username, None, None)
     user_data = get_user(user.id)
 
@@ -35,10 +26,8 @@ async def start_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def register_handlers(app: Application):
-    # Единый словарь состояний для всего бота
     states = {}
 
-    # Заполняем состояния из изолированных пакетов
     register_employee_states(states)
     register_admin_states(states)
 
@@ -50,5 +39,4 @@ def register_handlers(app: Application):
         per_chat=False,
         allow_reentry=True,
     )
-
     app.add_handler(conv_handler)

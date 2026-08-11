@@ -1,8 +1,12 @@
 from . import get_connection
-from datetime import datetime
+from utils.time_utils import today_msk_str, time_msk_str
 import logging
 
 logger = logging.getLogger(__name__)
+
+# ==========================================
+# ДАННЫЕ ДЛЯ ИМПОРТА (БЕЗ ПРОБЕЛОВ В КЛЮЧАХ!)
+# ==========================================
 
 BAR_DAILY_ITEMS = [
     {"category": "opening", "text": "Включить свет и электричество (рубильники 10-16, 23-29)"},
@@ -122,13 +126,15 @@ def get_items_for_location_and_day(location: str, day_of_week: int) -> list[dict
 
 
 def save_progress(user_id: int, item_id: int, completed: bool = True):
-    date = datetime.now().strftime("%Y-%m-%d")
-    completed_at = datetime.now().strftime("%H:%M:%S") if completed else None
+    date = today_msk_str()
+    completed_at = time_msk_str() if completed else None
+
     with get_connection() as conn:
         row = conn.execute(
             "SELECT id FROM checklist_progress WHERE user_id = ? AND item_id = ? AND date = ?",
             (user_id, item_id, date)
         ).fetchone()
+
         if row:
             conn.execute(
                 "UPDATE checklist_progress SET completed = ?, completed_at = ? WHERE id = ?",
@@ -158,6 +164,7 @@ def add_checklist_item(item_type: str, location: str, category: str, day_of_week
             (location, category)
         ).fetchone()
         order = (row['max_order'] or 0) + 1
+
         conn.execute(
             "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
             (item_type, location, category, day_of_week, order, text.strip())

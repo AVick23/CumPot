@@ -1,62 +1,96 @@
 from . import get_connection
-from datetime import datetime
+from utils.time_utils import now_msk, today_msk_str, time_msk_str
 
-def start_shift(user_id, location):
-    """Создаёт новую смену и деактивирует предыдущие активные для этого пользователя"""
-    date = datetime.now().strftime("%Y-%m-%d")
-    start_time = datetime.now().strftime("%H:%M:%S")
+
+def _auto_close_outdated_shifts(conn):
+    """Автоматически закрывает смены, открытые НЕ сегодня по МСК."""
+    today = today_msk_str()
+    conn.execute(
+        "UPDATE shifts SET active = 0 WHERE active = 1 AND date < ?",
+        (today,)
+    )
+
+
+def start_shift(user_id: int, location: str):
+    """Создаёт новую смену. Старые просроченные закрываются автоматически."""
     with get_connection() as conn:
-        # Деактивируем все активные смены для пользователя (на случай, если он забыл закрыть)
-        conn.execute("UPDATE shifts SET active = 0 WHERE user_id = ? AND active = 1", (user_id,))
-        conn.execute("""
+        _auto_close_outdated_shifts(conn)
+
+        # Закрываем текущую активную смену пользователя (если есть)
+        conn.execute(
+            "UPDATE shifts SET active = 0 WHERE user_id = ? AND active = 1",
+            (user_id,)
+        )
+
+        conn.execute(
+            """
             INSERT INTO shifts (user_id, date, location, start_time, active)
             VALUES (?, ?, ?, ?, 1)
-        """, (user_id, date, location, start_time))
+            """,
+            (user_id, today_msk_str(), location, time_msk_str())
+        )
         conn.commit()
 
-def get_active_shift(user_id):
-    """Возвращает активную смену пользователя или None"""
+
+def get_active_shift(user_id: int) -> dict | None:
+    """Возвращает активную смену ТОЛЬКО если она открыта сегодня по МСК."""
     with get_connection() as conn:
+        _auto_close_outdated_shifts(conn)
+
         row = conn.execute(
-            "SELECT * FROM shifts WHERE user_id = ? AND active = 1",
-            (user_id,)
+            "SELECT * FROM shifts WHERE user_id = ? AND active = 1 AND date = ?",
+            (user_id, today_msk_str())
         ).fetchone()
         return dict(row) if row else None
 
-def end_shift(user_id):
-    """Деактивирует активную смену"""
+
+def end_shift(user_id: int):
+    """Ручное завершение активной смены."""
     with get_connection() as conn:
-        conn.execute("UPDATE shifts SET active = 0 WHERE user_id = ? AND active = 1", (user_id,))
+        conn.execute(
+            "UPDATE shifts SET active = 0 WHERE user_id = ? AND active = 1",
+            (user_id,)
+        )
         conn.commit()
 
-def get_shifts_for_date(date):
-    """Возвращает все активные смены за дату (для админа)"""
+
+def get_shifts_for_date(date: str) -> list[dict]:
+    """Все смены за конкретную дату (для админа)."""
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT s.*, u.first_name, u.last_name FROM shifts s JOIN users u ON s.user_id = u.tg_id WHERE s.date = ? AND s.active = 1",
+            """
+            SELECT s.*, u.first_name, u.last_name, u.full_name
+            FROM shifts s
+            JOIN users u ON s.user_id = u.tg_id
+            WHERE s.date = ?
+            ORDER BY s.start_time
+            """,
             (date,)
         ).fetchall()
         return [dict(row) for row in rows]
-    
-def get_shift_for_date(user_id, date):
-    """Возвращает смену пользователя за конкретную дату (активную)"""
+
+
+def get_shift_for_date(user_id: int, date: str) -> dict | None:
+    """Смена пользователя за конкретную дату (любая, не только активная)."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM shifts WHERE user_id = ? AND date = ? AND active = 1",
+            "SELECT * FROM shifts WHERE user_id = ? AND date = ?",
             (user_id, date)
         ).fetchone()
         return dict(row) if row else None
 
-def get_shifts_for_month(user_id, year, month):
-    """Возвращает список дат (строки) за месяц, где была активная смена"""
+
+def get_shifts_for_month(user_id: int, year: int, month: int) -> list[str]:
+    """Список дат за месяц, где были смены."""
     start_date = f"{year}-{month:02d}-01"
     if month == 12:
-        end_date = f"{year+1}-01-01"
+        end_date = f"{year + 1}-01-01"
     else:
-        end_date = f"{year}-{month+1:02d}-01"
+        end_date = f"{year}-{month + 1:02d}-01"
+
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT date FROM shifts WHERE user_id = ? AND active = 1 AND date >= ? AND date < ?",
+            "SELECT DISTINCT date FROM shifts WHERE user_id = ? AND date >= ? AND date < ?",
             (user_id, start_date, end_date)
         ).fetchall()
         return [row['date'] for row in rows]
