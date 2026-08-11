@@ -82,8 +82,10 @@ def checklist_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
             InlineKeyboardButton(label, callback_data=f"{CB_ITEM_PREFIX}{item['id']}")
         ])
 
-    rows.append([InlineKeyboardButton("◀️ Категории", callback_data=CB_BACK_CATEGORIES)])
-    rows.append([InlineKeyboardButton("🏠 Меню", callback_data=CB_BACK_MENU)])
+    rows.append([
+        InlineKeyboardButton("◀️ Категории", callback_data=CB_BACK_CATEGORIES),
+        InlineKeyboardButton("🏠 Меню", callback_data=CB_BACK_MENU),
+    ])
 
     return InlineKeyboardMarkup(rows)
 

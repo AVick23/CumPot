@@ -1,6 +1,6 @@
 from utils.time_utils import now_msk, today_msk_str
 
-from db.shifts import start_shift, get_active_shift, end_shift
+from db.shifts import start_shift, get_active_shift
 from db.checklist import (
     get_items_for_location_and_day,
     save_progress,
@@ -34,11 +34,12 @@ def get_current_shift(user_id: int) -> dict | None:
     return get_active_shift(user_id)
 
 
-def end_current_shift(user_id: int) -> None:
-    end_shift(user_id)
-
-
 def get_checklist_items(user_id: int) -> list[dict] | None:
+    """
+    Возвращает задачи сотрудника на сегодня по активной смене.
+    None — если нет активной смены.
+    [] — если смена есть, но задач нет.
+    """
     shift = get_active_shift(user_id)
     if not shift:
         return None

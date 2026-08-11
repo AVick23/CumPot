@@ -2,7 +2,7 @@ import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram.error import BadRequest, TelegramError
+from telegram.error import BadRequest
 
 from db.users import get_user, update_user_profile
 
@@ -81,9 +81,9 @@ def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
     return text[:limit - 1].rstrip() + "…"
 
 
-async def answer(query, text: str | None = None) -> None:
+async def answer(query, text: str | None = None, show_alert: bool = False) -> None:
     try:
-        await query.answer(text or "")
+        await query.answer(text or "", show_alert=show_alert)
     except Exception:
         pass
 
@@ -95,6 +95,10 @@ async def render(
     reply_markup=None,
     message_id: int | None = None,
 ) -> int | None:
+    """
+    Если message_id передан — редактируем сообщение.
+    Если нет — отправляем новое.
+    """
     text = truncate_text(text, MSG_LIMIT)
     chat_id = update.effective_chat.id if update.effective_chat else None
 
@@ -121,6 +125,72 @@ async def render(
         return msg.message_id
 
     return None
+
+
+async def cleanup_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int | None,
+    message_id: int | None,
+    fallback_text: str = "✅ Готово",
+) -> None:
+    """
+    Удаляет служебное сообщение.
+    Если удалить нельзя — редактирует его и убирает кнопки.
+    """
+    if not chat_id or not message_id:
+        return
+
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        return
+    except Exception:
+        pass
+
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=fallback_text,
+            reply_markup=None,
+        )
+    except Exception:
+        pass
+
+
+def main_menu_text(user_db: dict, shift: dict | None) -> str:
+    full_name = user_db.get("full_name") or "Сотрудник"
+
+    if shift:
+        shift_location_label = get_position_label(shift.get("location"))
+        return (
+            "🟢 Смена открыта\n"
+            f"📍 {shift_location_label} · с {shift.get('start_time', '—')}\n\n"
+            "Смена закроется автоматически после 00:00 по МСК.\n"
+            "Выберите действие."
+        )
+
+    position_label = get_position_label(user_db.get("position"))
+
+    return (
+        f"👋 {full_name}\n"
+        f"Ваша позиция: {position_label}\n\n"
+        "Сейчас вы не на смене.\n"
+        "Когда будете готовы, начните смену."
+    )
+
+
+def item_detail_text(item: dict) -> str:
+    status_text = "✅ Выполнено" if item.get("completed") else "⚪️ Не выполнено"
+    category_label = CATEGORY_NAMES.get(item.get("category"), item.get("category"))
+    photo_text = "🖼 Фото прикреплено" if item.get("has_photo") else "🖼 Фото: нет"
+
+    return (
+        "📌 Задача\n\n"
+        f"{item.get('text')}\n\n"
+        f"Статус: {status_text}\n"
+        f"Категория: {category_label}\n"
+        f"{photo_text}"
+    )
 
 
 def build_photo_caption(user_id: int, item: dict) -> str:
@@ -155,12 +225,17 @@ def build_photo_caption(user_id: int, item: dict) -> str:
 # ONBOARDING
 # =========================
 
-async def ask_name(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    message_id: int | None = None,
-    error: str | None = None,
-) -> int:
+async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id:
+        return set_state(context, ONBOARD_NAME)
+
+    context.user_data.pop("onboarding_full_name", None)
+    context.user_data.pop("onboarding_name_msg_id", None)
+    context.user_data.pop("onboarding_position_msg_id", None)
+    context.user_data.pop("await_photo", None)
+    context.user_data.pop("current_category", None)
+
     text = (
         "👋 Добро пожаловать!\n\n"
         "Чтобы продолжить, укажите ваше ФИО полностью.\n\n"
@@ -168,28 +243,34 @@ async def ask_name(
         "Иванов Иван Иванович"
     )
 
-    if error:
-        text = f"⚠️ {error}\n\n{text}"
-
-    new_message_id = await render(update, context, text, None, message_id)
-    context.user_data["onboarding_msg_id"] = new_message_id
+    msg = await context.bot.send_message(chat_id=chat_id, text=text)
+    context.user_data["onboarding_name_msg_id"] = msg.message_id
 
     return set_state(context, ONBOARD_NAME)
 
 
-async def ask_position(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    message_id: int | None = None,
-    error: str | None = None,
-) -> int:
-    text = "Отлично! Теперь выберите, где вы работаете."
+async def ask_position(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id:
+        return set_state(context, ONBOARD_POSITION)
 
-    if error:
-        text = f"⚠️ {error}\n\n{text}"
+    full_name = context.user_data.get("onboarding_full_name") or ""
 
-    new_message_id = await render(update, context, text, position_keyboard(), message_id)
-    context.user_data["onboarding_msg_id"] = new_message_id
+    if full_name:
+        text = (
+            f"Приятно познакомиться, {full_name}!\n\n"
+            "Теперь выберите, где вы работаете."
+        )
+    else:
+        text = "Теперь выберите, где вы работаете."
+
+    msg = await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=position_keyboard(),
+    )
+
+    context.user_data["onboarding_position_msg_id"] = msg.message_id
 
     return set_state(context, ONBOARD_POSITION)
 
@@ -202,9 +283,10 @@ async def employee_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_db = get_user(user.id)
 
     context.user_data.pop("onboarding_full_name", None)
-    context.user_data.pop("onboarding_msg_id", None)
-    context.user_data.pop("current_category", None)
+    context.user_data.pop("onboarding_name_msg_id", None)
+    context.user_data.pop("onboarding_position_msg_id", None)
     context.user_data.pop("await_photo", None)
+    context.user_data.pop("current_category", None)
 
     if not user_db or not (user_db.get("full_name") or "").strip():
         return await ask_name(update, context)
@@ -213,76 +295,115 @@ async def employee_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data["onboarding_full_name"] = user_db.get("full_name")
         return await ask_position(update, context)
 
-    return await show_main_menu(update, context)
+    return await show_main_menu(update, context, None)
 
 
 async def onboarding_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message:
         return set_state(context, ONBOARD_NAME)
 
-    message_id = context.user_data.get("onboarding_msg_id")
+    if not update.message.text:
+        return await onboarding_wrong_type_name(update, context)
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
 
     raw_text = (update.message.text or "").strip()
     full_name = " ".join(raw_text.split())
 
     if len(full_name) < 5 or len(full_name.split()) < 2:
-        return await ask_name(
-            update,
-            context,
-            message_id,
-            error="Пожалуйста, укажите ФИО полностью: минимум фамилия и имя."
+        await update.message.reply_text(
+            "⚠️ Пожалуйста, укажите ФИО полностью: минимум фамилия и имя.\n\n"
+            "Например:\n"
+            "Иванов Иван Иванович"
         )
+        return set_state(context, ONBOARD_NAME)
 
     if len(full_name) > FULL_NAME_LIMIT:
-        return await ask_name(
-            update,
-            context,
-            message_id,
-            error=f"Слишком длинно. Максимум {FULL_NAME_LIMIT} символов."
+        await update.message.reply_text(
+            f"⚠️ Слишком длинно. Максимум {FULL_NAME_LIMIT} символов.\n\n"
+            "Пожалуйста, укажите ФИО ещё раз."
         )
+        return set_state(context, ONBOARD_NAME)
+
+    await cleanup_message(
+        context,
+        chat_id,
+        context.user_data.get("onboarding_name_msg_id"),
+        "✅ ФИО получено",
+    )
 
     context.user_data["onboarding_full_name"] = full_name
-    return await ask_position(update, context, message_id)
+
+    return await ask_position(update, context)
+
+
+async def onboarding_wrong_type_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.effective_chat:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⚠️ Пожалуйста, отправьте ФИО обычным текстовым сообщением.",
+        )
+
+    return set_state(context, ONBOARD_NAME)
+
+
+async def onboarding_callback_guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await answer(query, "Сначала введите ФИО текстом")
+    return set_state(context, ONBOARD_NAME)
 
 
 async def onboarding_position(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     data = query.data or ""
 
-    await answer(query)
-
-    message_id = query.message.message_id if query.message else context.user_data.get("onboarding_msg_id")
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
 
     if not data.startswith(CB_POSITION_PREFIX):
-        return await ask_position(update, context, message_id, error="Выберите одну из позиций.")
+        return await onboarding_position_guard(update, context)
 
     position = data.split(":", 1)[1]
 
     if position not in LOCATIONS:
-        return await ask_position(update, context, message_id, error="Выберите одну из позиций.")
-
-    user = update.effective_user
-    if not user:
-        return MAIN_MENU
+        await answer(query, "Выберите одну из позиций")
+        return set_state(context, ONBOARD_POSITION)
 
     user_db = get_user(user.id)
     full_name = context.user_data.get("onboarding_full_name") or (user_db.get("full_name") if user_db else None)
 
     if not full_name:
-        return await ask_name(update, context, message_id, error="Сначала укажите ФИО.")
+        return await ask_name(update, context)
 
     update_user_profile(user.id, full_name=full_name, position=position)
 
+    chat_id = update.effective_chat.id if update.effective_chat else None
+
+    message_id = None
+    if query.message:
+        message_id = query.message.message_id
+    else:
+        message_id = context.user_data.get("onboarding_position_msg_id")
+
+    await cleanup_message(context, chat_id, message_id, "✅ Позиция сохранена")
+
     context.user_data.pop("onboarding_full_name", None)
-    context.user_data.pop("onboarding_msg_id", None)
-    context.user_data.pop("current_category", None)
+    context.user_data.pop("onboarding_name_msg_id", None)
+    context.user_data.pop("onboarding_position_msg_id", None)
 
     return await show_main_menu(
         update,
         context,
-        message_id,
+        None,
         notice="✅ Профиль сохранён. Теперь можно начинать смену."
     )
+
+
+async def onboarding_position_guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await answer(query, "Выберите одну из позиций")
+    return set_state(context, ONBOARD_POSITION)
 
 
 # =========================
@@ -302,39 +423,22 @@ async def show_main_menu(
     user_db = get_user(user.id)
 
     if not user_db or not (user_db.get("full_name") or "").strip():
-        return await ask_name(update, context, message_id)
+        return await ask_name(update, context)
 
     if not (user_db.get("position") or "").strip():
         context.user_data["onboarding_full_name"] = user_db.get("full_name")
-        return await ask_position(update, context, message_id)
+        return await ask_position(update, context)
 
     context.user_data.pop("current_category", None)
     context.user_data.pop("await_photo", None)
 
     shift = get_current_shift(user.id)
-    full_name = user_db.get("full_name") or "Сотрудник"
-
-    if shift:
-        shift_location_label = get_position_label(shift.get("location"))
-        text = (
-            "🟢 Смена открыта\n"
-            f"📍 {shift_location_label} · с {shift.get('start_time', '—')}\n\n"
-            "Смена закроется автоматически после 00:00 по МСК.\n"
-            "Выберите действие."
-        )
-        kb = main_menu_keyboard(has_shift=True)
-    else:
-        position_label = get_position_label(user_db.get("position"))
-        text = (
-            f"👋 {full_name}\n"
-            f"Ваша позиция: {position_label}\n\n"
-            "Сейчас вы не на смене.\n"
-            "Когда будете готовы, начните смену."
-        )
-        kb = main_menu_keyboard(has_shift=False)
+    text = main_menu_text(user_db, shift)
 
     if notice:
         text = f"{notice}\n\n{text}"
+
+    kb = main_menu_keyboard(has_shift=bool(shift))
 
     await render(update, context, text, kb, message_id)
     return set_state(context, MAIN_MENU)
@@ -519,17 +623,7 @@ async def show_item_detail(
     if not item:
         return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
 
-    status_text = "✅ Выполнено" if item.get("completed") else "⚪️ Не выполнено"
-    category_label = CATEGORY_NAMES.get(item.get("category"), item.get("category"))
-    photo_text = "🖼 Фото прикреплено" if item.get("has_photo") else "🖼 Фото: нет"
-
-    text = (
-        "📌 Задача\n\n"
-        f"{item.get('text')}\n\n"
-        f"Статус: {status_text}\n"
-        f"Категория: {category_label}\n"
-        f"{photo_text}"
-    )
+    text = item_detail_text(item)
 
     if notice:
         text = f"{notice}\n\n{text}"
@@ -541,6 +635,45 @@ async def show_item_detail(
     )
 
     await render(update, context, text, kb, message_id)
+    return set_state(context, ITEM_DETAIL)
+
+
+async def send_new_item_detail(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    item_id: int,
+    notice: str | None = None,
+) -> int:
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id:
+        return MAIN_MENU
+
+    item = get_item_by_id(user.id, item_id)
+
+    if not item:
+        return await show_main_menu(update, context, None, notice="⚠️ Задача не найдена.")
+
+    text = item_detail_text(item)
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    kb = item_detail_keyboard(
+        item_id,
+        bool(item.get("completed")),
+        bool(item.get("has_photo")),
+    )
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=kb,
+    )
+
     return set_state(context, ITEM_DETAIL)
 
 
@@ -581,34 +714,36 @@ async def show_photo_prompt(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     item_id: int,
-    mark_done: bool,
-    message_id: int | None = None,
 ) -> int:
     user = update.effective_user
     if not user:
         return MAIN_MENU
 
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id:
+        return MAIN_MENU
+
     item = get_item_by_id(user.id, item_id)
 
     if not item:
-        return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
-
-    action_text = "и выполнить её" if mark_done else "к задаче"
+        return await show_current_checklist(update, context, None, notice="⚠️ Задача не найдена.")
 
     text = (
         "📷 Отправьте фото одним сообщением.\n\n"
         f"Задача:\n{item.get('text')}\n\n"
-        f"Фото будет сохранено в служебный канал {action_text}."
+        "После загрузки фото будет сохранено в служебный канал."
     )
 
-    kb = photo_prompt_keyboard()
-
-    new_message_id = await render(update, context, text, kb, message_id)
+    msg = await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=photo_prompt_keyboard(),
+    )
 
     context.user_data["await_photo"] = {
         "item_id": item_id,
-        "mark_done": mark_done,
-        "prompt_message_id": new_message_id,
+        "mark_done": not bool(item.get("completed")),
+        "prompt_message_id": msg.message_id,
     }
 
     return set_state(context, AWAIT_TASK_PHOTO)
@@ -624,7 +759,6 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     message_id = query.message.message_id if query.message else None
 
-    # Обычное выполнение / отмена
     if data.startswith(CB_TOGGLE_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -643,7 +777,6 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
         return await show_item_detail(update, context, item_id, message_id)
 
-    # Прикрепить / заменить фото
     if data.startswith(CB_PHOTO_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -658,11 +791,8 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
 
         await answer(query)
+        return await show_photo_prompt(update, context, item_id)
 
-        mark_done = not bool(item.get("completed"))
-        return await show_photo_prompt(update, context, item_id, mark_done, message_id)
-
-    # Посмотреть фото
     if data.startswith(CB_VIEW_PHOTO_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -676,18 +806,19 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await answer(query, "Фото не найдено")
             return await show_item_detail(update, context, item_id, message_id)
 
-        try:
-            chat_id = update.effective_chat.id if update.effective_chat else None
-            if chat_id:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+
+        if chat_id:
+            try:
                 await context.bot.send_photo(
                     chat_id=chat_id,
                     photo=item["photo_file_id"],
                 )
                 await answer(query, "Фото отправлено выше")
-            else:
+            except Exception as e:
+                logger.warning("View photo failed: %s", e)
                 await answer(query, "Не удалось отправить фото")
-        except TelegramError as e:
-            logger.warning("View photo failed: %s", e)
+        else:
             await answer(query, "Не удалось отправить фото")
 
         return set_state(context, ITEM_DETAIL)
@@ -712,6 +843,10 @@ async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if not user:
         return MAIN_MENU
 
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id:
+        return MAIN_MENU
+
     meta = context.user_data.get("await_photo")
 
     if not meta:
@@ -728,7 +863,7 @@ async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     if not item:
         context.user_data.pop("await_photo", None)
-        return await show_current_checklist(update, context, prompt_message_id, notice="⚠️ Задача не найдена.")
+        return await show_main_menu(update, context, None, notice="⚠️ Задача не найдена.")
 
     photo_file_id = update.message.photo[-1].file_id
     caption = build_photo_caption(user.id, item)
@@ -738,14 +873,13 @@ async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     except Exception as e:
         logger.error("Failed to send photo to channel: %s", e)
 
-        await render(
-            update,
-            context,
-            "⚠️ Не удалось отправить фото в канал.\n\n"
-            "Проверьте, что бот добавлен в канал администратором и имеет право публикации сообщений.\n\n"
-            "Попробуйте отправить фото ещё раз.",
-            photo_prompt_keyboard(),
-            prompt_message_id,
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "⚠️ Не удалось загрузить фото в канал.\n\n"
+                "Проверьте, что бот добавлен в канал администратором и имеет право публикации сообщений.\n\n"
+                "Попробуйте отправить фото ещё раз."
+            ),
         )
 
         return set_state(context, AWAIT_TASK_PHOTO)
@@ -760,30 +894,27 @@ async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     context.user_data.pop("await_photo", None)
 
-    notice = (
-        "✅ Задача выполнена. Фото прикреплено."
-        if mark_done
-        else "✅ Фото прикреплено."
-    )
+    await cleanup_message(context, chat_id, prompt_message_id, "✅ Фото получено")
 
-    return await show_item_detail(update, context, item_id, prompt_message_id, notice)
+    if mark_done:
+        notice = "🎉 Молодец! Задача выполнена, фото сохранено."
+    else:
+        notice = "🎉 Молодец! Фото сохранено."
+
+    return await send_new_item_detail(update, context, item_id, notice)
 
 
 async def photo_wrong_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    meta = context.user_data.get("await_photo") or {}
-    message_id = meta.get("prompt_message_id")
+    chat_id = update.effective_chat.id if update.effective_chat else None
 
-    if not meta:
-        return await show_main_menu(update, context, None, notice="Начните заново с /start.")
-
-    await render(
-        update,
-        context,
-        "⚠️ Пожалуйста, отправьте именно фото.\n\n"
-        "Если вы хотите отменить прикрепление фото, нажмите кнопку ниже.",
-        photo_prompt_keyboard(),
-        message_id,
-    )
+    if chat_id:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "⚠️ Пожалуйста, отправьте именно фото.\n\n"
+                "Если хотите отменить прикрепление фото, нажмите кнопку «Отмена» под запросом фото."
+            ),
+        )
 
     return set_state(context, AWAIT_TASK_PHOTO)
 
@@ -792,20 +923,34 @@ async def photo_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     query = update.callback_query
     await answer(query)
 
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+
     meta = context.user_data.get("await_photo") or {}
 
     item_id = meta.get("item_id")
-    message_id = meta.get("prompt_message_id")
+    prompt_message_id = meta.get("prompt_message_id")
 
-    if query.message:
-        message_id = query.message.message_id
+    if not prompt_message_id and query.message:
+        prompt_message_id = query.message.message_id
 
     context.user_data.pop("await_photo", None)
 
-    if item_id:
-        return await show_item_detail(update, context, item_id, message_id, notice="Отменено.")
+    await cleanup_message(context, chat_id, prompt_message_id, "❌ Отменено")
 
-    return await show_main_menu(update, context, message_id)
+    if item_id:
+        return await send_new_item_detail(update, context, item_id, notice="Отменено.")
+
+    return await show_main_menu(update, context, None)
+
+
+async def photo_state_guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await answer(query, "Сначала отправьте фото или нажмите «Отмена»")
+    return set_state(context, AWAIT_TASK_PHOTO)
 
 
 # =========================

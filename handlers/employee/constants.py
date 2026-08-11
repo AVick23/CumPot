@@ -10,6 +10,7 @@ AWAIT_TASK_PHOTO = 8
 
 # Callback data
 CB_NOOP = "noop"
+
 CB_START_SHIFT = "start_shift"
 CB_CHECKLIST = "checklist"
 CB_PROGRESS = "progress"
@@ -26,7 +27,7 @@ CB_BACK_CATEGORIES = "back_cats"
 
 CB_PHOTO_CANCEL = "photo_cancel"
 
-# UI константы
+# UI
 LOCATIONS = {
     "bar": "🍸 Бар",
     "kitchen": "🍳 Кухня",

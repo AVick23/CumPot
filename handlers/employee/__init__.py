@@ -7,7 +7,10 @@ from telegram.ext import (
 from .handlers import (
     employee_start,
     onboarding_name_input,
+    onboarding_wrong_type_name,
     onboarding_position,
+    onboarding_position_guard,
+    onboarding_callback_guard,
     main_menu_callback,
     category_selection,
     view_item,
@@ -16,6 +19,7 @@ from .handlers import (
     photo_input,
     photo_wrong_type,
     photo_cancel,
+    photo_state_guard,
     noop as employee_noop,
 )
 
@@ -60,15 +64,18 @@ def register_employee_states(states: dict):
             CallbackQueryHandler(employee_noop, pattern="^noop$"),
         ]
 
-    # Онбординг
+    # Онбординг: ФИО
     states[ONBOARD_NAME] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_name_input),
+        MessageHandler(~filters.TEXT & ~filters.COMMAND, onboarding_wrong_type_name),
+        CallbackQueryHandler(onboarding_callback_guard),
     ]
 
-    states[ONBOARD_POSITION] = emp_state(
-        onboarding_position,
-        f"^{CB_POSITION_PREFIX}.*"
-    )
+    # Онбординг: позиция
+    states[ONBOARD_POSITION] = [
+        CallbackQueryHandler(onboarding_position, pattern=f"^{CB_POSITION_PREFIX}.*"),
+        CallbackQueryHandler(onboarding_position_guard),
+    ]
 
     # Главное меню
     states[MAIN_MENU] = emp_state(
@@ -89,16 +96,20 @@ def register_employee_states(states: dict):
     )
 
     # Карточка задачи
-    states[ITEM_DETAIL] = emp_state(
-        toggle_item_callback,
-        (
-            f"^{CB_TOGGLE_PREFIX}.*|"
-            f"^{CB_PHOTO_PREFIX}.*|"
-            f"^{CB_VIEW_PHOTO_PREFIX}.*|"
-            f"^{CB_BACK_CATEGORIES}$|"
-            f"^{CB_BACK_MENU}$"
-        )
-    )
+    states[ITEM_DETAIL] = [
+        CallbackQueryHandler(
+            toggle_item_callback,
+            pattern=(
+                f"^{CB_TOGGLE_PREFIX}.*|"
+                f"^{CB_PHOTO_PREFIX}.*|"
+                f"^{CB_VIEW_PHOTO_PREFIX}.*|"
+                f"^{CB_BACK_CATEGORIES}$|"
+                f"^{CB_BACK_MENU}$"
+            )
+        ),
+        CallbackQueryHandler(photo_cancel, pattern=f"^{CB_PHOTO_CANCEL}$"),
+        CallbackQueryHandler(employee_noop, pattern="^noop$"),
+    ]
 
     # Прогресс
     states[PROGRESS_VIEW] = emp_state(
@@ -111,4 +122,5 @@ def register_employee_states(states: dict):
         MessageHandler(filters.PHOTO, photo_input),
         MessageHandler(~filters.PHOTO & ~filters.COMMAND, photo_wrong_type),
         CallbackQueryHandler(photo_cancel, pattern=f"^{CB_PHOTO_CANCEL}$"),
+        CallbackQueryHandler(photo_state_guard),
     ]
