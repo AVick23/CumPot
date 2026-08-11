@@ -18,6 +18,7 @@ def _get_columns(conn, table_name: str) -> set[str]:
 
 def init_db():
     with get_connection() as conn:
+        # Таблица пользователей
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 tg_id INTEGER PRIMARY KEY,
@@ -29,6 +30,8 @@ def init_db():
                 is_admin BOOLEAN DEFAULT 0
             )
         """)
+
+        # Таблица смен
         conn.execute("""
             CREATE TABLE IF NOT EXISTS shifts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,6 +43,8 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(tg_id)
             )
         """)
+
+        # Таблица пунктов чек-листов
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +56,8 @@ def init_db():
                 text TEXT
             )
         """)
+
+        # Таблица прогресса выполнения
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +69,20 @@ def init_db():
             )
         """)
 
-        # Безопасная миграция
+        # ✅ НОВАЯ ТАБЛИЦА ДЛЯ ФОТО
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS checklist_progress_photos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                item_id INTEGER,
+                date TEXT,
+                file_id TEXT,
+                channel_message_id INTEGER,
+                created_at TEXT
+            )
+        """)
+
+        # Безопасная миграция для старых баз
         user_columns = _get_columns(conn, "users")
         if "full_name" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT")
@@ -71,6 +91,7 @@ def init_db():
 
         conn.commit()
 
+    # Импорт стартовых чек-листов
     from .checklist import import_checklist_items
     import_checklist_items()
 
