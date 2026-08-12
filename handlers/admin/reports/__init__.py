@@ -8,5 +8,5 @@ def register_report_states(states: dict):
         CallbackQueryHandler(calendar_callback, pattern=f"^{CB_PREV_MONTH}$|^{CB_NEXT_MONTH}$|^{CB_DAY_PREFIX}:.*|^{CB_HOME}$"),
     ]
     states[ADMIN_DAY_REPORT] = [
-        CallbackQueryHandler(calendar_callback, pattern=f"^{CB_TO_CALENDAR}$|^{CB_HOME}$|^{show_media:.*}$"),
+        CallbackQueryHandler(calendar_callback, pattern=f"^{CB_TO_CALENDAR}$|^{CB_HOME}$|^show_media:.*$"),
     ]
