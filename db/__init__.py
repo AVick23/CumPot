@@ -11,6 +11,11 @@ def get_connection():
     return conn
 
 
+def _get_columns(conn, table_name):
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row["name"] for row in rows}
+
+
 def init_db():
     with get_connection() as conn:
         # Таблица пользователей
@@ -32,9 +37,9 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 location TEXT NOT NULL,
                 name TEXT NOT NULL,
-                start_time TEXT NOT NULL,      -- время начала (HH:MM)
-                duration INTEGER NOT NULL,     -- длительность в минутах
-                days TEXT NOT NULL,            -- 'all', 'mon,tue,...' или 'sat,sun'
+                start_time TEXT NOT NULL,
+                duration INTEGER NOT NULL,
+                days TEXT NOT NULL,
                 sort_order INTEGER DEFAULT 0
             )
         """)
@@ -46,27 +51,31 @@ def init_db():
                 user_id INTEGER,
                 shift_type_id INTEGER,
                 date TEXT,
-                start_time TEXT,               -- фактическое время начала
+                start_time TEXT,
                 active BOOLEAN DEFAULT 1,
                 FOREIGN KEY (user_id) REFERENCES users(tg_id),
                 FOREIGN KEY (shift_type_id) REFERENCES shift_types(id)
             )
         """)
 
-        # Таблица пунктов чек-листов
+        # Таблица пунктов чек-листов (обновлена)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT,
-                location TEXT,
-                category TEXT,
-                day_of_week INTEGER,
+                type TEXT,                   -- 'daily', 'weekly', 'once'
+                location TEXT,               -- 'bar' или 'kitchen'
+                category TEXT,               -- 'opening', 'daytime', 'closing', 'weekly'
+                day_of_week INTEGER,         -- 0-6 для weekly, NULL для других
                 sort_order INTEGER,
-                text TEXT
+                text TEXT,
+                requires_photo BOOLEAN DEFAULT 0,
+                requires_notification BOOLEAN DEFAULT 0,
+                due_date TEXT,               -- YYYY-MM-DD для type='once', NULL для остальных
+                is_recurring BOOLEAN DEFAULT 1  -- 1 — постоянная, 0 — одноразовая
             )
         """)
 
-        # Таблица общего прогресса
+        # Таблица общего прогресса (без изменений)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_shared_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,6 +94,30 @@ def init_db():
             CREATE UNIQUE INDEX IF NOT EXISTS idx_shared_progress
             ON checklist_shared_progress(location, date, item_id)
         """)
+
+        # Таблица для отслеживания отправленных уведомлений
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS checklist_notifications_sent (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                sent_at TEXT,
+                FOREIGN KEY (item_id) REFERENCES checklist_items(id),
+                UNIQUE(item_id, date)
+            )
+        """)
+
+        # Безопасная миграция для старых баз
+        item_columns = _get_columns(conn, "checklist_items")
+        if "requires_photo" not in item_columns:
+            conn.execute("ALTER TABLE checklist_items ADD COLUMN requires_photo BOOLEAN DEFAULT 0")
+        if "requires_notification" not in item_columns:
+            conn.execute("ALTER TABLE checklist_items ADD COLUMN requires_notification BOOLEAN DEFAULT 0")
+        if "due_date" not in item_columns:
+            conn.execute("ALTER TABLE checklist_items ADD COLUMN due_date TEXT")
+        if "is_recurring" not in item_columns:
+            conn.execute("ALTER TABLE checklist_items ADD COLUMN is_recurring BOOLEAN DEFAULT 1")
+        # Если есть записи с type='daily' или 'weekly', установим is_recurring=1 (уже по умолчанию)
 
         conn.commit()
 
