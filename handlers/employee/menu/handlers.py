@@ -3,21 +3,32 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from db.users import get_user, update_user_profile
-from db.shifts import start_shift, get_active_shift
+from db.shifts import (
+    start_shift, get_active_shift,
+    get_shift_types_for_location, get_shift_type
+)
+from utils.time_utils import now_msk
 
 from .constants import (
     ONBOARD_NAME,
     ONBOARD_POSITION,
     MAIN_MENU,
+    SELECT_SHIFT_TYPE,
     CB_START_SHIFT,
     CB_CHECKLIST,
     CB_PROGRESS,
     CB_BACK_MENU,
     CB_POSITION_PREFIX,
+    CB_SHIFT_TYPE_PREFIX,
     LOCATIONS,
     FULL_NAME_LIMIT,
 )
-from .keyboards import position_keyboard, main_menu_keyboard, back_menu_keyboard
+from .keyboards import (
+    position_keyboard,
+    main_menu_keyboard,
+    back_menu_keyboard,
+    shift_types_keyboard,
+)
 from .utils import (
     main_menu_text,
     render,
@@ -30,25 +41,12 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
-# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (локальные) ====================
-
-def start_shift_for_user(user_id: int) -> bool:
-    user = get_user(user_id)
-    if not user:
-        return False
-    position = user.get("position")
-    if position not in LOCATIONS:
-        return False
-    start_shift(user_id, position)
-    return True
-
-
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def get_current_shift(user_id: int) -> dict | None:
     return get_active_shift(user_id)
 
 
 # ==================== ЭКРАНЫ ====================
-
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = update.effective_chat.id
     if not chat_id:
@@ -152,7 +150,6 @@ async def employee_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # ==================== ОБРАБОТЧИКИ ====================
-
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     data = query.data or ""
@@ -170,18 +167,22 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return await show_main_menu(update, context, message_id, notice="Вы уже на смене.")
 
         user_db = get_user(user.id)
-        if not user_db or not user_db.get("position"):
+        position = user_db.get("position")
+        if not position:
             return await employee_start(update, context)
 
-        started = start_shift_for_user(user.id)
+        # Получаем доступные типы смен для позиции и текущего дня
+        weekday = now_msk().weekday()
+        shift_types = get_shift_types_for_location(position, weekday)
+        if not shift_types:
+            return await show_main_menu(update, context, message_id, notice="⚠️ Нет доступных смен для вашей позиции.")
 
-        if not started:
-            return await show_main_menu(update, context, message_id, notice="⚠️ Не удалось начать смену.")
-
-        return await show_main_menu(update, context, message_id, notice="✅ Смена открыта. Хорошей смены!")
+        context.user_data["available_shifts"] = shift_types
+        text = "Выберите смену:"
+        await render(update, context, text, shift_types_keyboard(shift_types), message_id)
+        return set_state(context, SELECT_SHIFT_TYPE)
 
     if data == CB_CHECKLIST:
-        # Перенаправление в пакет checklists
         from ..checklists.handlers import show_categories
         return await show_categories(update, context, message_id)
 
@@ -195,8 +196,42 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return await show_main_menu(update, context, message_id)
 
 
-# ==================== ОНБОРДИНГ ====================
+async def shift_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data or ""
+    await answer(query)
 
+    user = update.effective_user
+    if not user:
+        return MAIN_MENU
+
+    message_id = query.message.message_id if query.message else None
+
+    if data.startswith(CB_SHIFT_TYPE_PREFIX):
+        try:
+            shift_type_id = int(data.split(":", 1)[1])
+        except (ValueError, IndexError):
+            return await show_main_menu(update, context, message_id, notice="Ошибка выбора.")
+
+        shift_type = get_shift_type(shift_type_id)
+        if not shift_type:
+            return await show_main_menu(update, context, message_id, notice="Тип смены не найден.")
+
+        try:
+            start_shift(user.id, shift_type_id)
+        except Exception as e:
+            logger.error("Ошибка начала смены: %s", e)
+            return await show_main_menu(update, context, message_id, notice="⚠️ Не удалось начать смену.")
+
+        return await show_main_menu(update, context, message_id, notice="✅ Смена открыта. Хорошей смены!")
+
+    if data == CB_BACK_MENU:
+        return await show_main_menu(update, context, message_id)
+
+    return await show_main_menu(update, context, message_id)
+
+
+# ==================== ОНБОРДИНГ ====================
 async def onboarding_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message or not update.message.text:
         return await onboarding_wrong_type_name(update, context)

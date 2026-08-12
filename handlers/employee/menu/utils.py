@@ -14,12 +14,22 @@ def main_menu_text(user_db: dict, shift: dict | None) -> str:
 
     if shift:
         shift_location_label = get_position_label(shift.get("location"))
-        return (
-            "🟢 Смена открыта\n"
-            f"📍 {shift_location_label} · с {shift.get('start_time', '—')}\n\n"
-            "Смена закроется автоматически после 00:00 по МСК.\n"
-            "Выберите действие."
-        )
+        shift_name = shift.get("shift_name", "")
+        shift_start = shift.get("shift_start_time") or shift.get("start_time") or "—"
+        if shift_name:
+            return (
+                "🟢 Смена открыта\n"
+                f"📍 {shift_location_label} · {shift_name} (с {shift_start})\n\n"
+                "Смена закроется автоматически после 00:00 по МСК.\n"
+                "Выберите действие."
+            )
+        else:
+            return (
+                "🟢 Смена открыта\n"
+                f"📍 {shift_location_label} · с {shift_start}\n\n"
+                "Смена закроется автоматически после 00:00 по МСК.\n"
+                "Выберите действие."
+            )
 
     position_label = get_position_label(user_db.get("position"))
 

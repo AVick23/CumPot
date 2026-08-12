@@ -1,7 +1,7 @@
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
 from .menu.handlers import employee_start
-from .menu.handlers import main_menu_callback
+from .menu import register_menu_states
 from .checklists.handlers import (
     category_selection,
     view_item,
@@ -14,11 +14,11 @@ from .checklists.handlers import (
     noop,
 )
 
-# Импортируем константы из menu
 from .menu.constants import (
     ONBOARD_NAME,
     ONBOARD_POSITION,
     MAIN_MENU,
+    SELECT_SHIFT_TYPE,
     CB_START_SHIFT,
     CB_CHECKLIST,
     CB_PROGRESS,
@@ -26,7 +26,6 @@ from .menu.constants import (
     CB_BACK_MENU,
 )
 
-# Импортируем константы из checklists
 from .checklists.constants import (
     CATEGORY_SELECT,
     CHECKLIST_VIEW,
@@ -42,7 +41,6 @@ from .checklists.constants import (
     CB_BACK_CATEGORIES,
 )
 
-# Импорты из menu для онбординга
 from .menu.handlers import (
     onboarding_name_input,
     onboarding_wrong_type_name,
@@ -53,27 +51,23 @@ from .menu.handlers import (
 
 
 def get_employee_entry_point():
-    """Возвращает точку входа для сотрудника"""
     return employee_start
 
 
 def register_employee_states(states: dict):
-    """Регистрирует все состояния сотрудника в переданный словарь states."""
-
     def emp_state(handler, pattern: str):
         return [
             CallbackQueryHandler(handler, pattern=pattern),
             CallbackQueryHandler(noop, pattern="^noop$"),
         ]
 
-    # Онбординг: ФИО
+    # Онбординг
     states[ONBOARD_NAME] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_name_input),
         MessageHandler(~filters.TEXT & ~filters.COMMAND, onboarding_wrong_type_name),
         CallbackQueryHandler(onboarding_callback_guard),
     ]
 
-    # Онбординг: позиция
     states[ONBOARD_POSITION] = [
         CallbackQueryHandler(onboarding_position, pattern=f"^{CB_POSITION_PREFIX}.*"),
         CallbackQueryHandler(onboarding_position_guard),
@@ -126,3 +120,6 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(photo_cancel, pattern=f"^{CB_PHOTO_CANCEL}$"),
         CallbackQueryHandler(photo_state_guard),
     ]
+
+    # Регистрируем состояния из menu (включая выбор смены)
+    register_menu_states(states)

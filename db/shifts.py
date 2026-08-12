@@ -7,25 +7,107 @@ def _auto_close_outdated_shifts(conn):
     conn.execute("UPDATE shifts SET active = 0 WHERE active = 1 AND date < ?", (today,))
 
 
-def start_shift(user_id: int, location: str):
+# ------------------------------------------------------------
+# ТИПЫ СМЕН
+# ------------------------------------------------------------
+def import_shift_types():
+    """Создаёт типы смен при первом запуске."""
+    with get_connection() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM shift_types").fetchone()[0]
+        if count > 0:
+            return
+
+        # Базовая настройка: бар и кухня, с учётом дней недели
+        shift_types = [
+            # Бар
+            {"location": "bar", "name": "Утро (будни)", "start_time": "09:00", "days": "mon,tue,wed,thu,fri"},
+            {"location": "bar", "name": "Утро (выходные)", "start_time": "07:00", "days": "sat,sun"},
+            {"location": "bar", "name": "День", "start_time": "13:00", "days": "all"},
+            {"location": "bar", "name": "Вечер", "start_time": "08:00", "days": "all"},
+            # Кухня
+            {"location": "kitchen", "name": "Ранняя (будни)", "start_time": "07:00", "days": "mon,tue,wed,thu,fri"},
+            {"location": "kitchen", "name": "Поздняя (будни)", "start_time": "09:00", "days": "mon,tue,wed,thu,fri"},
+            {"location": "kitchen", "name": "Ранняя (выходные)", "start_time": "08:00", "days": "sat,sun"},
+            {"location": "kitchen", "name": "Поздняя (выходные)", "start_time": "09:00", "days": "sat,sun"},
+        ]
+
+        for i, st in enumerate(shift_types):
+            conn.execute(
+                """
+                INSERT INTO shift_types (location, name, start_time, days, sort_order)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (st["location"], st["name"], st["start_time"], st["days"], i)
+            )
+        conn.commit()
+
+
+def get_shift_types_for_location(location: str, weekday: int) -> list[dict]:
+    """
+    Возвращает доступные типы смен для локации и дня недели.
+    weekday: 0-6 (пн=0, вс=6)
+    """
+    weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    day_short = weekdays[weekday]
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM shift_types
+            WHERE location = ?
+              AND (days = 'all' OR days LIKE ? OR days LIKE ? OR days LIKE ?)
+            ORDER BY sort_order
+            """,
+            (location, f"%{day_short}%", f"{day_short},%", f"%,{day_short}%")
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_shift_type(shift_type_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM shift_types WHERE id = ?", (shift_type_id,)).fetchone()
+        return dict(row) if row else None
+
+
+# ------------------------------------------------------------
+# УПРАВЛЕНИЕ СМЕНАМИ
+# ------------------------------------------------------------
+def start_shift(user_id: int, shift_type_id: int):
+    """
+    Начинает смену с указанным типом.
+    shift_type_id должен существовать в shift_types.
+    """
+    shift_type = get_shift_type(shift_type_id)
+    if not shift_type:
+        raise ValueError("Неверный тип смены")
+
     with get_connection() as conn:
         _auto_close_outdated_shifts(conn)
+        # Закрываем все активные смены пользователя
         conn.execute("UPDATE shifts SET active = 0 WHERE user_id = ? AND active = 1", (user_id,))
+
+        # Вставляем новую смену
         conn.execute(
             """
-            INSERT INTO shifts (user_id, date, location, start_time, active)
+            INSERT INTO shifts (user_id, shift_type_id, date, start_time, active)
             VALUES (?, ?, ?, ?, 1)
             """,
-            (user_id, today_msk_str(), location, time_msk_str())
+            (user_id, shift_type_id, today_msk_str(), time_msk_str())
         )
         conn.commit()
 
 
 def get_active_shift(user_id: int) -> dict | None:
+    """Возвращает активную смену (с полной информацией о типе)."""
     with get_connection() as conn:
         _auto_close_outdated_shifts(conn)
         row = conn.execute(
-            "SELECT * FROM shifts WHERE user_id = ? AND active = 1 AND date = ?",
+            """
+            SELECT s.*, st.location, st.name AS shift_name, st.start_time AS shift_start_time
+            FROM shifts s
+            LEFT JOIN shift_types st ON s.shift_type_id = st.id
+            WHERE s.user_id = ? AND s.active = 1 AND s.date = ?
+            """,
             (user_id, today_msk_str())
         ).fetchone()
         return dict(row) if row else None
@@ -38,12 +120,15 @@ def end_shift(user_id: int):
 
 
 def get_shifts_for_date(date: str) -> list[dict]:
+    """Возвращает все смены за дату с информацией о типе."""
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT s.*, u.first_name, u.last_name, u.full_name
+            SELECT s.*, u.first_name, u.last_name, u.full_name,
+                   st.name AS shift_name, st.location, st.start_time AS shift_start_time
             FROM shifts s
             JOIN users u ON s.user_id = u.tg_id
+            LEFT JOIN shift_types st ON s.shift_type_id = st.id
             WHERE s.date = ?
             ORDER BY s.start_time
             """,
@@ -53,9 +138,16 @@ def get_shifts_for_date(date: str) -> list[dict]:
 
 
 def get_shift_for_date(user_id: int, date: str) -> dict | None:
+    """Возвращает смену пользователя за конкретную дату (с типом)."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM shifts WHERE user_id = ? AND date = ? ORDER BY id DESC LIMIT 1",
+            """
+            SELECT s.*, st.location, st.name AS shift_name, st.start_time AS shift_start_time
+            FROM shifts s
+            LEFT JOIN shift_types st ON s.shift_type_id = st.id
+            WHERE s.user_id = ? AND s.date = ?
+            ORDER BY s.id DESC LIMIT 1
+            """,
             (user_id, date)
         ).fetchone()
         return dict(row) if row else None

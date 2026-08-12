@@ -26,16 +26,29 @@ def init_db():
             )
         """)
 
+        # Таблица типов смен
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS shift_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                location TEXT NOT NULL,
+                name TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                days TEXT NOT NULL,  -- 'all' или 'mon,tue,wed,...' или 'sat,sun'
+                sort_order INTEGER DEFAULT 0
+            )
+        """)
+
         # Таблица смен
         conn.execute("""
             CREATE TABLE IF NOT EXISTS shifts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
+                shift_type_id INTEGER,
                 date TEXT,
-                location TEXT,
                 start_time TEXT,
                 active BOOLEAN DEFAULT 1,
-                FOREIGN KEY (user_id) REFERENCES users(tg_id)
+                FOREIGN KEY (user_id) REFERENCES users(tg_id),
+                FOREIGN KEY (shift_type_id) REFERENCES shift_types(id)
             )
         """)
 
@@ -52,7 +65,7 @@ def init_db():
             )
         """)
 
-        # НОВАЯ ТАБЛИЦА ОБЩЕГО ПРОГРЕССА (без привязки к пользователю)
+        # Таблица общего прогресса
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_shared_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +90,10 @@ def init_db():
     # Импорт стартовых чек-листов
     from .checklist import import_checklist_items
     import_checklist_items()
+
+    # Импорт типов смен
+    from .shifts import import_shift_types
+    import_shift_types()
 
 
 init_db()

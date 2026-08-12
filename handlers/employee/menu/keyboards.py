@@ -1,5 +1,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from .constants import CB_START_SHIFT, CB_CHECKLIST, CB_PROGRESS, CB_BACK_MENU, CB_POSITION_PREFIX
+from .constants import (
+    CB_START_SHIFT, CB_CHECKLIST, CB_PROGRESS, CB_BACK_MENU,
+    CB_POSITION_PREFIX, CB_SHIFT_TYPE_PREFIX
+)
 
 
 def position_keyboard() -> InlineKeyboardMarkup:
@@ -24,3 +27,16 @@ def back_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]
     ])
+
+
+def shift_types_keyboard(shift_types: list[dict]) -> InlineKeyboardMarkup:
+    keyboard = []
+    for st in shift_types:
+        label = f"{st['name']} (с {st['start_time']})"
+        keyboard.append([
+            InlineKeyboardButton(label, callback_data=f"{CB_SHIFT_TYPE_PREFIX}{st['id']}")
+        ])
+    keyboard.append([
+        InlineKeyboardButton("◀️ Назад", callback_data=CB_BACK_MENU)
+    ])
+    return InlineKeyboardMarkup(keyboard)
