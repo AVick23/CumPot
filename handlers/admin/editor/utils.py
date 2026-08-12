@@ -9,7 +9,7 @@ from db.checklist import (
     update_checklist_item,
     delete_checklist_item as db_delete_item,
 )
-from .constants import PAGE_SIZE, DAILY_CATEGORIES, MSG_LIMIT
+from .constants import PAGE_SIZE, DAILY_CATEGORIES, MSG_LIMIT, CATEGORY_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,6 @@ def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
 async def render(update, context, text, reply_markup=None, message_id=None):
     text = truncate_text(text, MSG_LIMIT)
     chat_id = update.effective_chat.id if update.effective_chat else None
-
     if chat_id and message_id:
         try:
             await context.bot.edit_message_text(
@@ -45,7 +44,6 @@ async def render(update, context, text, reply_markup=None, message_id=None):
             if "Message is not modified" in str(e):
                 return message_id
             logger.warning("Edit failed: %s", e)
-
     if chat_id:
         msg = await context.bot.send_message(
             chat_id=chat_id,
@@ -68,8 +66,9 @@ def get_location_counts() -> dict[str, int]:
 
 
 def get_category_counts(location: str) -> dict[str, int]:
-    counts = {key: 0 for key, _ in DAILY_CATEGORIES}
-    counts["weekly"] = 0
+    # добавляем "once"
+    all_cats = [key for key, _ in DAILY_CATEGORIES] + ["weekly", "once"]
+    counts = {key: 0 for key in all_cats}
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT category, COUNT(*) AS cnt FROM checklist_items WHERE location = ? GROUP BY category",
@@ -112,12 +111,13 @@ def create_item(
     requires_notification: bool = False,
     notification_time: str | None = None,
     due_date: str | None = None,
-    is_recurring: bool = True
+    is_recurring: bool = True,
+    days_of_week: str | None = None   # новое поле
 ) -> None:
     add_checklist_item(
         item_type, location, category, day_of_week, text,
         requires_photo, requires_notification, notification_time,
-        due_date, is_recurring
+        due_date, is_recurring, days_of_week
     )
 
 
@@ -137,12 +137,16 @@ def update_item_flags(item_id: int, requires_photo: bool = None, requires_notifi
         update_checklist_item(item_id, **kwargs)
 
 
+def update_item_days(item_id: int, days_of_week: str) -> None:
+    """Обновляет дни недели для weekly задачи."""
+    update_checklist_item(item_id, days_of_week=days_of_week)
+
+
 def remove_item(item_id: int) -> None:
     db_delete_item(item_id)
 
 
 def parse_due_date(date_str: str) -> str | None:
-    """Парсит введённую дату в формате ДД.ММ.ГГГГ или ДД-ММ-ГГГГ, возвращает YYYY-MM-DD."""
     try:
         for fmt in ("%d.%m.%Y", "%d-%m-%Y", "%Y-%m-%d"):
             try:
@@ -153,3 +157,12 @@ def parse_due_date(date_str: str) -> str | None:
         return None
     except Exception:
         return None
+
+
+def get_breadcrumb(location: str = None, category: str = None) -> str:
+    parts = ["🏠 Главная"]
+    if location:
+        parts.append(LOCATIONS.get(location, location))
+    if category:
+        parts.append(CATEGORY_LABELS.get(category, category))
+    return " → ".join(parts)

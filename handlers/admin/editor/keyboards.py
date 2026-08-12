@@ -11,12 +11,12 @@ from .constants import (
     CB_PHOTO_FLAG_PREFIX, CB_NOTIF_FLAG_PREFIX, CB_FLAGS_SKIP,
     CB_TOGGLE_PHOTO, CB_TOGGLE_NOTIFICATION, CB_CHANGE_TIME,
     CB_BACK_FROM_EDIT,
+    CB_DAY_TOGGLE_PREFIX, CB_DAYS_CONFIRM, CB_DAYS_CANCEL,
     LOCATIONS, DAILY_CATEGORIES, CATEGORY_LABELS, WEEKDAYS_SHORT, MONTHS,
 )
 from .utils import clip
 
 
-# ---------- Основные клавиатуры редактора ----------
 def edit_location_keyboard(counts: dict[str, int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"🍸 Бар · {counts.get('bar', 0)}", callback_data=f"{CB_LOC_PREFIX}:bar")],
@@ -36,6 +36,11 @@ def edit_category_keyboard(location: str, counts: dict[str, int]) -> InlineKeybo
         InlineKeyboardButton(f"{CATEGORY_LABELS['weekly']} · {counts.get('weekly', 0)}",
                              callback_data=f"{CB_CAT_PREFIX}:{location}:weekly")
     ])
+    # Добавляем категорию "Одноразовые"
+    rows.append([
+        InlineKeyboardButton(f"{CATEGORY_LABELS['once']} · {counts.get('once', 0)}",
+                             callback_data=f"{CB_CAT_PREFIX}:{location}:once")
+    ])
     rows.append([
         InlineKeyboardButton("◀️ Локации", callback_data=CB_TO_EDIT),
         InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
@@ -52,6 +57,15 @@ def items_list_keyboard(location: str, category: str, page_items: list[dict],
             indicators += "📸"
         if item.get("requires_notification"):
             indicators += "🔔"
+        # Для weekly покажем дни
+        if item.get("type") == "weekly":
+            days = item.get("days_of_week")
+            if days:
+                day_list = [WEEKDAYS_SHORT[int(d)] for d in days.split(",") if d.isdigit()]
+                if day_list:
+                    indicators += " " + "".join(day_list[:3]) + ("…" if len(day_list) > 3 else "")
+        elif item.get("type") == "once" and item.get("due_date"):
+            indicators += f" 📅{item['due_date']}"
         label = f"{clip(item.get('text'), 30)} {indicators}".strip()
         rows.append([
             InlineKeyboardButton(label, callback_data=f"{CB_ITEM_PREFIX}:{item['id']}")
@@ -86,6 +100,17 @@ def item_detail_keyboard(item: dict) -> InlineKeyboardMarkup:
         rows.append([
             InlineKeyboardButton(f"🕒 Время: {notif_time}", callback_data=f"{CB_CHANGE_TIME}{item_id}")
         ])
+    # Для weekly покажем возможность изменить дни
+    if item.get("type") == "weekly":
+        days = item.get("days_of_week")
+        if days:
+            day_list = [WEEKDAYS_SHORT[int(d)] for d in days.split(",") if d.isdigit()]
+            days_label = ", ".join(day_list)
+        else:
+            days_label = "не выбраны"
+        rows.append([
+            InlineKeyboardButton(f"📅 Дни: {days_label}", callback_data=f"{CB_ADD_DAY_PREFIX}:{item_id}")
+        ])
     rows.append([
         InlineKeyboardButton("🗑 Удалить", callback_data=f"{CB_DELETE_ITEM_PREFIX}:{item_id}"),
         InlineKeyboardButton("◀️ К списку", callback_data=CB_TO_ITEMS),
@@ -103,6 +128,7 @@ def confirm_delete_keyboard(item_id: int) -> InlineKeyboardMarkup:
 
 
 def add_day_keyboard(selected_day: int | None = None) -> InlineKeyboardMarkup:
+    # Для совместимости (один день) – используется для редактирования дня в старой логике, но мы добавим множественный выбор
     rows = []
     row = []
     for i, day in enumerate(WEEKDAYS_SHORT):
@@ -120,6 +146,19 @@ def add_day_keyboard(selected_day: int | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def days_selection_keyboard(selected_days: set[int]) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора нескольких дней недели."""
+    rows = []
+    for i, day in enumerate(WEEKDAYS_SHORT):
+        label = f"✅ {day}" if i in selected_days else day
+        rows.append([InlineKeyboardButton(label, callback_data=f"{CB_DAY_TOGGLE_PREFIX}{i}")])
+    rows.append([
+        InlineKeyboardButton("✅ Подтвердить", callback_data=CB_DAYS_CONFIRM),
+        InlineKeyboardButton("✖️ Отмена", callback_data=CB_DAYS_CANCEL),
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
 def text_prompt_keyboard(back_callback: str, cancel_callback: str | None = None) -> InlineKeyboardMarkup:
     row = [InlineKeyboardButton("◀️ Назад", callback_data=back_callback)]
     if cancel_callback and cancel_callback != back_callback:
@@ -127,40 +166,30 @@ def text_prompt_keyboard(back_callback: str, cancel_callback: str | None = None)
     return InlineKeyboardMarkup([row])
 
 
-# ---------- Клавиатуры для выбора типа ----------
 def item_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📅 Ежедневная", callback_data=f"{CB_ITEM_TYPE_PREFIX}daily")],
-        [InlineKeyboardButton("📆 Недельная", callback_data=f"{CB_ITEM_TYPE_PREFIX}weekly")],
-        [InlineKeyboardButton("📌 Одноразовая", callback_data=f"{CB_ITEM_TYPE_PREFIX}once")],
+        [InlineKeyboardButton("📆 Недельная (выбор дней)", callback_data=f"{CB_ITEM_TYPE_PREFIX}weekly")],
+        [InlineKeyboardButton("📌 Одноразовая (выбор даты)", callback_data=f"{CB_ITEM_TYPE_PREFIX}once")],
         [InlineKeyboardButton("◀️ Отмена", callback_data=CB_CANCEL)],
     ])
 
 
-# ---------- Клавиатура календаря ----------
 def calendar_keyboard(year: int, month: int, selected_date: str = None) -> InlineKeyboardMarkup:
-    """Генерирует календарь на месяц с возможностью выбора дня."""
     rows = []
-    # Заголовок с месяцем и годом + навигация
     rows.append([
         InlineKeyboardButton("◀️", callback_data=CB_MONTH_PREV),
         InlineKeyboardButton(f"{MONTHS[month - 1]} {year}", callback_data="noop"),
         InlineKeyboardButton("▶️", callback_data=CB_MONTH_NEXT),
     ])
-    # Дни недели
     rows.append([InlineKeyboardButton(day, callback_data="noop") for day in WEEKDAYS_SHORT])
-
     first_weekday = datetime(year, month, 1).weekday()
     _, days_in_month = calendar.monthrange(year, month)
-
     row = []
-    # Пустые ячейки до первого дня
     for _ in range(first_weekday):
         row.append(InlineKeyboardButton(" ", callback_data="noop"))
-
     for day in range(1, days_in_month + 1):
         date_str = f"{year:04d}-{month:02d}-{day:02d}"
-        # Если дата совпадает с выбранной, помечаем
         label = f"✅ {day}" if date_str == selected_date else str(day)
         row.append(InlineKeyboardButton(label, callback_data=f"{CB_DATE_PREFIX}{date_str}"))
         if len(row) == 7:
@@ -170,14 +199,11 @@ def calendar_keyboard(year: int, month: int, selected_date: str = None) -> Inlin
         while len(row) < 7:
             row.append(InlineKeyboardButton(" ", callback_data="noop"))
         rows.append(row)
-
     rows.append([InlineKeyboardButton("◀️ Назад", callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
 
 
-# ---------- Клавиатуры выбора времени ----------
 def hour_keyboard(selected_hour: int = None) -> InlineKeyboardMarkup:
-    """Выбор часа (0-23) в виде сетки 4x6."""
     rows = []
     row = []
     for h in range(24):
@@ -193,7 +219,6 @@ def hour_keyboard(selected_hour: int = None) -> InlineKeyboardMarkup:
 
 
 def minute_keyboard(selected_minute: int = None) -> InlineKeyboardMarkup:
-    """Выбор минут (0,5,10,...55) в виде сетки 4x3."""
     rows = []
     row = []
     for m in range(0, 60, 5):
@@ -208,7 +233,6 @@ def minute_keyboard(selected_minute: int = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-# ---------- Клавиатуры для флагов ----------
 def flag_photo_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Да", callback_data=f"{CB_PHOTO_FLAG_PREFIX}yes")],
