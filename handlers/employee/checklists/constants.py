@@ -1,83 +1,31 @@
-# Состояния
-ADMIN_EDIT_LOCATION = 105
-ADMIN_EDIT_CATEGORY = 106
-ADMIN_EDIT_ITEMS = 107
-ADMIN_ITEM_DETAIL = 108
-ADMIN_DELETE_CONFIRM = 109
-ADMIN_ADD_DAY = 110               # для совместимости (один день)
-ADMIN_AWAIT_NEW_TEXT = 111
-ADMIN_AWAIT_EDIT_TEXT = 112
-
-ADMIN_AWAIT_ITEM_TYPE = 113       # выбор типа (daily/weekly/once)
-ADMIN_AWAIT_DATE = 114            # выбор даты для once
-ADMIN_AWAIT_HOUR = 115            # выбор часа
-ADMIN_AWAIT_MINUTE = 116          # выбор минуты
-ADMIN_AWAIT_PHOTO_FLAG = 117      # требуется ли фото
-ADMIN_AWAIT_NOTIFICATION_FLAG = 118  # требуется ли уведомление
-ADMIN_AWAIT_DAYS = 119            # выбор нескольких дней недели
-
-# Состояния для редактирования в карточке
-ADMIN_EDIT_TOGGLE_PHOTO = 120
-ADMIN_EDIT_TOGGLE_NOTIFICATION = 121
-ADMIN_EDIT_CHANGE_TIME = 122
+# Состояния (используются в employee/__init__.py)
+CATEGORY_SELECT = 11      # уникальное значение (не конфликтует с SELECT_SHIFT_TYPE = 10)
+CHECKLIST_VIEW = 5
+ITEM_DETAIL = 6
+PROGRESS_VIEW = 7
+AWAIT_TASK_PHOTO = 8
 
 # Callback data
-CB_HOME = "home"
-CB_TO_EDIT = "to_edit"
-CB_TO_CATEGORIES = "to_cats"
-CB_TO_ITEMS = "to_items"
-CB_LOC_PREFIX = "loc"
-CB_CAT_PREFIX = "cat"
-CB_PAGE_PREFIX = "pg"
-CB_ITEM_PREFIX = "item"
-CB_EDIT_ITEM_PREFIX = "edit_item"
-CB_DELETE_ITEM_PREFIX = "del_item"
-CB_CONFIRM_DELETE_PREFIX = "confirm_del"
-CB_ADD = "add"
-CB_ADD_DAY_PREFIX = "add_day"      # для совместимости
-CB_CANCEL = "cancel"
-CB_CANCEL_EDIT = "cancel_edit"
-CB_ADD_BACK_TEXT = "add_back_text"
-
-# Новые для даты, времени, флагов
-CB_ITEM_TYPE_PREFIX = "item_type:"      # + daily/weekly/once
-CB_DATE_PREFIX = "date:"                # + YYYY-MM-DD
-CB_MONTH_PREV = "month_prev"
-CB_MONTH_NEXT = "month_next"
-CB_HOUR_PREFIX = "hour:"                # + 0-23
-CB_MINUTE_PREFIX = "minute:"            # + 0,5,10,...55
-CB_PHOTO_FLAG_PREFIX = "photo:"         # + yes/no
-CB_NOTIF_FLAG_PREFIX = "notif:"         # + yes/no
-CB_FLAGS_SKIP = "flags_skip"
-
-# Для редактирования в карточке
-CB_TOGGLE_PHOTO = "toggle_photo:"
-CB_TOGGLE_NOTIFICATION = "toggle_notif:"
-CB_CHANGE_TIME = "change_time:"
-CB_BACK_FROM_EDIT = "back_from_edit"
-
-# Новое для выбора нескольких дней
-CB_DAY_TOGGLE_PREFIX = "day_toggle:"    # + день (0-6)
-CB_DAYS_CONFIRM = "days_confirm"
-CB_DAYS_CANCEL = "days_cancel"
+CB_NOOP = "noop"
+CB_CATEGORY_PREFIX = "cat:"
+CB_ITEM_PREFIX = "item:"
+CB_TOGGLE_PREFIX = "toggle:"
+CB_PHOTO_PREFIX = "photo:"
+CB_VIEW_PHOTO_PREFIX = "view_photo:"
+CB_PHOTO_CANCEL = "photo_cancel"
+CB_BACK_MENU = "back_menu"
+CB_BACK_CATEGORIES = "back_cats"
 
 # UI
-LOCATIONS = {"bar": "🍸 Бар", "kitchen": "🍳 Кухня"}
-DAILY_CATEGORIES = [
-    ("opening", "☀️ Открытие"),
-    ("daytime", "🌤 В течение дня"),
-    ("closing", "🌙 Закрытие"),
-]
-CATEGORY_LABELS = {
+CATEGORY_NAMES = {
     "opening": "☀️ Открытие",
     "daytime": "🌤 В течение дня",
     "closing": "🌙 Закрытие",
     "weekly": "📆 Недельные",
-    "once": "📌 Одноразовые",
 }
-WEEKDAYS_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-          "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-PAGE_SIZE = 8
-TEXT_LIMIT = 200
+CATEGORY_ORDER = ["opening", "daytime", "closing", "weekly"]
+LOCATIONS = {
+    "bar": "🍸 Бар",
+    "kitchen": "🍳 Кухня",
+}
 MSG_LIMIT = 3800
