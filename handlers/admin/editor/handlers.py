@@ -14,6 +14,7 @@ from .constants import (
     CB_ITEM_TYPE_PREFIX, CB_DUE_DATE_BACK,
     CB_PHOTO_FLAG_PREFIX, CB_NOTIF_FLAG_PREFIX, CB_FLAGS_SKIP,
     LOCATIONS, CATEGORY_LABELS, WEEKDAYS_SHORT,
+    TEXT_LIMIT,  # ← ДОБАВЛЕНО
 )
 from .keyboards import (
     edit_location_keyboard, edit_category_keyboard, items_list_keyboard,
