@@ -136,12 +136,10 @@ def get_day_report(date_str: str) -> dict:
             # Извлекаем медиа
             media_items = []
             if progress:
-                # Проверяем новое поле photo_file_ids
                 if progress.get("photo_file_ids"):
                     try:
                         media_items = json.loads(progress["photo_file_ids"])
                         logger.debug(f"📸 Загружено media_items из photo_file_ids: {len(media_items)} шт.")
-                        # Если это список строк (старый формат), преобразуем в объекты
                         if media_items and isinstance(media_items[0], str):
                             media_items = [{"type": "photo", "file_id": f} for f in media_items]
                             logger.debug("🔄 Преобразовано из списка строк в объекты")
@@ -171,6 +169,8 @@ def get_day_report(date_str: str) -> dict:
         result[loc_key]["total"] = total
         result[loc_key]["grouped"] = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
 
-        logger.info(f"📊 Итог для {loc_key}: {done}/{total} выполнено, вложений: {sum(item['media_count'] for item in items)}")
+        # Исправлено: безопасное получение media_count через .get()
+        total_media = sum(item.get("media_count", 0) for item in items)
+        logger.info(f"📊 Итог для {loc_key}: {done}/{total} выполнено, вложений: {total_media}")
 
     return result
