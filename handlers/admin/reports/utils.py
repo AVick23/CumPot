@@ -97,6 +97,7 @@ def get_shift_days_for_month(year: int, month: int) -> set[str]:
 
 
 def get_day_report(date_str: str) -> dict:
+    logger.info(f"item {item['id']} media_count={item['media_count']}")
     shifts = get_shifts_for_date(date_str)
     result = {
         "date": date_str,
