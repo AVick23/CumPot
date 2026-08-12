@@ -326,6 +326,7 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     message_id = query.message.message_id if query.message else None
 
+    # ---------- ОБРАБОТКА ПРОСТОГО ВЫПОЛНЕНИЯ (TOGGLE) ----------
     if data.startswith(CB_TOGGLE_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -333,6 +334,7 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await answer(query)
             return await show_current_checklist(update, context, message_id)
 
+        # Проверяем, требует ли задача фото и ещё не выполнена
         item = get_item_by_id(user.id, item_id)
         if item and item.get("requires_photo") and not item.get("completed"):
             await answer(query, "Эта задача требует фото. Используйте кнопку 'Выполнить с фото'.", show_alert=True)
@@ -349,6 +351,7 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
         return await show_item_detail(update, context, item_id, message_id)
 
+    # ---------- ЗАПРОС НА ПРИКРЕПЛЕНИЕ ФОТО ----------
     if data.startswith(CB_PHOTO_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -365,6 +368,7 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await answer(query)
         return await show_photo_prompt(update, context, item_id)
 
+    # ---------- ПРОСМОТР ПРИКРЕПЛЁННЫХ ВЛОЖЕНИЙ ----------
     if data.startswith(CB_VIEW_PHOTO_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -392,14 +396,19 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 from telegram import InputMediaPhoto, InputMediaVideo
                 media_group = []
                 for i, media in enumerate(media_items):
+                    # ✅ Исправлено: caption передаётся в конструктор
                     if media.get("type") == "photo":
-                        media_obj = InputMediaPhoto(media=media["file_id"])
+                        media_obj = InputMediaPhoto(
+                            media=media["file_id"],
+                            caption="📸 Вложения к задаче" if i == 0 else None
+                        )
                     elif media.get("type") == "video":
-                        media_obj = InputMediaVideo(media=media["file_id"])
+                        media_obj = InputMediaVideo(
+                            media=media["file_id"],
+                            caption="📸 Вложения к задаче" if i == 0 else None
+                        )
                     else:
                         continue
-                    if i == 0:
-                        media_obj.caption = "📸 Вложения к задаче"
                     media_group.append(media_obj)
 
                 if media_group:
@@ -416,6 +425,7 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
         return set_state(context, ITEM_DETAIL)
 
+    # ---------- КНОПКИ НАВИГАЦИИ ----------
     await answer(query)
 
     if data == CB_BACK_CATEGORIES:

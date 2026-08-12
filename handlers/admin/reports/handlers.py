@@ -118,16 +118,16 @@ async def show_location_media(update: Update, context: ContextTypes.DEFAULT_TYPE
         all_media = all_media[:10]
         logger.info("✂️ Обрезано до 10 вложений")
 
+    from telegram import InputMediaPhoto, InputMediaVideo
     media_group = []
     for i, media in enumerate(all_media):
+        caption = f"📸 Вложения по {LOCATIONS.get(location, location)} за {format_date_ru(date_str)}" if i == 0 else None
         if media.get("type") == "photo":
-            media_obj = InputMediaPhoto(media=media["file_id"])
+            media_obj = InputMediaPhoto(media=media["file_id"], caption=caption)
         elif media.get("type") == "video":
-            media_obj = InputMediaVideo(media=media["file_id"])
+            media_obj = InputMediaVideo(media=media["file_id"], caption=caption)
         else:
             continue
-        if i == 0:
-            media_obj.caption = f"📸 Вложения по {LOCATIONS.get(location, location)} за {format_date_ru(date_str)}"
         media_group.append(media_obj)
 
     if media_group:
