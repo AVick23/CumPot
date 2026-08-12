@@ -15,7 +15,7 @@ ADMIN_AWAIT_NEW_TEXT = 111
 ADMIN_AWAIT_EDIT_TEXT = 112
 
 # ==========================================
-# CALLBACK DATA
+# CALLBACK DATA (БЕЗ ДВОЕТОЧИЙ!)
 # ==========================================
 CB_NOOP = "noop"
 CB_HOME = "home"
@@ -24,20 +24,20 @@ CB_CALENDAR = "calendar"
 CB_EDIT = "edit"
 CB_PREV_MONTH = "prev"
 CB_NEXT_MONTH = "next"
-CB_DAY_PREFIX = "day:"
+CB_DAY_PREFIX = "day"          # без двоеточия
 CB_TO_CALENDAR = "to_cal"
 CB_TO_EDIT = "to_edit"
 CB_TO_CATEGORIES = "to_cats"
 CB_TO_ITEMS = "to_items"
-CB_LOC_PREFIX = "loc:"
-CB_CAT_PREFIX = "cat:"
-CB_PAGE_PREFIX = "pg:"
-CB_ITEM_PREFIX = "item:"
-CB_EDIT_ITEM_PREFIX = "edit_item:"
-CB_DELETE_ITEM_PREFIX = "del_item:"
-CB_CONFIRM_DELETE_PREFIX = "confirm_del:"
+CB_LOC_PREFIX = "loc"          # без двоеточия
+CB_CAT_PREFIX = "cat"          # без двоеточия
+CB_PAGE_PREFIX = "pg"          # без двоеточия
+CB_ITEM_PREFIX = "item"        # без двоеточия
+CB_EDIT_ITEM_PREFIX = "edit_item"
+CB_DELETE_ITEM_PREFIX = "del_item"
+CB_CONFIRM_DELETE_PREFIX = "confirm_del"
 CB_ADD = "add"
-CB_ADD_DAY_PREFIX = "add_day:"
+CB_ADD_DAY_PREFIX = "add_day"
 CB_ADD_BACK_TEXT = "add_back_text"
 CB_CANCEL = "cancel"
 CB_CANCEL_EDIT = "cancel_edit"

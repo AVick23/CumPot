@@ -38,7 +38,6 @@ def shifts_keyboard() -> InlineKeyboardMarkup:
 
 
 def calendar_keyboard(year: int, month: int, shift_days: set[str]) -> InlineKeyboardMarkup:
-    """Календарь с отметками дней, когда были смены (любая локация)."""
     rows = []
     rows.append([
         InlineKeyboardButton("◀️", callback_data=CB_PREV_MONTH),
@@ -58,7 +57,8 @@ def calendar_keyboard(year: int, month: int, shift_days: set[str]) -> InlineKeyb
         date_db = f"{year:04d}-{month:02d}-{day:02d}"
         date_compact = f"{year:04d}{month:02d}{day:02d}"
         label = f"✅ {day}" if date_db in shift_days else str(day)
-        row.append(InlineKeyboardButton(label, callback_data=f"{CB_DAY_PREFIX}{date_compact}"))
+        # ИСПРАВЛЕНО: добавляем двоеточие после префикса
+        row.append(InlineKeyboardButton(label, callback_data=f"{CB_DAY_PREFIX}:{date_compact}"))
         if len(row) == 7:
             rows.append(row)
             row = []
@@ -81,11 +81,11 @@ def day_report_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# ---------- Редактор чек-листов (без изменений) ----------
+# ---------- Редактор чек-листов ----------
 def edit_location_keyboard(counts: dict[str, int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🍸 Бар · {counts.get('bar', 0)}", callback_data=f"{CB_LOC_PREFIX}bar")],
-        [InlineKeyboardButton(f"🍳 Кухня · {counts.get('kitchen', 0)}", callback_data=f"{CB_LOC_PREFIX}kitchen")],
+        [InlineKeyboardButton(f"🍸 Бар · {counts.get('bar', 0)}", callback_data=f"{CB_LOC_PREFIX}:bar")],
+        [InlineKeyboardButton(f"🍳 Кухня · {counts.get('kitchen', 0)}", callback_data=f"{CB_LOC_PREFIX}:kitchen")],
         [InlineKeyboardButton("🏠 Главное меню", callback_data=CB_HOME)],
     ])
 
@@ -95,11 +95,11 @@ def edit_category_keyboard(location: str, counts: dict[str, int]) -> InlineKeybo
     for cat_key, cat_label in DAILY_CATEGORIES:
         rows.append([
             InlineKeyboardButton(f"{cat_label} · {counts.get(cat_key, 0)}",
-                                 callback_data=f"{CB_CAT_PREFIX}{location}:{cat_key}")
+                                 callback_data=f"{CB_CAT_PREFIX}:{location}:{cat_key}")
         ])
     rows.append([
         InlineKeyboardButton(f"{CATEGORY_LABELS['weekly']} · {counts.get('weekly', 0)}",
-                             callback_data=f"{CB_CAT_PREFIX}{location}:weekly")
+                             callback_data=f"{CB_CAT_PREFIX}:{location}:weekly")
     ])
     rows.append([
         InlineKeyboardButton("◀️ Локации", callback_data=CB_TO_EDIT),
@@ -113,15 +113,15 @@ def items_list_keyboard(location: str, category: str, page_items: list[dict],
     rows = []
     for item in page_items:
         rows.append([
-            InlineKeyboardButton(_clip(item.get("text"), 35), callback_data=f"{CB_ITEM_PREFIX}{item['id']}")
+            InlineKeyboardButton(_clip(item.get("text"), 35), callback_data=f"{CB_ITEM_PREFIX}:{item['id']}")
         ])
     if total_pages > 1:
         nav_row = []
         if page > 1:
-            nav_row.append(InlineKeyboardButton("⬅️", callback_data=f"{CB_PAGE_PREFIX}{location}:{category}:{page - 1}"))
+            nav_row.append(InlineKeyboardButton("⬅️", callback_data=f"{CB_PAGE_PREFIX}:{location}:{category}:{page - 1}"))
         nav_row.append(InlineKeyboardButton(f"{page}/{total_pages}", callback_data=CB_NOOP))
         if page < total_pages:
-            nav_row.append(InlineKeyboardButton("➡️", callback_data=f"{CB_PAGE_PREFIX}{location}:{category}:{page + 1}"))
+            nav_row.append(InlineKeyboardButton("➡️", callback_data=f"{CB_PAGE_PREFIX}:{location}:{category}:{page + 1}"))
         rows.append(nav_row)
     rows.append([InlineKeyboardButton("➕ Добавить пункт", callback_data=CB_ADD)])
     rows.append([
@@ -133,8 +133,8 @@ def items_list_keyboard(location: str, category: str, page_items: list[dict],
 
 def item_detail_keyboard(item_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✏️ Изменить текст", callback_data=f"{CB_EDIT_ITEM_PREFIX}{item_id}")],
-        [InlineKeyboardButton("🗑 Удалить", callback_data=f"{CB_DELETE_ITEM_PREFIX}{item_id}")],
+        [InlineKeyboardButton("✏️ Изменить текст", callback_data=f"{CB_EDIT_ITEM_PREFIX}:{item_id}")],
+        [InlineKeyboardButton("🗑 Удалить", callback_data=f"{CB_DELETE_ITEM_PREFIX}:{item_id}")],
         [InlineKeyboardButton("◀️ К списку", callback_data=CB_TO_ITEMS)],
     ])
 
@@ -142,8 +142,8 @@ def item_detail_keyboard(item_id: int) -> InlineKeyboardMarkup:
 def confirm_delete_keyboard(item_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_CONFIRM_DELETE_PREFIX}{item_id}"),
-            InlineKeyboardButton("✖️ Отмена", callback_data=f"{CB_ITEM_PREFIX}{item_id}"),
+            InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_CONFIRM_DELETE_PREFIX}:{item_id}"),
+            InlineKeyboardButton("✖️ Отмена", callback_data=f"{CB_ITEM_PREFIX}:{item_id}"),
         ]
     ])
 
@@ -153,7 +153,7 @@ def add_day_keyboard(selected_day: int | None = None) -> InlineKeyboardMarkup:
     row = []
     for i, day in enumerate(WEEKDAYS_SHORT):
         label = f"✅ {day}" if selected_day == i else day
-        row.append(InlineKeyboardButton(label, callback_data=f"{CB_ADD_DAY_PREFIX}{i}"))
+        row.append(InlineKeyboardButton(label, callback_data=f"{CB_ADD_DAY_PREFIX}:{i}"))
         if len(row) == 2:
             rows.append(row)
             row = []
