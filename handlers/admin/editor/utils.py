@@ -69,8 +69,7 @@ def _ensure_schema() -> None:
                 notification_time TEXT,
                 due_date TEXT,
                 is_recurring INTEGER DEFAULT 1,
-                sort_order INTEGER DEFAULT 0,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                sort_order INTEGER DEFAULT 0
             )
             """
         )
@@ -104,8 +103,9 @@ def _ensure_schema() -> None:
         if "sort_order" not in cols:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN sort_order INTEGER DEFAULT 0")
 
-        if "created_at" not in cols:
-            conn.execute("ALTER TABLE checklist_items ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP")
+        # Колонка created_at не используется – удаляем её создание, чтобы избежать ошибки SQLite
+        # if "created_at" not in cols:
+        #     conn.execute("ALTER TABLE checklist_items ADD COLUMN created_at TEXT")
 
     _SCHEMA_READY = True
 
