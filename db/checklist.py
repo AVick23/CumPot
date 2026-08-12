@@ -199,7 +199,8 @@ def get_shared_progress(location: str, date: str) -> dict[int, dict]:
         rows = conn.execute(
             """
             SELECT item_id, completed, completed_at, completed_by,
-                   photo_file_id, photo_channel_message_id
+                   photo_file_id, photo_channel_message_id,
+                   photo_file_ids, photo_channel_message_ids
             FROM checklist_shared_progress
             WHERE location = ? AND date = ?
             """,
