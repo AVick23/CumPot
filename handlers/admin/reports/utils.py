@@ -97,7 +97,10 @@ def get_shift_days_for_month(year: int, month: int) -> set[str]:
 
 
 def get_day_report(date_str: str) -> dict:
+    logger.info(f"🔍 Генерация отчёта за {date_str}")
     shifts = get_shifts_for_date(date_str)
+    logger.info(f"📋 Найдено смен: {len(shifts)}")
+
     result = {
         "date": date_str,
         "bar": {"shifts": [], "items": [], "done": 0, "total": 0, "grouped": {}},
@@ -110,12 +113,15 @@ def get_day_report(date_str: str) -> dict:
             result[loc]["shifts"].append(shift)
 
     for loc_key in ["bar", "kitchen"]:
+        logger.info(f"🔍 Обработка локации {loc_key}")
         items = get_items_for_location_and_day(loc_key, date_str)
         if not items:
+            logger.info(f"❌ Нет задач для {loc_key}")
             result[loc_key]["items"] = []
             continue
 
         shared_progress = get_shared_progress(loc_key, date_str)
+        logger.info(f"📊 Прогресс для {loc_key}: {len(shared_progress)} записей")
 
         grouped = {}
         done = 0
@@ -130,18 +136,29 @@ def get_day_report(date_str: str) -> dict:
             # Извлекаем медиа
             media_items = []
             if progress:
+                # Проверяем новое поле photo_file_ids
                 if progress.get("photo_file_ids"):
                     try:
                         media_items = json.loads(progress["photo_file_ids"])
+                        logger.debug(f"📸 Загружено media_items из photo_file_ids: {len(media_items)} шт.")
                         # Если это список строк (старый формат), преобразуем в объекты
                         if media_items and isinstance(media_items[0], str):
                             media_items = [{"type": "photo", "file_id": f} for f in media_items]
-                    except:
+                            logger.debug("🔄 Преобразовано из списка строк в объекты")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Ошибка парсинга photo_file_ids: {e}")
                         media_items = []
                 elif progress.get("photo_file_id"):
                     media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
+                    logger.debug(f"📸 Используем старое photo_file_id: {progress['photo_file_id']}")
+            else:
+                logger.debug(f"ℹ️ Прогресс отсутствует для item {item['id']}")
+
             item["media_items"] = media_items
             item["media_count"] = len(media_items)
+
+            if item["media_count"] > 0:
+                logger.info(f"✅ Задача {item['id']} имеет {item['media_count']} вложений")
 
             total += 1
             if completed:
@@ -153,5 +170,7 @@ def get_day_report(date_str: str) -> dict:
         result[loc_key]["done"] = done
         result[loc_key]["total"] = total
         result[loc_key]["grouped"] = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
+
+        logger.info(f"📊 Итог для {loc_key}: {done}/{total} выполнено, вложений: {sum(item['media_count'] for item in items)}")
 
     return result
