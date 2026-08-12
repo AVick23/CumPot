@@ -126,54 +126,56 @@ def get_day_report(date_str: str) -> dict:
         grouped = {}
         done = 0
         total = 0
+        items_with_media = []  # новый список для хранения обогащённых задач
 
         for item in items:
-            item = dict(item)
-            progress = shared_progress.get(item["id"])
+            item_dict = dict(item)  # создаём копию
+            progress = shared_progress.get(item_dict["id"])
             completed = progress.get("completed", 0) == 1 if progress else False
-            item["completed"] = completed
+            item_dict["completed"] = completed
 
             # Извлекаем медиа с логированием
             media_items = []
             if progress:
                 raw = progress.get("photo_file_ids")
-                logger.info(f"Админ: item {item['id']} raw photo_file_ids = {raw}")
+                logger.info(f"Админ: item {item_dict['id']} raw photo_file_ids = {raw}")
                 if raw:
                     try:
                         media_items = json.loads(raw)
-                        logger.info(f"Админ: item {item['id']} parsed media_items = {media_items}")
+                        logger.info(f"Админ: item {item_dict['id']} parsed media_items = {media_items}")
                         if media_items and isinstance(media_items[0], str):
                             media_items = [{"type": "photo", "file_id": f} for f in media_items]
                             logger.info("Админ: преобразовано из списка строк в объекты")
                     except Exception as e:
-                        logger.warning(f"Админ: item {item['id']} failed to parse photo_file_ids: {e}")
+                        logger.warning(f"Админ: item {item_dict['id']} failed to parse photo_file_ids: {e}")
                         media_items = []
                 elif progress.get("photo_file_id"):
                     media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
-                    logger.info(f"Админ: item {item['id']} using old photo_file_id")
+                    logger.info(f"Админ: item {item_dict['id']} using old photo_file_id")
             else:
-                logger.info(f"Админ: item {item['id']} no progress")
+                logger.info(f"Админ: item {item_dict['id']} no progress")
 
-            item["media_items"] = media_items
-            item["media_count"] = len(media_items)
+            item_dict["media_items"] = media_items
+            item_dict["media_count"] = len(media_items)
 
-            if item["media_count"] > 0:
-                logger.info(f"✅ Задача {item['id']} имеет {item['media_count']} вложений")
+            if item_dict["media_count"] > 0:
+                logger.info(f"✅ Задача {item_dict['id']} имеет {item_dict['media_count']} вложений")
             else:
-                logger.info(f"ℹ️ Задача {item['id']} не имеет вложений")
+                logger.info(f"ℹ️ Задача {item_dict['id']} не имеет вложений")
 
             total += 1
             if completed:
                 done += 1
-            cat = item.get("category") or "weekly"
-            grouped.setdefault(cat, []).append(item)
+            cat = item_dict.get("category") or "weekly"
+            grouped.setdefault(cat, []).append(item_dict)
+            items_with_media.append(item_dict)  # сохраняем обогащённый словарь
 
-        result[loc_key]["items"] = items
+        result[loc_key]["items"] = items_with_media
         result[loc_key]["done"] = done
         result[loc_key]["total"] = total
         result[loc_key]["grouped"] = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
 
-        total_media = sum(item.get("media_count", 0) for item in items)
+        total_media = sum(item.get("media_count", 0) for item in items_with_media)
         logger.info(f"📊 Итог для {loc_key}: {done}/{total} выполнено, вложений: {total_media}")
 
     return result
