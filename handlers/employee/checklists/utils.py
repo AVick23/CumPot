@@ -91,7 +91,7 @@ def get_checklist_items(user_id):
     date = today_msk_str()
     day_of_week = now_msk().weekday()
 
-    items = get_items_for_location_and_day(location, day_of_week)
+    items = get_items_for_location_and_day(location, date) 
     if not items:
         return []
 
