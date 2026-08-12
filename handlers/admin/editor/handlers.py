@@ -136,11 +136,23 @@ async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     message_id=None) -> int:
     location = context.user_data.get("edit_location")
     category = context.user_data.get("edit_category")
-    if location not in LOCATIONS or category not in CATEGORY_LABELS:
-        return await show_edit_locations(update, context, message_id, "⚠️ Сначала выберите категорию.")
-    # Очищаем данные
+    
+    # Если нет локации или категории, запускаем пошаговый мастер
+    if not location or not category:
+        context.user_data["add_in_progress"] = True
+        # Очищаем предыдущие данные добавления
+        for key in ["add_item_type", "add_days", "add_due_date", "add_hour", "add_minute",
+                    "add_requires_photo", "add_requires_notification", "add_flow", "add_final", "add_text",
+                    "selected_days"]:
+            context.user_data.pop(key, None)
+        # Переходим к выбору локации
+        return await show_edit_locations(update, context, message_id, 
+                                         notice="➕ Добавление новой задачи\n\nСначала выберите локацию.")
+    
+    # Очищаем данные (если они есть от предыдущих попыток)
     for key in ["add_item_type", "add_days", "add_due_date", "add_hour", "add_minute",
-                "add_requires_photo", "add_requires_notification", "add_flow", "add_final", "add_text"]:
+                "add_requires_photo", "add_requires_notification", "add_flow", "add_final", "add_text",
+                "selected_days"]:
         context.user_data.pop(key, None)
     context.user_data["add_flow"] = {"location": location, "category": category}
     breadcrumb = get_breadcrumb(location, category)
@@ -396,8 +408,10 @@ async def finish_add(update: Update, context: ContextTypes.DEFAULT_TYPE, message
         due_date=due_date,
         is_recurring=is_recurring
     )
+    # Очищаем все данные добавления, включая флаги мастера
     for key in ["add_flow", "add_item_type", "add_days", "add_due_date", "add_hour", "add_minute",
-                "add_requires_photo", "add_requires_notification", "add_text", "await_text", "selected_days"]:
+                "add_requires_photo", "add_requires_notification", "add_text", "await_text", "selected_days",
+                "add_in_progress", "add_location"]:
         context.user_data.pop(key, None)
     return await show_items_list(update, context, message_id, location=location,
                                  category=category, page=999999, notice="✅ Пункт добавлен.")
@@ -626,14 +640,34 @@ async def edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return await show_edit_categories(update, context, message_id)
     if data == CB_TO_ITEMS:
         return await show_items_list(update, context, message_id)
+    
     if prefix == CB_LOC_PREFIX:
-        return await show_edit_categories(update, context, message_id, location=value)
+        location = value
+        # Если мы в режиме добавления, запоминаем локацию и переходим к выбору категории
+        if context.user_data.get("add_in_progress"):
+            context.user_data["add_location"] = location
+            # Переходим к выбору категории с сообщением
+            return await show_edit_categories(update, context, message_id, location=location,
+                                              notice="➕ Добавление новой задачи\n\nТеперь выберите категорию.")
+        else:
+            return await show_edit_categories(update, context, message_id, location=location)
+    
     if prefix == CB_CAT_PREFIX:
         try:
             loc, cat = value.split(":", 1)
-            return await show_items_list(update, context, message_id, location=loc, category=cat, page=1)
+            # Если мы в режиме добавления, запоминаем категорию и запускаем добавление
+            if context.user_data.get("add_in_progress"):
+                context.user_data["edit_location"] = loc
+                context.user_data["edit_category"] = cat
+                context.user_data.pop("add_in_progress", None)
+                context.user_data.pop("add_location", None)
+                # Запускаем добавление с уже установленными location и category
+                return await start_add(update, context, message_id)
+            else:
+                return await show_items_list(update, context, message_id, location=loc, category=cat, page=1)
         except ValueError:
             return await show_edit_locations(update, context, message_id)
+    
     if prefix == CB_PAGE_PREFIX:
         try:
             loc, cat, page_s = value.split(":", 2)
@@ -732,6 +766,7 @@ async def back_from_add_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 async def cancel_action(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None) -> int:
     flow = context.user_data.get("add_flow") or {}
+    # Очищаем все данные добавления, включая флаги мастера
     context.user_data.pop("await_text", None)
     context.user_data.pop("add_flow", None)
     context.user_data.pop("add_final", None)
@@ -747,6 +782,8 @@ async def cancel_action(update: Update, context: ContextTypes.DEFAULT_TYPE, mess
     context.user_data.pop("edit_item_id", None)
     context.user_data.pop("edit_hour", None)
     context.user_data.pop("edit_days_selected", None)
+    context.user_data.pop("add_in_progress", None)
+    context.user_data.pop("add_location", None)
     if flow.get("location") and flow.get("category"):
         return await show_items_list(update, context, message_id, location=flow["location"],
                                      category=flow["category"], page=context.user_data.get("edit_page", 1),
