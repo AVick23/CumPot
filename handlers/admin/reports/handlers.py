@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.time_utils import now_msk
-from .constants import ADMIN_CALENDAR, ADMIN_DAY_REPORT, CB_HOME, CB_TO_CALENDAR
+from .constants import ADMIN_CALENDAR, ADMIN_DAY_REPORT, CB_HOME, CB_TO_CALENDAR, MONTHS
 from .keyboards import calendar_keyboard, day_report_keyboard
 from .utils import (
     get_shift_days_for_month, get_day_report,
