@@ -171,7 +171,6 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not position:
             return await employee_start(update, context)
 
-        # Получаем доступные типы смен для позиции и текущего дня
         weekday = now_msk().weekday()
         shift_types = get_shift_types_for_location(position, weekday)
         if not shift_types:
@@ -179,6 +178,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         context.user_data["available_shifts"] = shift_types
         text = "Выберите смену:"
+        logger.info(f"Показываем выбор смены, количество: {len(shift_types)}")
         await render(update, context, text, shift_types_keyboard(shift_types), message_id)
         return set_state(context, SELECT_SHIFT_TYPE)
 
@@ -201,6 +201,8 @@ async def shift_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     data = query.data or ""
     await answer(query)
 
+    logger.info(f"shift_type_selection вызвана, data: {data}")
+
     user = update.effective_user
     if not user:
         return MAIN_MENU
@@ -211,17 +213,23 @@ async def shift_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             shift_type_id = int(data.split(":", 1)[1])
         except (ValueError, IndexError):
-            return await show_main_menu(update, context, message_id, notice="Ошибка выбора.")
+            logger.warning(f"Ошибка разбора shift_type_id из {data}")
+            await render(update, context, "Ошибка выбора смены. Попробуйте снова.", None, message_id)
+            return MAIN_MENU
 
         shift_type = get_shift_type(shift_type_id)
         if not shift_type:
-            return await show_main_menu(update, context, message_id, notice="Тип смены не найден.")
+            logger.warning(f"Тип смены {shift_type_id} не найден")
+            await render(update, context, "Тип смены не найден.", None, message_id)
+            return MAIN_MENU
 
         try:
             start_shift(user.id, shift_type_id)
+            logger.info(f"Смена {shift_type_id} успешно открыта для пользователя {user.id}")
         except Exception as e:
             logger.error("Ошибка начала смены: %s", e)
-            return await show_main_menu(update, context, message_id, notice="⚠️ Не удалось начать смену.")
+            await render(update, context, f"⚠️ Не удалось начать смену: {str(e)}", None, message_id)
+            return MAIN_MENU
 
         return await show_main_menu(update, context, message_id, notice="✅ Смена открыта. Хорошей смены!")
 
