@@ -58,7 +58,7 @@ def init_db():
             )
         """)
 
-        # Таблица пунктов чек-листов (обновлена)
+        # Таблица пунктов чек-листов (обновлена с notification_time)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,12 +70,13 @@ def init_db():
                 text TEXT,
                 requires_photo BOOLEAN DEFAULT 0,
                 requires_notification BOOLEAN DEFAULT 0,
+                notification_time TEXT,      -- HH:MM, время отправки уведомления
                 due_date TEXT,               -- YYYY-MM-DD для type='once', NULL для остальных
                 is_recurring BOOLEAN DEFAULT 1  -- 1 — постоянная, 0 — одноразовая
             )
         """)
 
-        # Таблица общего прогресса (без изменений)
+        # Таблица общего прогресса
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_shared_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,11 +114,12 @@ def init_db():
             conn.execute("ALTER TABLE checklist_items ADD COLUMN requires_photo BOOLEAN DEFAULT 0")
         if "requires_notification" not in item_columns:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN requires_notification BOOLEAN DEFAULT 0")
+        if "notification_time" not in item_columns:
+            conn.execute("ALTER TABLE checklist_items ADD COLUMN notification_time TEXT")
         if "due_date" not in item_columns:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN due_date TEXT")
         if "is_recurring" not in item_columns:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN is_recurring BOOLEAN DEFAULT 1")
-        # Если есть записи с type='daily' или 'weekly', установим is_recurring=1 (уже по умолчанию)
 
         conn.commit()
 

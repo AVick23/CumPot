@@ -9,9 +9,16 @@ ADMIN_AWAIT_NEW_TEXT = 111
 ADMIN_AWAIT_EDIT_TEXT = 112
 
 ADMIN_AWAIT_ITEM_TYPE = 113       # выбор типа задачи (daily/weekly/once)
-ADMIN_AWAIT_DUE_DATE = 114        # ввод даты для once
-ADMIN_AWAIT_PHOTO_FLAG = 115      # требует ли фото
-ADMIN_AWAIT_NOTIFICATION_FLAG = 116  # требует ли уведомления
+ADMIN_AWAIT_DATE = 114            # выбор даты (календарь) для once
+ADMIN_AWAIT_HOUR = 115            # выбор часа
+ADMIN_AWAIT_MINUTE = 116          # выбор минуты
+ADMIN_AWAIT_PHOTO_FLAG = 117      # требует ли фото
+ADMIN_AWAIT_NOTIFICATION_FLAG = 118  # требует ли уведомления
+
+# Состояния для редактирования в карточке
+ADMIN_EDIT_TOGGLE_PHOTO = 119
+ADMIN_EDIT_TOGGLE_NOTIFICATION = 120
+ADMIN_EDIT_CHANGE_TIME = 121
 
 # Callback data
 CB_HOME = "home"
@@ -31,12 +38,22 @@ CB_ADD_BACK_TEXT = "add_back_text"
 CB_CANCEL = "cancel"
 CB_CANCEL_EDIT = "cancel_edit"
 
-# Новые callback'и для расширенного добавления
+# Новые для даты, времени, флагов
 CB_ITEM_TYPE_PREFIX = "item_type:"      # + daily/weekly/once
-CB_DUE_DATE_BACK = "due_date_back"
+CB_DATE_PREFIX = "date:"                # + YYYY-MM-DD (выбор дня)
+CB_MONTH_PREV = "month_prev"
+CB_MONTH_NEXT = "month_next"
+CB_HOUR_PREFIX = "hour:"                # + 0-23
+CB_MINUTE_PREFIX = "minute:"            # + 0,5,10,...55
 CB_PHOTO_FLAG_PREFIX = "photo:"         # + yes/no
 CB_NOTIF_FLAG_PREFIX = "notif:"         # + yes/no
 CB_FLAGS_SKIP = "flags_skip"
+
+# Для редактирования в карточке
+CB_TOGGLE_PHOTO = "toggle_photo:"
+CB_TOGGLE_NOTIFICATION = "toggle_notif:"
+CB_CHANGE_TIME = "change_time:"
+CB_BACK_FROM_EDIT = "back_from_edit"
 
 # UI
 LOCATIONS = {"bar": "🍸 Бар", "kitchen": "🍳 Кухня"}
@@ -52,6 +69,8 @@ CATEGORY_LABELS = {
     "weekly": "📆 Недельные",
 }
 WEEKDAYS_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+          "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 PAGE_SIZE = 8
 TEXT_LIMIT = 200
 MSG_LIMIT = 3800

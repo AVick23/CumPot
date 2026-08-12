@@ -110,15 +110,31 @@ def create_item(
     text: str,
     requires_photo: bool = False,
     requires_notification: bool = False,
+    notification_time: str | None = None,
     due_date: str | None = None,
     is_recurring: bool = True
 ) -> None:
-    add_checklist_item(item_type, location, category, day_of_week, text,
-                       requires_photo, requires_notification, due_date, is_recurring)
+    add_checklist_item(
+        item_type, location, category, day_of_week, text,
+        requires_photo, requires_notification, notification_time,
+        due_date, is_recurring
+    )
 
 
 def update_item_text(item_id: int, text: str) -> None:
-    update_checklist_item(item_id, text.strip())
+    update_checklist_item(item_id, text=text.strip())
+
+
+def update_item_flags(item_id: int, requires_photo: bool = None, requires_notification: bool = None, notification_time: str = None) -> None:
+    kwargs = {}
+    if requires_photo is not None:
+        kwargs["requires_photo"] = 1 if requires_photo else 0
+    if requires_notification is not None:
+        kwargs["requires_notification"] = 1 if requires_notification else 0
+    if notification_time is not None:
+        kwargs["notification_time"] = notification_time
+    if kwargs:
+        update_checklist_item(item_id, **kwargs)
 
 
 def remove_item(item_id: int) -> None:

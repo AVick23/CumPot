@@ -4,28 +4,34 @@ from .constants import (
     ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY, ADMIN_EDIT_ITEMS,
     ADMIN_ITEM_DETAIL, ADMIN_DELETE_CONFIRM, ADMIN_ADD_DAY,
     ADMIN_AWAIT_NEW_TEXT, ADMIN_AWAIT_EDIT_TEXT,
-    ADMIN_AWAIT_ITEM_TYPE, ADMIN_AWAIT_DUE_DATE,
+    ADMIN_AWAIT_ITEM_TYPE, ADMIN_AWAIT_DATE,
+    ADMIN_AWAIT_HOUR, ADMIN_AWAIT_MINUTE,
     ADMIN_AWAIT_PHOTO_FLAG, ADMIN_AWAIT_NOTIFICATION_FLAG,
+    ADMIN_EDIT_TOGGLE_PHOTO, ADMIN_EDIT_TOGGLE_NOTIFICATION, ADMIN_EDIT_CHANGE_TIME,
     CB_HOME, CB_TO_EDIT, CB_TO_CATEGORIES, CB_TO_ITEMS,
     CB_LOC_PREFIX, CB_CAT_PREFIX, CB_PAGE_PREFIX,
     CB_ITEM_PREFIX, CB_EDIT_ITEM_PREFIX, CB_DELETE_ITEM_PREFIX,
     CB_CONFIRM_DELETE_PREFIX, CB_ADD, CB_ADD_DAY_PREFIX,
     CB_ADD_BACK_TEXT, CB_CANCEL, CB_CANCEL_EDIT,
-    CB_ITEM_TYPE_PREFIX, CB_DUE_DATE_BACK,
+    CB_ITEM_TYPE_PREFIX, CB_DATE_PREFIX, CB_MONTH_PREV, CB_MONTH_NEXT,
+    CB_HOUR_PREFIX, CB_MINUTE_PREFIX,
     CB_PHOTO_FLAG_PREFIX, CB_NOTIF_FLAG_PREFIX, CB_FLAGS_SKIP,
+    CB_TOGGLE_PHOTO, CB_TOGGLE_NOTIFICATION, CB_CHANGE_TIME,
+    CB_BACK_FROM_EDIT,
     LOCATIONS, CATEGORY_LABELS, WEEKDAYS_SHORT,
-    TEXT_LIMIT,  # ← ДОБАВЛЕНО
+    TEXT_LIMIT,
 )
 from .keyboards import (
     edit_location_keyboard, edit_category_keyboard, items_list_keyboard,
     item_detail_keyboard, confirm_delete_keyboard, add_day_keyboard,
-    text_prompt_keyboard, item_type_keyboard, flag_photo_keyboard,
-    flag_notification_keyboard, flags_skip_keyboard,
+    text_prompt_keyboard, item_type_keyboard,
+    calendar_keyboard, hour_keyboard, minute_keyboard,
+    flag_photo_keyboard, flag_notification_keyboard, flags_skip_keyboard,
 )
 from .utils import (
     get_location_counts, get_category_counts, get_items_for_editor,
-    paginate_items, get_item, create_item, update_item_text, remove_item,
-    render, parse_due_date,
+    paginate_items, get_item, create_item, update_item_text,
+    update_item_flags, remove_item, render, parse_due_date,
 )
 import logging
 
@@ -107,10 +113,12 @@ async def show_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
         lines.append(f"Дата: {item['due_date']}")
     lines.append(f"Требуется фото: {'✅' if item.get('requires_photo') else '❌'}")
     lines.append(f"Требуется уведомление: {'✅' if item.get('requires_notification') else '❌'}")
+    if item.get("requires_notification") and item.get("notification_time"):
+        lines.append(f"Время уведомления: {item['notification_time']}")
     text = "\n".join(lines)
     if notice:
         text = f"{notice}\n\n{text}"
-    await render(update, context, text, item_detail_keyboard(item_id), message_id)
+    await render(update, context, text, item_detail_keyboard(item), message_id)
     return ADMIN_ITEM_DETAIL
 
 
@@ -167,14 +175,14 @@ async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE,
     category = context.user_data.get("edit_category")
     if location not in LOCATIONS or category not in CATEGORY_LABELS:
         return await show_edit_locations(update, context, message_id, "⚠️ Сначала выберите категорию.")
-    # Очищаем временные данные
     context.user_data.pop("add_flow", None)
     context.user_data.pop("add_item_type", None)
     context.user_data.pop("add_day", None)
     context.user_data.pop("add_due_date", None)
+    context.user_data.pop("add_hour", None)
+    context.user_data.pop("add_minute", None)
     context.user_data.pop("add_requires_photo", None)
     context.user_data.pop("add_requires_notification", None)
-    # Запоминаем локацию и категорию
     context.user_data["add_flow"] = {"location": location, "category": category}
     text = f"Новый пункт для {LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВыберите тип задачи:"
     await render(update, context, text, item_type_keyboard(), message_id)
@@ -193,18 +201,21 @@ async def item_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data["add_item_type"] = item_type
 
         if item_type == "weekly":
-            # Запрашиваем день недели
             text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВыберите день недели:"
             await render(update, context, text, add_day_keyboard(), message_id)
             return ADMIN_ADD_DAY
         elif item_type == "once":
-            # Запрашиваем дату
-            text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВведите дату в формате ДД.ММ.ГГГГ или ДД-ММ-ГГГГ.\nНапример: 25.12.2025"
-            kb = text_prompt_keyboard(CB_CANCEL)
-            await render(update, context, text, kb, message_id)
-            return ADMIN_AWAIT_DUE_DATE
+            # Показываем календарь с текущим месяцем
+            now = datetime.now()
+            year = context.user_data.get("calendar_year", now.year)
+            month = context.user_data.get("calendar_month", now.month)
+            context.user_data["calendar_year"] = year
+            context.user_data["calendar_month"] = month
+            text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВыберите дату:"
+            await render(update, context, text, calendar_keyboard(year, month), message_id)
+            return ADMIN_AWAIT_DATE
         else:  # daily
-            # Сразу переходим к флагам (photo/notification)
+            # Сразу переходим к флагам (фото, уведомление)
             return await ask_photo_flag(update, context, message_id)
 
     if data == CB_CANCEL:
@@ -213,43 +224,112 @@ async def item_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE
     return await show_edit_locations(update, context, message_id)
 
 
-async def due_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not update.message or not update.message.text:
-        return await ask_due_date(update, context)
-    text = update.message.text.strip()
-    parsed = parse_due_date(text)
-    if not parsed:
-        await update.message.reply_text(
-            "⚠️ Неверный формат даты. Используйте ДД.ММ.ГГГГ или ДД-ММ-ГГГГ.\nНапример: 25.12.2025"
-        )
-        return ADMIN_AWAIT_DUE_DATE
-    context.user_data["add_due_date"] = parsed
-    # Переходим к флагам
-    return await ask_photo_flag(update, context, None, update.message.message_id)
-
-
-async def ask_due_date(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                       message_id=None) -> int:
+# ---------- Выбор даты (календарь) ----------
+async def date_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data
+    message_id = query.message.message_id if query.message else None
     flow = context.user_data.get("add_flow") or {}
     location, category = flow.get("location"), flow.get("category")
-    text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВведите дату в формате ДД.ММ.ГГГГ или ДД-ММ-ГГГГ.\nНапример: 25.12.2025"
-    kb = text_prompt_keyboard(CB_CANCEL)
-    if message_id:
-        await render(update, context, text, kb, message_id)
-    else:
-        await render(update, context, text, kb, None)
-    return ADMIN_AWAIT_DUE_DATE
+
+    if data == CB_MONTH_PREV:
+        year = context.user_data.get("calendar_year")
+        month = context.user_data.get("calendar_month")
+        if month == 1:
+            month = 12
+            year -= 1
+        else:
+            month -= 1
+        context.user_data["calendar_year"] = year
+        context.user_data["calendar_month"] = month
+        text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВыберите дату:"
+        await render(update, context, text, calendar_keyboard(year, month), message_id)
+        return ADMIN_AWAIT_DATE
+
+    if data == CB_MONTH_NEXT:
+        year = context.user_data.get("calendar_year")
+        month = context.user_data.get("calendar_month")
+        if month == 12:
+            month = 1
+            year += 1
+        else:
+            month += 1
+        context.user_data["calendar_year"] = year
+        context.user_data["calendar_month"] = month
+        text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВыберите дату:"
+        await render(update, context, text, calendar_keyboard(year, month), message_id)
+        return ADMIN_AWAIT_DATE
+
+    if data.startswith(CB_DATE_PREFIX):
+        due_date = data.split(":", 1)[1]  # YYYY-MM-DD
+        context.user_data["add_due_date"] = due_date
+        # Переходим к выбору времени (часы)
+        return await ask_hour(update, context, message_id)
+
+    if data == CB_CANCEL:
+        return await cancel_action(update, context, message_id)
+
+    return await show_edit_locations(update, context, message_id)
 
 
+# ---------- Выбор времени (часы и минуты) ----------
+async def ask_hour(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None) -> int:
+    flow = context.user_data.get("add_flow") or {}
+    location, category = flow.get("location"), flow.get("category")
+    text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВыберите час:"
+    await render(update, context, text, hour_keyboard(), message_id)
+    return ADMIN_AWAIT_HOUR
+
+
+async def hour_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data
+    message_id = query.message.message_id if query.message else None
+
+    if data.startswith(CB_HOUR_PREFIX):
+        hour = int(data.split(":", 1)[1])
+        context.user_data["add_hour"] = hour
+        # Переходим к выбору минут
+        return await ask_minute(update, context, message_id)
+
+    if data == CB_CANCEL:
+        return await cancel_action(update, context, message_id)
+
+    return await show_edit_locations(update, context, message_id)
+
+
+async def ask_minute(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None) -> int:
+    flow = context.user_data.get("add_flow") or {}
+    location, category = flow.get("location"), flow.get("category")
+    text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nВыберите минуты (с шагом 5):"
+    await render(update, context, text, minute_keyboard(), message_id)
+    return ADMIN_AWAIT_MINUTE
+
+
+async def minute_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data
+    message_id = query.message.message_id if query.message else None
+
+    if data.startswith(CB_MINUTE_PREFIX):
+        minute = int(data.split(":", 1)[1])
+        context.user_data["add_minute"] = minute
+        # Время выбрано, переходим к флагам
+        return await ask_photo_flag(update, context, message_id)
+
+    if data == CB_CANCEL:
+        return await cancel_action(update, context, message_id)
+
+    return await show_edit_locations(update, context, message_id)
+
+
+# ---------- Флаги (фото, уведомление) ----------
 async def ask_photo_flag(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                         message_id=None, new_message_id=None) -> int:
+                         message_id=None) -> int:
     flow = context.user_data.get("add_flow") or {}
     location, category = flow.get("location"), flow.get("category")
     text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nТребуется ли фото для этой задачи?"
-    kb = flag_photo_keyboard()
-    # Если есть new_message_id, редактируем его, иначе редактируем текущий message_id
-    target_id = new_message_id or message_id
-    await render(update, context, text, kb, target_id)
+    await render(update, context, text, flag_photo_keyboard(), message_id)
     return ADMIN_AWAIT_PHOTO_FLAG
 
 
@@ -259,19 +339,14 @@ async def photo_flag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     message_id = query.message.message_id if query.message else None
 
     if data.startswith(CB_PHOTO_FLAG_PREFIX):
-        value = data.split(":", 1)[1]  # yes или no
+        value = data.split(":", 1)[1]  # yes/no
         context.user_data["add_requires_photo"] = (value == "yes")
         return await ask_notification_flag(update, context, message_id)
 
-    if data == CB_DUE_DATE_BACK:
-        # Возврат к выбору типа (или к вводу даты)
-        item_type = context.user_data.get("add_item_type")
-        if item_type == "once":
-            return await ask_due_date(update, context, message_id)
-        else:
-            return await start_add(update, context, message_id)
+    if data == CB_CANCEL:
+        return await cancel_action(update, context, message_id)
 
-    return await start_add(update, context, message_id)
+    return await show_edit_locations(update, context, message_id)
 
 
 async def ask_notification_flag(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -279,8 +354,7 @@ async def ask_notification_flag(update: Update, context: ContextTypes.DEFAULT_TY
     flow = context.user_data.get("add_flow") or {}
     location, category = flow.get("location"), flow.get("category")
     text = f"{LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nТребуется ли уведомление для этой задачи?\n(Уведомление будет отправлено всем, кто на смене в день выполнения)"
-    kb = flag_notification_keyboard()
-    await render(update, context, text, kb, message_id)
+    await render(update, context, text, flag_notification_keyboard(), message_id)
     return ADMIN_AWAIT_NOTIFICATION_FLAG
 
 
@@ -290,18 +364,26 @@ async def notification_flag_selection(update: Update, context: ContextTypes.DEFA
     message_id = query.message.message_id if query.message else None
 
     if data.startswith(CB_NOTIF_FLAG_PREFIX):
-        value = data.split(":", 1)[1]  # yes или no
+        value = data.split(":", 1)[1]  # yes/no
         context.user_data["add_requires_notification"] = (value == "yes")
-        # Все данные собраны, создаём задачу
-        return await finish_add(update, context, message_id)
+        # Если уведомление включено, нужно проверить, есть ли время (для daily/weekly мы ещё не спрашивали)
+        # Если время не задано (для daily/weekly), нужно запросить.
+        # Мы уже могли задать время для once, но для daily/weekly время не задавалось.
+        # Поэтому проверяем: если add_hour и add_minute не заданы, запрашиваем время.
+        if (context.user_data.get("add_hour") is None or context.user_data.get("add_minute") is None) and context.user_data.get("add_requires_notification"):
+            # Нет времени — запрашиваем
+            return await ask_hour(update, context, message_id)
+        else:
+            # Время уже есть (для once) или уведомление выключено — завершаем
+            return await finish_add(update, context, message_id)
 
-    if data == CB_DUE_DATE_BACK:
-        # Возврат к выбору photo
-        return await ask_photo_flag(update, context, message_id)
+    if data == CB_CANCEL:
+        return await cancel_action(update, context, message_id)
 
-    return await start_add(update, context, message_id)
+    return await show_edit_locations(update, context, message_id)
 
 
+# ---------- Завершение добавления ----------
 async def finish_add(update: Update, context: ContextTypes.DEFAULT_TYPE,
                      message_id=None) -> int:
     flow = context.user_data.get("add_flow") or {}
@@ -310,16 +392,25 @@ async def finish_add(update: Update, context: ContextTypes.DEFAULT_TYPE,
     item_type = context.user_data.get("add_item_type")
     day_of_week = context.user_data.get("add_day")
     due_date = context.user_data.get("add_due_date")
+    hour = context.user_data.get("add_hour")
+    minute = context.user_data.get("add_minute")
     requires_photo = context.user_data.get("add_requires_photo", False)
     requires_notification = context.user_data.get("add_requires_notification", False)
 
-    # Для once is_recurring=False, для daily/weekly is_recurring=True
     is_recurring = (item_type != "once")
 
     if item_type == "weekly" and day_of_week is None:
         return await show_add_day(update, context, message_id, notice="⚠️ Выберите день недели.")
     if item_type == "once" and not due_date:
-        return await ask_due_date(update, context, message_id, notice="⚠️ Укажите дату.")
+        return await show_calendar(update, context, message_id, notice="⚠️ Выберите дату.")
+
+    # Формируем время уведомления (HH:MM) только если уведомление включено
+    notification_time = None
+    if requires_notification and hour is not None and minute is not None:
+        notification_time = f"{hour:02d}:{minute:02d}"
+    elif requires_notification:
+        # Если уведомление включено, но время не задано — ошибка
+        return await ask_hour(update, context, message_id)
 
     # Переходим к вводу текста
     context.user_data["await_text"] = {
@@ -327,7 +418,6 @@ async def finish_add(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "state": ADMIN_AWAIT_NEW_TEXT,
         "message_id": message_id
     }
-    # Сохраняем данные для создания
     context.user_data["add_final"] = {
         "item_type": item_type,
         "location": location,
@@ -336,16 +426,17 @@ async def finish_add(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "due_date": due_date,
         "requires_photo": requires_photo,
         "requires_notification": requires_notification,
+        "notification_time": notification_time,
         "is_recurring": is_recurring,
     }
     text = f"Новый пункт для {LOCATIONS[location]} · {CATEGORY_LABELS[category]}\n\nОтправьте текст пункта обычным сообщением."
-    kb = text_prompt_keyboard(CB_ADD_BACK_TEXT, CB_CANCEL)
+    kb = text_prompt_keyboard(CB_CANCEL)
     new_mid = await render(update, context, text, kb, message_id)
-    # Обновим message_id в await_text
     context.user_data["await_text"]["message_id"] = new_mid
     return ADMIN_AWAIT_NEW_TEXT
 
 
+# ---------- Старые вспомогательные функции для совместимости ----------
 async def show_add_day(update: Update, context: ContextTypes.DEFAULT_TYPE,
                        message_id=None, notice=None) -> int:
     flow = context.user_data.get("add_flow") or {}
@@ -362,7 +453,153 @@ async def show_add_day(update: Update, context: ContextTypes.DEFAULT_TYPE,
     return ADMIN_ADD_DAY
 
 
-# ---------- Обработчики для callback'ов ----------
+async def edit_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    meta = context.user_data.get("await_text")
+    if not meta:
+        return await show_edit_locations(update, context, None, notice="Начните заново с /start.")
+    text = (update.message.text or "").strip() if update.message else ""
+    message_id = meta.get("message_id")
+
+    if not text:
+        kb = text_prompt_keyboard(CB_CANCEL)
+        await render(update, context, "⚠️ Текст не может быть пустым. Попробуйте ещё раз.", kb, message_id)
+        return meta.get("state", ADMIN_EDIT_LOCATION)
+
+    if len(text) > TEXT_LIMIT:
+        kb = text_prompt_keyboard(CB_CANCEL)
+        await render(update, context, f"⚠️ Слишком длинно. Максимум {TEXT_LIMIT} символов.\n\nОтправьте текст ещё раз.", kb, message_id)
+        return meta.get("state", ADMIN_EDIT_LOCATION)
+
+    if meta.get("kind") == "new":
+        final_data = context.user_data.get("add_final") or {}
+        if not final_data:
+            return await show_edit_locations(update, context, message_id, "Ошибка: данные не найдены.")
+        create_item(
+            item_type=final_data["item_type"],
+            location=final_data["location"],
+            category=final_data["category"],
+            day_of_week=final_data.get("day_of_week"),
+            text=text,
+            requires_photo=final_data.get("requires_photo", False),
+            requires_notification=final_data.get("requires_notification", False),
+            notification_time=final_data.get("notification_time"),
+            due_date=final_data.get("due_date"),
+            is_recurring=final_data.get("is_recurring", True)
+        )
+        context.user_data.pop("await_text", None)
+        context.user_data.pop("add_flow", None)
+        context.user_data.pop("add_final", None)
+        context.user_data.pop("add_item_type", None)
+        context.user_data.pop("add_day", None)
+        context.user_data.pop("add_due_date", None)
+        context.user_data.pop("add_hour", None)
+        context.user_data.pop("add_minute", None)
+        context.user_data.pop("add_requires_photo", None)
+        context.user_data.pop("add_requires_notification", None)
+        return await show_items_list(update, context, message_id, location=final_data["location"],
+                                     category=final_data["category"], page=999999, notice="✅ Пункт добавлен.")
+
+    if meta.get("kind") == "edit":
+        item_id = meta.get("item_id")
+        if not item_id:
+            return await show_items_list(update, context, message_id)
+        update_item_text(item_id, text)
+        context.user_data.pop("await_text", None)
+        return await show_item_detail(update, context, item_id, message_id, notice="✅ Сохранено.")
+
+    return await show_edit_locations(update, context, message_id)
+
+
+# ---------- Обработчики для редактирования в карточке ----------
+async def toggle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int, message_id: int) -> int:
+    item = get_item(item_id)
+    if not item:
+        return await show_items_list(update, context, message_id, notice="⚠️ Пункт не найден.")
+    new_value = not item.get("requires_photo")
+    update_item_flags(item_id, requires_photo=new_value)
+    return await show_item_detail(update, context, item_id, message_id, notice=f"✅ Фото: {'включено' if new_value else 'выключено'}")
+
+
+async def toggle_notification(update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int, message_id: int) -> int:
+    item = get_item(item_id)
+    if not item:
+        return await show_items_list(update, context, message_id, notice="⚠️ Пункт не найден.")
+    new_value = not item.get("requires_notification")
+    # Если включаем уведомление, но время не задано — запросим время
+    if new_value and not item.get("notification_time"):
+        context.user_data["edit_item_id"] = item_id
+        context.user_data["edit_new_notification"] = True
+        text = "Введите время уведомления (часы и минуты):"
+        await render(update, context, text, hour_keyboard(), message_id)
+        return ADMIN_AWAIT_HOUR  # используем существующее состояние для выбора часа
+    else:
+        # Если выключаем — просто обновляем
+        update_item_flags(item_id, requires_notification=new_value)
+        return await show_item_detail(update, context, item_id, message_id, notice=f"✅ Уведомление: {'включено' if new_value else 'выключено'}")
+
+
+async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int, message_id: int) -> int:
+    item = get_item(item_id)
+    if not item:
+        return await show_items_list(update, context, message_id, notice="⚠️ Пункт не найден.")
+    context.user_data["edit_item_id"] = item_id
+    context.user_data["edit_new_notification"] = False  # просто меняем время
+    text = "Выберите новое время уведомления:"
+    await render(update, context, text, hour_keyboard(), message_id)
+    return ADMIN_AWAIT_HOUR
+
+
+async def handle_hour_selection_for_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data
+    message_id = query.message.message_id if query.message else None
+    item_id = context.user_data.get("edit_item_id")
+    if not item_id:
+        return await show_items_list(update, context, message_id, notice="⚠️ Ошибка: не найден ID задачи.")
+
+    if data.startswith(CB_HOUR_PREFIX):
+        hour = int(data.split(":", 1)[1])
+        context.user_data["edit_hour"] = hour
+        # Переходим к выбору минут
+        await render(update, context, "Выберите минуты (с шагом 5):", minute_keyboard(), message_id)
+        return ADMIN_AWAIT_MINUTE
+
+    if data == CB_CANCEL:
+        context.user_data.pop("edit_item_id", None)
+        context.user_data.pop("edit_hour", None)
+        return await show_item_detail(update, context, item_id, message_id, notice="Отменено.")
+
+    return await show_edit_locations(update, context, message_id)
+
+
+async def handle_minute_selection_for_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data
+    message_id = query.message.message_id if query.message else None
+    item_id = context.user_data.get("edit_item_id")
+    if not item_id:
+        return await show_items_list(update, context, message_id, notice="⚠️ Ошибка: не найден ID задачи.")
+
+    if data.startswith(CB_MINUTE_PREFIX):
+        minute = int(data.split(":", 1)[1])
+        hour = context.user_data.get("edit_hour")
+        if hour is None:
+            return await show_item_detail(update, context, item_id, message_id, notice="⚠️ Ошибка: час не выбран.")
+        notification_time = f"{hour:02d}:{minute:02d}"
+        update_item_flags(item_id, requires_notification=True, notification_time=notification_time)
+        context.user_data.pop("edit_item_id", None)
+        context.user_data.pop("edit_hour", None)
+        return await show_item_detail(update, context, item_id, message_id, notice=f"✅ Время уведомления обновлено: {notification_time}")
+
+    if data == CB_CANCEL:
+        context.user_data.pop("edit_item_id", None)
+        context.user_data.pop("edit_hour", None)
+        return await show_item_detail(update, context, item_id, message_id, notice="Отменено.")
+
+    return await show_edit_locations(update, context, message_id)
+
+
+# ---------- Основной роутер редактора ----------
 async def edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -370,6 +607,7 @@ async def edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     message_id = query.message.message_id if query.message else None
     prefix, value = data.split(":", 1) if ":" in data else (data, None)
 
+    # --- Навигация ---
     if data == CB_HOME:
         from ..menu.handlers import show_main
         return await show_main(update, context, message_id)
@@ -424,12 +662,11 @@ async def edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         except (TypeError, ValueError):
             return await show_items_list(update, context, message_id)
 
-    # ---------- Расширенное добавление ----------
+    # --- Добавление новой задачи ---
     if data == CB_ADD:
         return await start_add(update, context, message_id)
 
     if prefix == CB_ADD_DAY_PREFIX:
-        # Обработка выбора дня для weekly
         flow = context.user_data.get("add_flow") or {}
         try:
             day = int(value)
@@ -438,13 +675,8 @@ async def edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         flow["day_of_week"] = day
         context.user_data["add_flow"] = flow
         context.user_data["add_day"] = day
-        # Переходим к флагам (или к выбору типа, если это часть расширенного добавления)
-        # Если мы в режиме расширенного добавления (add_item_type существует), переходим к флагам
-        if context.user_data.get("add_item_type"):
-            return await ask_photo_flag(update, context, message_id)
-        else:
-            # старое поведение (для совместимости)
-            return await show_add_text(update, context, message_id)
+        # После выбора дня для weekly переходим к флагам
+        return await ask_photo_flag(update, context, message_id)
 
     if data == CB_ADD_BACK_TEXT:
         return await back_from_add_text(update, context, message_id)
@@ -455,21 +687,34 @@ async def edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if data == CB_CANCEL_EDIT:
         return await cancel_edit_text(update, context, message_id)
 
-    # Обработка выбора типа задачи
+    # --- Выбор типа задачи ---
     if data.startswith(CB_ITEM_TYPE_PREFIX):
         return await item_type_selection(update, context)
 
-    # Обработка флага фото
+    # --- Выбор даты (календарь) ---
+    if data == CB_MONTH_PREV or data == CB_MONTH_NEXT or data.startswith(CB_DATE_PREFIX):
+        return await date_selection(update, context)
+
+    # --- Выбор времени ---
+    if data.startswith(CB_HOUR_PREFIX):
+        # Если мы в режиме редактирования (есть edit_item_id) — обрабатываем отдельно
+        if context.user_data.get("edit_item_id"):
+            return await handle_hour_selection_for_edit(update, context)
+        else:
+            return await hour_selection(update, context)
+
+    if data.startswith(CB_MINUTE_PREFIX):
+        if context.user_data.get("edit_item_id"):
+            return await handle_minute_selection_for_edit(update, context)
+        else:
+            return await minute_selection(update, context)
+
+    # --- Флаги ---
     if data.startswith(CB_PHOTO_FLAG_PREFIX):
         return await photo_flag_selection(update, context)
 
-    # Обработка флага уведомления
     if data.startswith(CB_NOTIF_FLAG_PREFIX):
         return await notification_flag_selection(update, context)
-
-    if data == CB_DUE_DATE_BACK:
-        # Возврат к выбору типа
-        return await start_add(update, context, message_id)
 
     if data == CB_FLAGS_SKIP:
         # Пропустить настройку флагов (установить false)
@@ -477,62 +722,18 @@ async def edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         context.user_data["add_requires_notification"] = False
         return await finish_add(update, context, message_id)
 
-    return await show_edit_locations(update, context, message_id)
+    # --- Редактирование в карточке ---
+    if data.startswith(CB_TOGGLE_PHOTO):
+        item_id = int(value)
+        return await toggle_photo(update, context, item_id, message_id)
 
+    if data.startswith(CB_TOGGLE_NOTIFICATION):
+        item_id = int(value)
+        return await toggle_notification(update, context, item_id, message_id)
 
-async def edit_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    meta = context.user_data.get("await_text")
-    if not meta:
-        return await show_edit_locations(update, context, None, notice="Начните заново с /start.")
-    text = (update.message.text or "").strip() if update.message else ""
-    message_id = meta.get("message_id")
-
-    if not text:
-        kb = text_prompt_keyboard(CB_ADD_BACK_TEXT, CB_CANCEL) if meta.get("kind") == "new" \
-            else text_prompt_keyboard(CB_CANCEL_EDIT)
-        await render(update, context, "⚠️ Текст не может быть пустым. Попробуйте ещё раз.", kb, message_id)
-        return meta.get("state", ADMIN_EDIT_LOCATION)
-
-    if len(text) > TEXT_LIMIT:
-        kb = text_prompt_keyboard(CB_ADD_BACK_TEXT, CB_CANCEL) if meta.get("kind") == "new" \
-            else text_prompt_keyboard(CB_CANCEL_EDIT)
-        await render(update, context, f"⚠️ Слишком длинно. Максимум {TEXT_LIMIT} символов.\n\nОтправьте текст ещё раз.", kb, message_id)
-        return meta.get("state", ADMIN_EDIT_LOCATION)
-
-    if meta.get("kind") == "new":
-        # Создаём задачу с данными из add_final
-        final_data = context.user_data.get("add_final") or {}
-        if not final_data:
-            return await show_edit_locations(update, context, message_id, "Ошибка: данные не найдены.")
-        create_item(
-            item_type=final_data["item_type"],
-            location=final_data["location"],
-            category=final_data["category"],
-            day_of_week=final_data.get("day_of_week"),
-            text=text,
-            requires_photo=final_data.get("requires_photo", False),
-            requires_notification=final_data.get("requires_notification", False),
-            due_date=final_data.get("due_date"),
-            is_recurring=final_data.get("is_recurring", True)
-        )
-        context.user_data.pop("await_text", None)
-        context.user_data.pop("add_flow", None)
-        context.user_data.pop("add_final", None)
-        context.user_data.pop("add_item_type", None)
-        context.user_data.pop("add_day", None)
-        context.user_data.pop("add_due_date", None)
-        context.user_data.pop("add_requires_photo", None)
-        context.user_data.pop("add_requires_notification", None)
-        return await show_items_list(update, context, message_id, location=final_data["location"],
-                                     category=final_data["category"], page=999999, notice="✅ Пункт добавлен.")
-
-    if meta.get("kind") == "edit":
-        item_id = meta.get("item_id")
-        if not item_id:
-            return await show_items_list(update, context, message_id)
-        update_item_text(item_id, text)
-        context.user_data.pop("await_text", None)
-        return await show_item_detail(update, context, item_id, message_id, notice="✅ Сохранено.")
+    if data.startswith(CB_CHANGE_TIME):
+        item_id = int(value)
+        return await change_time(update, context, item_id, message_id)
 
     return await show_edit_locations(update, context, message_id)
 
@@ -557,8 +758,12 @@ async def cancel_action(update: Update, context: ContextTypes.DEFAULT_TYPE,
     context.user_data.pop("add_item_type", None)
     context.user_data.pop("add_day", None)
     context.user_data.pop("add_due_date", None)
+    context.user_data.pop("add_hour", None)
+    context.user_data.pop("add_minute", None)
     context.user_data.pop("add_requires_photo", None)
     context.user_data.pop("add_requires_notification", None)
+    context.user_data.pop("edit_item_id", None)
+    context.user_data.pop("edit_hour", None)
     if flow.get("location") and flow.get("category"):
         return await show_items_list(update, context, message_id, location=flow["location"],
                                      category=flow["category"], page=context.user_data.get("edit_page", 1),
