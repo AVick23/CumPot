@@ -1,7 +1,7 @@
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
-from .menu.handlers import employee_start
 from .menu import register_menu_states
+from .menu.handlers import employee_start
 from .checklists.handlers import (
     category_selection,
     view_item,
@@ -12,18 +12,6 @@ from .checklists.handlers import (
     photo_state_guard,
     progress_back,
     noop,
-)
-
-from .menu.constants import (
-    ONBOARD_NAME,
-    ONBOARD_POSITION,
-    MAIN_MENU,
-    SELECT_SHIFT_TYPE,
-    CB_START_SHIFT,
-    CB_CHECKLIST,
-    CB_PROGRESS,
-    CB_POSITION_PREFIX,
-    CB_BACK_MENU,
 )
 
 from .checklists.constants import (
@@ -41,13 +29,7 @@ from .checklists.constants import (
     CB_BACK_CATEGORIES,
 )
 
-from .menu.handlers import (
-    onboarding_name_input,
-    onboarding_wrong_type_name,
-    onboarding_position,
-    onboarding_position_guard,
-    onboarding_callback_guard,
-)
+from .menu.constants import CB_BACK_MENU
 
 
 def get_employee_entry_point():
@@ -60,24 +42,6 @@ def register_employee_states(states: dict):
             CallbackQueryHandler(handler, pattern=pattern),
             CallbackQueryHandler(noop, pattern="^noop$"),
         ]
-
-    # Онбординг
-    states[ONBOARD_NAME] = [
-        MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_name_input),
-        MessageHandler(~filters.TEXT & ~filters.COMMAND, onboarding_wrong_type_name),
-        CallbackQueryHandler(onboarding_callback_guard),
-    ]
-
-    states[ONBOARD_POSITION] = [
-        CallbackQueryHandler(onboarding_position, pattern=f"^{CB_POSITION_PREFIX}.*"),
-        CallbackQueryHandler(onboarding_position_guard),
-    ]
-
-    # Главное меню
-    states[MAIN_MENU] = emp_state(
-        main_menu_callback,
-        f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$"
-    )
 
     # Категории
     states[CATEGORY_SELECT] = emp_state(
@@ -121,5 +85,5 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(photo_state_guard),
     ]
 
-    # Регистрируем состояния из menu (включая выбор смены)
+    # Регистрируем состояния онбординга и главного меню (включая выбор смены)
     register_menu_states(states)
