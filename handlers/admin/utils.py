@@ -8,10 +8,11 @@ from db.checklist import (
     update_checklist_item,
     delete_checklist_item as db_delete_item,
     get_items_for_location_and_day,
-    get_progress_for_user_date,
-    get_photos_for_user_date,  # ← ДОБАВЛЕНО
+    get_shared_progress,          # вместо get_progress_for_user_date
+    # get_photos_for_user_date больше не нужен — фото в shared
 )
-from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN
+from db.shifts import get_shift_for_date
+from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN, LOCATIONS
 
 
 def full_name(user: dict | None) -> str:
@@ -84,29 +85,33 @@ def get_shift_for_date_any(user_id: int, date_str: str) -> dict | None:
 
 
 def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
-    shift = get_shift_for_date_any(employee_id, date_str)
+    """
+    Возвращает прогресс сотрудника за дату.
+    Использует общий прогресс для локации сотрудника в этот день.
+    """
+    shift = get_shift_for_date(employee_id, date_str)
     if not shift:
         return None
 
+    location = shift["location"]
     day_of_week = datetime.strptime(date_str, "%Y-%m-%d").weekday()
-    items = get_items_for_location_and_day(shift["location"], day_of_week)
-    progress = get_progress_for_user_date(employee_id, date_str)
-    photos = get_photos_for_user_date(employee_id, date_str)  # ← ДОБАВЛЕНО
+    items = get_items_for_location_and_day(location, day_of_week)
 
-    progress_dict = {p["item_id"]: p["completed"] for p in progress}
+    # Получаем общий прогресс для этой локации и даты
+    shared_progress = get_shared_progress(location, date_str)
+
     grouped = {}
     done = 0
     total = 0
+    all_photo_file_ids = []
 
     for item in items:
         item = dict(item)
-        completed = progress_dict.get(item["id"], 0) == 1
+        progress = shared_progress.get(item["id"])
+        completed = progress.get("completed", 0) == 1 if progress else False
         item["completed"] = completed
-
-        # ← ДОБАВЛЕНО: привязка фото
-        photo = photos.get(item["id"])
-        item["has_photo"] = bool(photo)
-        item["photo_file_id"] = photo["file_id"] if photo else None
+        item["has_photo"] = bool(progress and progress.get("photo_file_id"))
+        item["photo_file_id"] = progress.get("photo_file_id") if progress else None
 
         total += 1
         if completed:
@@ -114,15 +119,10 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
         cat = item.get("category") or "weekly"
         grouped.setdefault(cat, []).append(item)
 
-    ordered_grouped = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
+        if item.get("photo_file_id"):
+            all_photo_file_ids.append(item["photo_file_id"])
 
-    # ← ДОБАВЛЕНО: список всех file_id для быстрой отправки
-    all_photo_file_ids = [
-        item["photo_file_id"]
-        for items_list in ordered_grouped.values()
-        for item in items_list
-        if item.get("photo_file_id")
-    ]
+    ordered_grouped = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
 
     return {
         "shift": shift,
@@ -130,7 +130,7 @@ def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
         "done": done,
         "total": total,
         "items": items,
-        "photo_file_ids": all_photo_file_ids,  # ← НОВОЕ ПОЛЕ
+        "photo_file_ids": all_photo_file_ids,
     }
 
 
