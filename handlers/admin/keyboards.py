@@ -2,9 +2,9 @@ import calendar
 from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constants import (
-    CB_NOOP, CB_HOME, CB_SHIFTS, CB_EMPLOYEES, CB_EDIT, CB_EMP_PREFIX,
-    CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX, CB_TO_EMPLOYEES,
-    CB_TO_CALENDAR, CB_TO_EDIT, CB_TO_CATEGORIES, CB_TO_ITEMS,
+    CB_NOOP, CB_HOME, CB_SHIFTS, CB_CALENDAR, CB_EDIT,
+    CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX, CB_TO_CALENDAR,
+    CB_TO_EDIT, CB_TO_CATEGORIES, CB_TO_ITEMS,
     CB_LOC_PREFIX, CB_CAT_PREFIX, CB_PAGE_PREFIX, CB_ITEM_PREFIX,
     CB_EDIT_ITEM_PREFIX, CB_DELETE_ITEM_PREFIX, CB_CONFIRM_DELETE_PREFIX,
     CB_ADD, CB_ADD_DAY_PREFIX, CB_CANCEL, LOCATIONS, DAILY_CATEGORIES,
@@ -22,7 +22,7 @@ def _clip(text: str | None, limit: int = 35) -> str:
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Смены сегодня", callback_data=CB_SHIFTS)],
-        [InlineKeyboardButton("👥 Сотрудники", callback_data=CB_EMPLOYEES)],
+        [InlineKeyboardButton("📊 Отчёт по дате", callback_data=CB_CALENDAR)],
         [InlineKeyboardButton("📝 Чек-листы", callback_data=CB_EDIT)],
     ])
 
@@ -37,22 +37,8 @@ def shifts_keyboard() -> InlineKeyboardMarkup:
     return back_home_keyboard()
 
 
-def employee_list_keyboard(employees: list[dict]) -> InlineKeyboardMarkup:
-    rows = []
-    for emp in employees:
-        name = (emp.get("full_name") or "").strip()
-        if not name:
-            name = " ".join([emp.get("first_name") or "", emp.get("last_name") or ""]).strip()
-        if not name:
-            name = emp.get("username") or str(emp.get("tg_id"))
-        rows.append([
-            InlineKeyboardButton(_clip(name, 30), callback_data=f"{CB_EMP_PREFIX}{emp['tg_id']}")
-        ])
-    rows.append([InlineKeyboardButton("🏠 Главное меню", callback_data=CB_HOME)])
-    return InlineKeyboardMarkup(rows)
-
-
 def calendar_keyboard(year: int, month: int, shift_days: set[str]) -> InlineKeyboardMarkup:
+    """Календарь с отметками дней, когда были смены (любая локация)."""
     rows = []
     rows.append([
         InlineKeyboardButton("◀️", callback_data=CB_PREV_MONTH),
@@ -83,22 +69,19 @@ def calendar_keyboard(year: int, month: int, shift_days: set[str]) -> InlineKeyb
         rows.append(row)
 
     rows.append([
-        InlineKeyboardButton("◀️ Сотрудники", callback_data=CB_TO_EMPLOYEES),
         InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
     ])
     return InlineKeyboardMarkup(rows)
 
 
-def day_progress_keyboard() -> InlineKeyboardMarkup:
+def day_report_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("◀️ Календарь", callback_data=CB_TO_CALENDAR)],
-        [
-            InlineKeyboardButton("👥 Сотрудники", callback_data=CB_TO_EMPLOYEES),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ],
+        [InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME)],
     ])
 
 
+# ---------- Редактор чек-листов (без изменений) ----------
 def edit_location_keyboard(counts: dict[str, int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"🍸 Бар · {counts.get('bar', 0)}", callback_data=f"{CB_LOC_PREFIX}bar")],

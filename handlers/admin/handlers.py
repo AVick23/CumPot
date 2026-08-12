@@ -8,14 +8,14 @@ from telegram.error import BadRequest
 from db.users import save_user
 
 from .constants import (
-    ADMIN_MAIN, ADMIN_SHIFTS, ADMIN_EMPLOYEES, ADMIN_CALENDAR,
-    ADMIN_DAY_PROGRESS, ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY,
-    ADMIN_EDIT_ITEMS, ADMIN_ITEM_DETAIL, ADMIN_DELETE_CONFIRM,
+    ADMIN_MAIN, ADMIN_SHIFTS, ADMIN_CALENDAR, ADMIN_DAY_REPORT,
+    ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY, ADMIN_EDIT_ITEMS,
+    ADMIN_ITEM_DETAIL, ADMIN_DELETE_CONFIRM,
     ADMIN_ADD_DAY, ADMIN_AWAIT_NEW_TEXT, ADMIN_AWAIT_EDIT_TEXT,
-    CB_NOOP, CB_HOME, CB_SHIFTS, CB_EMPLOYEES, CB_EDIT,
-    CB_EMP_PREFIX, CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX,
-    CB_TO_EMPLOYEES, CB_TO_CALENDAR, CB_TO_EDIT, CB_TO_CATEGORIES,
-    CB_TO_ITEMS, CB_LOC_PREFIX, CB_CAT_PREFIX, CB_PAGE_PREFIX,
+    CB_NOOP, CB_HOME, CB_SHIFTS, CB_CALENDAR, CB_EDIT,
+    CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX,
+    CB_TO_CALENDAR, CB_TO_EDIT, CB_TO_CATEGORIES, CB_TO_ITEMS,
+    CB_LOC_PREFIX, CB_CAT_PREFIX, CB_PAGE_PREFIX,
     CB_ITEM_PREFIX, CB_EDIT_ITEM_PREFIX, CB_DELETE_ITEM_PREFIX,
     CB_CONFIRM_DELETE_PREFIX, CB_ADD, CB_ADD_DAY_PREFIX,
     CB_ADD_BACK_TEXT, CB_CANCEL, CB_CANCEL_EDIT,
@@ -24,19 +24,18 @@ from .constants import (
 )
 
 from .keyboards import (
-    main_menu_keyboard, shifts_keyboard, employee_list_keyboard,
-    calendar_keyboard, day_progress_keyboard, edit_location_keyboard,
+    main_menu_keyboard, shifts_keyboard,
+    calendar_keyboard, day_report_keyboard, edit_location_keyboard,
     edit_category_keyboard, items_list_keyboard, item_detail_keyboard,
     confirm_delete_keyboard, add_day_keyboard, text_prompt_keyboard,
     back_home_keyboard,
 )
 
 from .utils import (
-    full_name, get_employees, get_user_by_id, get_today_shifts_full,
-    get_employee_shift_days, get_employee_progress, get_location_counts,
-    get_category_counts, get_items_for_editor, paginate_items, get_item,
-    create_item, update_item_text, remove_item, progress_bar, percent,
-    format_date_ru,
+    full_name, get_shift_days_for_month, get_day_report,
+    get_location_counts, get_category_counts, get_items_for_editor,
+    paginate_items, get_item, create_item, update_item_text,
+    remove_item, progress_bar, percent, format_date_ru,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,8 +51,8 @@ def current_state(context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 def clear_admin_context(context: ContextTypes.DEFAULT_TYPE) -> None:
-    for key in ("await_text", "add_flow", "selected_employee", "calendar_year",
-                "calendar_month", "edit_location", "edit_category", "edit_page", "last_item_id"):
+    for key in ("await_text", "add_flow", "calendar_year", "calendar_month",
+                "edit_location", "edit_category", "edit_page", "last_item_id"):
         context.user_data.pop(key, None)
 
 
@@ -125,55 +124,22 @@ async def show_main(update, context, message_id=None, notice=None) -> int:
 
 async def show_shifts(update, context, message_id=None, notice=None) -> int:
     clear_temp(context)
-    shifts = get_today_shifts_full()
-    if shifts:
-        lines = ["📋 Смены сегодня", ""]
-        for shift in shifts:
-            status = "🟢" if shift.get("active") else "⚪️"
-            name = full_name(shift)
-            loc = LOCATIONS.get(shift.get("location"), shift.get("location"))
-            lines.append(f"{status} {name} · {loc} · {shift.get('start_time', '')}")
-        text = "\n".join(lines)
-    else:
-        text = "📋 Смены сегодня\n\nСегодня пока никто не отметился."
-    if notice:
-        text = f"{notice}\n\n{text}"
-    await render(update, context, text, shifts_keyboard(), message_id)
-    return set_state(context, ADMIN_SHIFTS)
-
-
-async def show_employees(update, context, message_id=None, notice=None) -> int:
-    clear_temp(context)
-    employees = get_employees()
-    if employees:
-        text = "👥 Сотрудники\n\nВыберите сотрудника."
-        kb = employee_list_keyboard(employees)
-    else:
-        text = "👥 Сотрудники\n\nПока нет сотрудников."
-        kb = back_home_keyboard()
-    if notice:
-        text = f"{notice}\n\n{text}"
-    await render(update, context, text, kb, message_id)
-    return set_state(context, ADMIN_EMPLOYEES)
+    # Показываем отчёт за сегодня (используем ту же функцию, что и для даты)
+    today = datetime.now().strftime("%Y-%m-%d")
+    return await show_day_report(update, context, today, message_id, notice)
 
 
 async def show_calendar(update, context, message_id=None, notice=None) -> int:
     clear_temp(context)
-    employee_id = context.user_data.get("selected_employee")
-    if not employee_id:
-        return await show_employees(update, context, message_id, notice)
-
     now = datetime.now()
     year = context.user_data.get("calendar_year", now.year)
     month = context.user_data.get("calendar_month", now.month)
     context.user_data["calendar_year"] = year
     context.user_data["calendar_month"] = month
 
-    employee = get_user_by_id(employee_id)
-    name = full_name(employee)
-    shift_days = get_employee_shift_days(employee_id, year, month)
+    shift_days = get_shift_days_for_month(year, month)
 
-    text = f"👤 {name}\n📅 {MONTHS[month - 1]} {year}\n\n✅ — день со сменой\nНажмите на день."
+    text = f"📅 {MONTHS[month - 1]} {year}\n\n✅ — день со сменами\nНажмите на день для отчёта."
     if notice:
         text = f"{notice}\n\n{text}"
 
@@ -181,89 +147,51 @@ async def show_calendar(update, context, message_id=None, notice=None) -> int:
     return set_state(context, ADMIN_CALENDAR)
 
 
-async def show_day_progress(update, context, date_str, message_id=None, notice=None) -> int:
+async def show_day_report(update, context, date_str, message_id=None, notice=None) -> int:
     clear_temp(context)
-    employee_id = context.user_data.get("selected_employee")
-    if not employee_id:
-        return await show_employees(update, context, message_id)
+    report = get_day_report(date_str)
 
-    data = get_employee_progress(employee_id, date_str)
-    if not data:
-        return await show_calendar(update, context, message_id, notice="⚠️ В этот день смены не было.")
+    # Формируем текст отчёта
+    lines = [f"📊 Отчёт за {format_date_ru(date_str)}", ""]
 
-    employee = get_user_by_id(employee_id)
-    name = full_name(employee)
-    loc_label = LOCATIONS.get(data["shift"].get("location"), data["shift"].get("location"))
-    done, total = data["done"], data["total"]
-    bar = progress_bar(done, total)
-    pct = percent(done, total)
+    for loc_key, loc_label in LOCATIONS.items():
+        loc_data = report[loc_key]
+        shifts = loc_data["shifts"]
+        items = loc_data["items"]
+        done = loc_data["done"]
+        total = loc_data["total"]
+        grouped = loc_data["grouped"]
 
-    lines = [
-        f"👤 {name}",
-        f"📅 {format_date_ru(date_str)}",
-        f"📍 {loc_label}",
-        "",
-        f"{bar} {done}/{total} · {pct}%",
-        "",
-    ]
+        # Сотрудники на смене
+        if shifts:
+            names = [full_name(s) for s in shifts]
+            lines.append(f"{loc_label} · {len(shifts)} чел.: {', '.join(names)}")
+        else:
+            lines.append(f"{loc_label} · смен нет")
 
-    if total == 0:
-        lines.append("Задач на этот день нет.")
-    else:
-        for cat, items in data["grouped"].items():
-            cat_done = sum(1 for x in items if x.get("completed"))
-            lines.append(f"{CATEGORY_LABELS.get(cat, cat)} · {cat_done}/{len(items)}")
-            lines.append("")
-            for item in items:
-                status = "✅" if item.get("completed") else "⚪️"
-                photo_mark = " 🖼" if item.get("has_photo") else ""
-                lines.append(f"{status}{photo_mark} {item.get('text')}")
-            lines.append("")
+        # Прогресс
+        if total > 0:
+            bar = progress_bar(done, total)
+            pct = percent(done, total)
+            lines.append(f"Прогресс: {bar} {done}/{total} · {pct}%")
+            for cat, cat_items in grouped.items():
+                cat_label = CATEGORY_LABELS.get(cat, cat)
+                cat_done = sum(1 for i in cat_items if i.get("completed"))
+                lines.append(f"  {cat_label}: {cat_done}/{len(cat_items)}")
+        else:
+            lines.append("Чек-лист пуст")
+
+        lines.append("")
 
     text = "\n".join(lines).strip()
     if notice:
         text = f"{notice}\n\n{text}"
 
-    # Отправляем/редактируем текстовый отчет
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    
-    if chat_id and message_id:
-        try:
-            await context.bot.edit_message_text(
-                chat_id=chat_id, message_id=message_id,
-                text=text, reply_markup=day_progress_keyboard()
-            )
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                logger.warning("Edit failed: %s", e)
-    elif chat_id:
-        await context.bot.send_message(
-            chat_id=chat_id, text=text, reply_markup=day_progress_keyboard()
-        )
-
-    # ← НОВОЕ: Автоматически отправляем все прикреплённые фото
-    photo_file_ids = data.get("photo_file_ids", [])
-    if photo_file_ids and chat_id:
-        try:
-            # Небольшая задержка, чтобы фото пришли ПОСЛЕ текста
-            import asyncio
-            await asyncio.sleep(0.3)
-            
-            for i, file_id in enumerate(photo_file_ids):
-                caption = f"📷 Фото {i + 1} из {len(photo_file_ids)}" if len(photo_file_ids) > 1 else "📷 Прикреплённое фото"
-                await context.bot.send_photo(chat_id=chat_id, photo=file_id, caption=caption)
-                await asyncio.sleep(0.2)  # Пауза между фото для правильного порядка
-        except Exception as e:
-            logger.error("Failed to send photos to admin: %s", e)
-            if chat_id:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="⚠️ Не удалось отправить некоторые фото. Проверьте доступ бота к каналу."
-                )
-
-    return set_state(context, ADMIN_DAY_PROGRESS)
+    await render(update, context, text, day_report_keyboard(), message_id)
+    return set_state(context, ADMIN_DAY_REPORT)
 
 
+# ---------- Остальные функции (редактор) без изменений ----------
 async def show_edit_locations(update, context, message_id=None, notice=None) -> int:
     clear_temp(context)
     context.user_data.pop("edit_location", None)
@@ -461,25 +389,19 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if data == CB_NOOP:
         return current_state(context)
+
     if data == CB_HOME:
         return await show_main(update, context, message_id)
+
     if data == CB_SHIFTS:
         return await show_shifts(update, context, message_id)
-    if data == CB_EMPLOYEES:
-        return await show_employees(update, context, message_id)
+
+    if data == CB_CALENDAR:
+        return await show_calendar(update, context, message_id)
+
     if data == CB_EDIT:
         return await show_edit_locations(update, context, message_id)
-    if prefix == "user":
-        try:
-            context.user_data["selected_employee"] = int(value)
-            now = datetime.now()
-            context.user_data["calendar_year"] = now.year
-            context.user_data["calendar_month"] = now.month
-            return await show_calendar(update, context, message_id)
-        except (TypeError, ValueError):
-            return await show_employees(update, context, message_id)
-    if data == CB_TO_EMPLOYEES:
-        return await show_employees(update, context, message_id)
+
     if data == CB_PREV_MONTH:
         year = context.user_data.get("calendar_year", datetime.now().year)
         month = context.user_data.get("calendar_month", datetime.now().month)
@@ -489,6 +411,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             month -= 1
         context.user_data.update({"calendar_year": year, "calendar_month": month})
         return await show_calendar(update, context, message_id)
+
     if data == CB_NEXT_MONTH:
         year = context.user_data.get("calendar_year", datetime.now().year)
         month = context.user_data.get("calendar_month", datetime.now().month)
@@ -498,57 +421,72 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             month += 1
         context.user_data.update({"calendar_year": year, "calendar_month": month})
         return await show_calendar(update, context, message_id)
-    if data == CB_TO_CALENDAR:
-        return await show_calendar(update, context, message_id)
-    if prefix == "day":
+
+    if prefix == CB_DAY_PREFIX:
         try:
             date_str = datetime.strptime(value, "%Y%m%d").strftime("%Y-%m-%d")
-            return await show_day_progress(update, context, date_str, message_id)
+            return await show_day_report(update, context, date_str, message_id)
         except Exception:
             return await show_calendar(update, context, message_id)
+
+    if data == CB_TO_CALENDAR:
+        return await show_calendar(update, context, message_id)
+
+    # ---------- Редактор ----------
     if data == CB_TO_EDIT:
         return await show_edit_locations(update, context, message_id)
-    if prefix == "loc":
+
+    if prefix == CB_LOC_PREFIX:
         return await show_edit_categories(update, context, message_id, location=value)
+
     if data == CB_TO_CATEGORIES:
         return await show_edit_categories(update, context, message_id)
-    if prefix == "cat":
+
+    if prefix == CB_CAT_PREFIX:
         try:
             loc, cat = value.split(":", 1)
             return await show_items_list(update, context, message_id, location=loc, category=cat, page=1)
         except ValueError:
             return await show_edit_locations(update, context, message_id)
-    if prefix == "pg":
+
+    if prefix == CB_PAGE_PREFIX:
         try:
             loc, cat, page_s = value.split(":", 2)
             return await show_items_list(update, context, message_id, location=loc, category=cat, page=int(page_s))
         except ValueError:
             return await show_edit_locations(update, context, message_id)
+
     if data == CB_TO_ITEMS:
         return await show_items_list(update, context, message_id)
-    if prefix == "item":
+
+    if prefix == CB_ITEM_PREFIX:
         try:
             return await show_item_detail(update, context, int(value), message_id)
         except (TypeError, ValueError):
             return await show_items_list(update, context, message_id)
-    if prefix == "edit_item":
+
+    if prefix == CB_EDIT_ITEM_PREFIX:
         try:
             return await prompt_edit_text(update, context, int(value), message_id)
         except (TypeError, ValueError):
             return await show_items_list(update, context, message_id)
-    if prefix == "del_item":
+
+    if prefix == CB_DELETE_ITEM_PREFIX:
         try:
             return await show_delete_confirm(update, context, int(value), message_id)
         except (TypeError, ValueError):
             return await show_items_list(update, context, message_id)
-    if prefix == "confirm_del":
+
+    if prefix == CB_CONFIRM_DELETE_PREFIX:
         try:
             return await confirm_delete(update, context, int(value), message_id)
         except (TypeError, ValueError):
             return await show_items_list(update, context, message_id)
+
     if data == CB_ADD:
         return await start_add(update, context, message_id)
-    if prefix == "add_day":
+
+    if prefix == CB_ADD_DAY_PREFIX:
         flow = context.user_data.get("add_flow") or {}
         try:
             flow["day_of_week"] = int(value)
@@ -556,12 +494,16 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return await show_add_day(update, context, message_id)
         context.user_data["add_flow"] = flow
         return await show_add_text(update, context, message_id)
+
     if data == CB_ADD_BACK_TEXT:
         return await back_from_add_text(update, context, message_id)
+
     if data == CB_CANCEL:
         return await cancel_action(update, context, message_id)
+
     if data == CB_CANCEL_EDIT:
         return await cancel_edit_text(update, context, message_id)
+
     return await show_main(update, context, message_id)
 
 

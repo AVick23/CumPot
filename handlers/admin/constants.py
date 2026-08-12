@@ -3,9 +3,8 @@
 # ==========================================
 ADMIN_MAIN = 100
 ADMIN_SHIFTS = 101
-ADMIN_EMPLOYEES = 102
 ADMIN_CALENDAR = 103
-ADMIN_DAY_PROGRESS = 104
+ADMIN_DAY_REPORT = 104
 ADMIN_EDIT_LOCATION = 105
 ADMIN_EDIT_CATEGORY = 106
 ADMIN_EDIT_ITEMS = 107
@@ -16,18 +15,16 @@ ADMIN_AWAIT_NEW_TEXT = 111
 ADMIN_AWAIT_EDIT_TEXT = 112
 
 # ==========================================
-# CALLBACK DATA (без пробелов!)
+# CALLBACK DATA
 # ==========================================
 CB_NOOP = "noop"
 CB_HOME = "home"
 CB_SHIFTS = "shifts"
-CB_EMPLOYEES = "employees"
+CB_CALENDAR = "calendar"
 CB_EDIT = "edit"
-CB_EMP_PREFIX = "user:"
 CB_PREV_MONTH = "prev"
 CB_NEXT_MONTH = "next"
 CB_DAY_PREFIX = "day:"
-CB_TO_EMPLOYEES = "to_users"
 CB_TO_CALENDAR = "to_cal"
 CB_TO_EDIT = "to_edit"
 CB_TO_CATEGORIES = "to_cats"
@@ -46,7 +43,7 @@ CB_CANCEL = "cancel"
 CB_CANCEL_EDIT = "cancel_edit"
 
 # ==========================================
-# UI КОНСТАНТЫ (БЕЗ ПРОБЕЛОВ!)
+# UI КОНСТАНТЫ
 # ==========================================
 PAGE_SIZE = 8
 TEXT_LIMIT = 200

@@ -8,10 +8,9 @@ from db.checklist import (
     update_checklist_item,
     delete_checklist_item as db_delete_item,
     get_items_for_location_and_day,
-    get_shared_progress,          # вместо get_progress_for_user_date
-    # get_photos_for_user_date больше не нужен — фото в shared
+    get_shared_progress,
 )
-from db.shifts import get_shift_for_date
+from db.shifts import get_shifts_for_date
 from .constants import PAGE_SIZE, DAILY_CATEGORIES, CATEGORY_ORDER, MONTHS_GEN, LOCATIONS
 
 
@@ -32,106 +31,72 @@ def full_name(user: dict | None) -> str:
     return str(user.get("tg_id", "Пользователь"))
 
 
-def get_employees() -> list[dict]:
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT tg_id, username, first_name, last_name, full_name
-            FROM users WHERE is_admin = 0
-            ORDER BY COALESCE(full_name, first_name, username)
-            """
-        ).fetchall()
-        return [dict(row) for row in rows]
-
-
-def get_user_by_id(user_id: int) -> dict | None:
-    with get_connection() as conn:
-        row = conn.execute("SELECT * FROM users WHERE tg_id = ?", (user_id,)).fetchone()
-        return dict(row) if row else None
-
-
-def get_today_shifts_full() -> list[dict]:
-    today = datetime.now().strftime("%Y-%m-%d")
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT s.id, s.user_id, s.date, s.location, s.start_time, s.active,
-                   u.username, u.first_name, u.last_name, u.full_name
-            FROM shifts s LEFT JOIN users u ON u.tg_id = s.user_id
-            WHERE s.date = ? ORDER BY s.start_time
-            """, (today,)
-        ).fetchall()
-        return [dict(row) for row in rows]
-
-
-def get_employee_shift_days(employee_id: int, year: int, month: int) -> set[str]:
+def get_shift_days_for_month(year: int, month: int) -> set[str]:
+    """Возвращает все даты месяца, когда были смены (любая локация)."""
     start_date = f"{year:04d}-{month:02d}-01"
     end_date = f"{year + 1}-01-01" if month == 12 else f"{year:04d}-{month + 1:02d}-01"
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT date FROM shifts WHERE user_id = ? AND date >= ? AND date < ?",
-            (employee_id, start_date, end_date)
+            "SELECT DISTINCT date FROM shifts WHERE date >= ? AND date < ?",
+            (start_date, end_date)
         ).fetchall()
         return {row["date"] for row in rows}
 
 
-def get_shift_for_date_any(user_id: int, date_str: str) -> dict | None:
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM shifts WHERE user_id = ? AND date = ? ORDER BY id DESC LIMIT 1",
-            (user_id, date_str)
-        ).fetchone()
-        return dict(row) if row else None
-
-
-def get_employee_progress(employee_id: int, date_str: str) -> dict | None:
+def get_day_report(date_str: str) -> dict:
     """
-    Возвращает прогресс сотрудника за дату.
-    Использует общий прогресс для локации сотрудника в этот день.
+    Возвращает отчёт за день:
+    - смены (по локациям)
+    - прогресс по каждой локации
+    - сотрудники на смене
     """
-    shift = get_shift_for_date(employee_id, date_str)
-    if not shift:
-        return None
-
-    location = shift["location"]
+    shifts = get_shifts_for_date(date_str)
     day_of_week = datetime.strptime(date_str, "%Y-%m-%d").weekday()
-    items = get_items_for_location_and_day(location, day_of_week)
-
-    # Получаем общий прогресс для этой локации и даты
-    shared_progress = get_shared_progress(location, date_str)
-
-    grouped = {}
-    done = 0
-    total = 0
-    all_photo_file_ids = []
-
-    for item in items:
-        item = dict(item)
-        progress = shared_progress.get(item["id"])
-        completed = progress.get("completed", 0) == 1 if progress else False
-        item["completed"] = completed
-        item["has_photo"] = bool(progress and progress.get("photo_file_id"))
-        item["photo_file_id"] = progress.get("photo_file_id") if progress else None
-
-        total += 1
-        if completed:
-            done += 1
-        cat = item.get("category") or "weekly"
-        grouped.setdefault(cat, []).append(item)
-
-        if item.get("photo_file_id"):
-            all_photo_file_ids.append(item["photo_file_id"])
-
-    ordered_grouped = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
-
-    return {
-        "shift": shift,
-        "grouped": ordered_grouped,
-        "done": done,
-        "total": total,
-        "items": items,
-        "photo_file_ids": all_photo_file_ids,
+    result = {
+        "date": date_str,
+        "bar": {"shifts": [], "items": [], "done": 0, "total": 0, "grouped": {}},
+        "kitchen": {"shifts": [], "items": [], "done": 0, "total": 0, "grouped": {}},
     }
+
+    # Группируем смены по локации
+    for shift in shifts:
+        loc = shift["location"]
+        if loc in result:
+            result[loc]["shifts"].append(shift)
+
+    # Для каждой локации загружаем чек-листы и прогресс
+    for loc_key in ["bar", "kitchen"]:
+        items = get_items_for_location_and_day(loc_key, day_of_week)
+        if not items:
+            result[loc_key]["items"] = []
+            continue
+
+        shared_progress = get_shared_progress(loc_key, date_str)
+
+        grouped = {}
+        done = 0
+        total = 0
+
+        for item in items:
+            item = dict(item)
+            progress = shared_progress.get(item["id"])
+            completed = progress.get("completed", 0) == 1 if progress else False
+            item["completed"] = completed
+            item["has_photo"] = bool(progress and progress.get("photo_file_id"))
+            item["photo_file_id"] = progress.get("photo_file_id") if progress else None
+
+            total += 1
+            if completed:
+                done += 1
+            cat = item.get("category") or "weekly"
+            grouped.setdefault(cat, []).append(item)
+
+        result[loc_key]["items"] = items
+        result[loc_key]["done"] = done
+        result[loc_key]["total"] = total
+        result[loc_key]["grouped"] = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
+
+    return result
 
 
 def get_location_counts() -> dict[str, int]:
