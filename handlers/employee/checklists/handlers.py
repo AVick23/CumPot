@@ -27,7 +27,7 @@ from .constants import (
     ITEM_DETAIL,
     PROGRESS_VIEW,
     AWAIT_TASK_PHOTO,
-    MAIN_MENU,  # нужно импортировать из родительского? Нет, мы определим MAIN_MENU в своём constants? Но мы не хотим дублировать, но мы можем его взять из родительского? Нет, мы изолированы, но состояние MAIN_MENU используется в employee/__init__.py, оно определено в родительском constants.py, которого нет. Значит, мы должны либо определить его здесь, либо использовать числовое значение. Лучше определить здесь, чтобы быть самодостаточными.
+    MAIN_MENU,  # НЕ ИМПОРТИРУЕМ ИЗ ВНЕШНЕГО, ОПРЕДЕЛЯЕМ НИЖЕ
     CATEGORY_NAMES,
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
@@ -38,8 +38,8 @@ from .constants import (
     CB_BACK_MENU,
     CB_BACK_CATEGORIES,
 )
-# Добавим MAIN_MENU в constants? Мы его не определили. Определим прямо здесь:
-MAIN_MENU = 3  # то же значение, что и в menu/constants.py
+# Определяем MAIN_MENU локально (то же значение, что и в menu/constants.py)
+MAIN_MENU = 3
 
 from .keyboards import (
     categories_keyboard,
@@ -65,23 +65,11 @@ async def show_categories(
     # Проверяем, есть ли активная смена (используем get_checklist_items)
     items = get_checklist_items(user.id)
     if items is None:
-        # нет смены
-        await render(
-            update, context,
-            "Сначала начните смену.",
-            reply_markup=None,  # или кнопка "В меню"
-            message_id=message_id
-        )
-        # Мы не можем вызвать show_main_menu, поэтому просто возвращаем MAIN_MENU
-        # Но пользователь увидит это сообщение и сможет нажать кнопку "В меню" – её пока нет.
-        # Поэтому лучше показать кнопку "В меню" из menu/keyboards.
-        # Но мы не можем импортировать из menu. Решение: использовать CB_BACK_MENU, который обработается в employee/__init__.py.
-        from .keyboards import back_menu_keyboard  # нам нужна эта клавиатура, её пока нет, мы можем создать простую
-        # Создадим простую клавиатуру с кнопкой "В меню"
+        # нет смены — показываем кнопку "В меню"
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
         await render(update, context, "Сначала начните смену.", kb, message_id)
-        return CATEGORY_SELECT  # или MAIN_MENU, но лучше CATEGORY_SELECT, чтобы потом вернуться
+        return CATEGORY_SELECT
 
     stats = get_categories_stats(user.id)
     if not stats:
@@ -592,7 +580,6 @@ async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await answer(query)
 
     message_id = query.message.message_id if query.message else None
-    # возвращаем состояние MAIN_MENU, чтобы обработалось в employee/__init__.py
     return MAIN_MENU
 
 

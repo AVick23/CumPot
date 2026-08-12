@@ -17,6 +17,11 @@ CB_BACK_MENU = "back_menu"
 CB_BACK_CATEGORIES = "back_cats"
 
 # UI
+LOCATIONS = {
+    "bar": "🍸 Бар",
+    "kitchen": "🍳 Кухня",
+}
+
 CATEGORY_NAMES = {
     "opening": "☀️ Открытие",
     "daytime": "🌤 В течение дня",
