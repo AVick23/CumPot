@@ -374,36 +374,41 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
         item = get_item_by_id(user.id, item_id)
 
-        if not item or not item.get("photo_file_ids"):
-            await answer(query, "Фото не найдено")
+        if not item or not item.get("media_items"):
+            await answer(query, "Вложения не найдены")
             return await show_item_detail(update, context, item_id, message_id)
 
         chat_id = update.effective_chat.id
         if chat_id:
             try:
-                # Отправляем первое фото (или все, если их немного)
-                file_ids = item.get("photo_file_ids", [])
-                if len(file_ids) == 1:
-                    await context.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=file_ids[0],
-                    )
-                else:
-                    # Показываем первые 10
-                    from telegram import InputMediaPhoto
-                    media_group = []
-                    for i, fid in enumerate(file_ids[:10]):
-                        media = InputMediaPhoto(media=fid)
-                        if i == 0:
-                            media.caption = "📸 Фото к задаче"
-                        media_group.append(media)
+                media_items = item.get("media_items", [])
+                # Ограничиваем 10 элементами для альбома
+                if len(media_items) > 10:
+                    media_items = media_items[:10]
+
+                from telegram import InputMediaPhoto, InputMediaVideo
+                media_group = []
+                for i, media in enumerate(media_items):
+                    if media.get("type") == "photo":
+                        media_obj = InputMediaPhoto(media=media["file_id"])
+                    elif media.get("type") == "video":
+                        media_obj = InputMediaVideo(media=media["file_id"])
+                    else:
+                        continue
+                    if i == 0:
+                        media_obj.caption = "📸 Вложения к задаче"
+                    media_group.append(media_obj)
+
+                if media_group:
                     await context.bot.send_media_group(chat_id=chat_id, media=media_group)
-                await answer(query, "Фото отправлено выше")
+                    await answer(query, "Вложения отправлены выше")
+                else:
+                    await answer(query, "Нет подходящих вложений для отправки")
             except Exception as e:
-                logger.warning("View photo failed: %s", e)
-                await answer(query, "Не удалось отправить фото")
+                logger.warning("View media failed: %s", e)
+                await answer(query, "Не удалось отправить вложения")
         else:
-            await answer(query, "Не удалось отправить фото")
+            await answer(query, "Не удалось отправить вложения")
 
         return set_state(context, ITEM_DETAIL)
 
@@ -449,7 +454,7 @@ async def _process_media_items(update: Update, context: ContextTypes.DEFAULT_TYP
         await context.bot.send_message(chat_id=chat_id, text="⚠️ Задача не найдена.")
         return MAIN_MENU
 
-    # Формируем подпись
+    # Формируем подпись для альбома
     caption = build_photo_caption(user.id, task_item)
 
     # Отправляем альбом в канал
@@ -464,11 +469,10 @@ async def _process_media_items(update: Update, context: ContextTypes.DEFAULT_TYP
         return set_state(context, AWAIT_TASK_PHOTO)
 
     # Сохраняем все file_id и message_id
-    file_ids = [item["file_id"] for item in items]
     attach_media_to_task(
         user_id=user.id,
         item_id=item_id,
-        file_ids=file_ids,
+        media_items=items,
         channel_message_ids=message_ids,
         mark_done=mark_done,
     )
@@ -520,7 +524,7 @@ async def _handle_single_media(update: Update, context: ContextTypes.DEFAULT_TYP
     attach_media_to_task(
         user_id=user.id,
         item_id=item_id,
-        file_ids=[media_item["file_id"]],
+        media_items=[media_item],
         channel_message_ids=[message_id],
         mark_done=mark_done,
     )

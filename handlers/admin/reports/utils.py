@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from telegram.error import BadRequest
 import logging
@@ -109,7 +110,6 @@ def get_day_report(date_str: str) -> dict:
             result[loc]["shifts"].append(shift)
 
     for loc_key in ["bar", "kitchen"]:
-        # ИСПРАВЛЕНО: передаём date_str (строка даты), а не day_of_week
         items = get_items_for_location_and_day(loc_key, date_str)
         if not items:
             result[loc_key]["items"] = []
@@ -126,8 +126,22 @@ def get_day_report(date_str: str) -> dict:
             progress = shared_progress.get(item["id"])
             completed = progress.get("completed", 0) == 1 if progress else False
             item["completed"] = completed
-            item["has_photo"] = bool(progress and progress.get("photo_file_id"))
-            item["photo_file_id"] = progress.get("photo_file_id") if progress else None
+
+            # Извлекаем медиа
+            media_items = []
+            if progress:
+                if progress.get("photo_file_ids"):
+                    try:
+                        media_items = json.loads(progress["photo_file_ids"])
+                        # Если это список строк (старый формат), преобразуем в объекты
+                        if media_items and isinstance(media_items[0], str):
+                            media_items = [{"type": "photo", "file_id": f} for f in media_items]
+                    except:
+                        media_items = []
+                elif progress.get("photo_file_id"):
+                    media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
+            item["media_items"] = media_items
+            item["media_count"] = len(media_items)
 
             total += 1
             if completed:

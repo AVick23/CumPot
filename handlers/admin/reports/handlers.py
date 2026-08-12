@@ -1,10 +1,10 @@
-from datetime import datetime  # добавлен импорт
-from telegram import Update
+from datetime import datetime
+from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import ContextTypes
 from utils.time_utils import now_msk
 from .constants import (
     ADMIN_CALENDAR, ADMIN_DAY_REPORT, CB_HOME, CB_TO_CALENDAR,
-    CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX,  # добавлены CB_PREV_MONTH, CB_NEXT_MONTH
+    CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX,
     MONTHS, LOCATIONS, CATEGORY_LABELS
 )
 from .keyboards import calendar_keyboard, day_report_keyboard
@@ -12,6 +12,9 @@ from .utils import (
     get_shift_days_for_month, get_day_report,
     full_name, progress_bar, percent, format_date_ru, render
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def show_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
@@ -33,8 +36,12 @@ async def show_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE, mess
 async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, date_str: str,
                           message_id=None, notice=None) -> int:
     report = get_day_report(date_str)
+    context.user_data["report_date"] = date_str  # для последующего показа вложений
 
     lines = [f"📊 Отчёт за {format_date_ru(date_str)}", ""]
+
+    has_bar_media = False
+    has_kitchen_media = False
 
     for loc_key, loc_label in LOCATIONS.items():
         loc_data = report[loc_key]
@@ -58,6 +65,18 @@ async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, da
                 cat_label = CATEGORY_LABELS.get(cat, cat)
                 cat_done = sum(1 for i in cat_items if i.get("completed"))
                 lines.append(f"  {cat_label}: {cat_done}/{len(cat_items)}")
+                # Проверяем наличие медиа и добавляем в строки
+                for item in cat_items:
+                    if item.get("media_count", 0) > 0:
+                        if loc_key == "bar":
+                            has_bar_media = True
+                        else:
+                            has_kitchen_media = True
+                        # Добавляем иконку с количеством вложений
+                        text_preview = item.get("text", "")[:35]
+                        if len(item.get("text", "")) > 35:
+                            text_preview += "…"
+                        lines.append(f"    • {text_preview} 📸{item['media_count']}")
         else:
             lines.append("Чек-лист пуст")
 
@@ -67,8 +86,54 @@ async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, da
     if notice:
         text = f"{notice}\n\n{text}"
 
-    await render(update, context, text, day_report_keyboard(), message_id)
+    kb = day_report_keyboard(has_bar_media, has_kitchen_media)
+    await render(update, context, text, kb, message_id)
     return ADMIN_DAY_REPORT
+
+
+async def show_location_media(update: Update, context: ContextTypes.DEFAULT_TYPE, location: str, date_str: str, message_id=None) -> int:
+    report = get_day_report(date_str)
+    loc_data = report.get(location)
+    if not loc_data:
+        await render(update, context, "Нет данных по этой локации.", None, message_id)
+        return ADMIN_DAY_REPORT
+
+    # Собираем все медиа из задач
+    all_media = []
+    for item in loc_data.get("items", []):
+        all_media.extend(item.get("media_items", []))
+
+    if not all_media:
+        await render(update, context, "Нет вложений.", None, message_id)
+        return ADMIN_DAY_REPORT
+
+    # Ограничиваем 10 файлами (лимит Telegram)
+    if len(all_media) > 10:
+        all_media = all_media[:10]
+
+    media_group = []
+    for i, media in enumerate(all_media):
+        if media.get("type") == "photo":
+            media_obj = InputMediaPhoto(media=media["file_id"])
+        elif media.get("type") == "video":
+            media_obj = InputMediaVideo(media=media["file_id"])
+        else:
+            continue
+        if i == 0:
+            media_obj.caption = f"📸 Вложения по {LOCATIONS.get(location, location)} за {format_date_ru(date_str)}"
+        media_group.append(media_obj)
+
+    if media_group:
+        try:
+            await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
+            notice = "Вложения отправлены выше."
+        except Exception as e:
+            logger.error(f"Failed to send media group: {e}")
+            notice = "Не удалось отправить вложения."
+    else:
+        notice = "Нет подходящих медиа."
+
+    return await show_day_report(update, context, date_str, message_id, notice=notice)
 
 
 async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -113,5 +178,12 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return await show_day_report(update, context, date_str, message_id)
         except Exception:
             return await show_calendar(update, context, message_id)
+
+    if data.startswith("show_media:"):
+        location = data.split(":", 1)[1]
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id, notice="Дата не найдена.")
+        return await show_location_media(update, context, location, date_str, message_id)
 
     return await show_calendar(update, context, message_id)
