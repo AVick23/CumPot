@@ -97,7 +97,6 @@ def get_shift_days_for_month(year: int, month: int) -> set[str]:
 
 def get_day_report(date_str: str) -> dict:
     shifts = get_shifts_for_date(date_str)
-    # day_of_week больше не нужен, т.к. get_items_for_location_and_day принимает дату
     result = {
         "date": date_str,
         "bar": {"shifts": [], "items": [], "done": 0, "total": 0, "grouped": {}},
@@ -110,7 +109,7 @@ def get_day_report(date_str: str) -> dict:
             result[loc]["shifts"].append(shift)
 
     for loc_key in ["bar", "kitchen"]:
-        # Исправлено: передаём date_str, а не day_of_week
+        # ИСПРАВЛЕНО: передаём date_str (строка даты), а не day_of_week
         items = get_items_for_location_and_day(loc_key, date_str)
         if not items:
             result[loc_key]["items"] = []
