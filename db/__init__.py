@@ -1,6 +1,9 @@
 import os
 import sqlite3
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "bot.db")
 
@@ -18,6 +21,7 @@ def _get_columns(conn, table_name):
 
 
 def init_db():
+    logger.info("Инициализация базы данных...")
     with get_connection() as conn:
         # Таблица пользователей
         conn.execute("""
@@ -90,7 +94,7 @@ def init_db():
                 completed_by INTEGER,
                 photo_file_id TEXT,                 -- оставлено для обратной совместимости
                 photo_channel_message_id INTEGER,   -- оставлено для обратной совместимости
-                photo_file_ids TEXT,                -- JSON-массив file_id
+                photo_file_ids TEXT,                -- JSON-массив file_id с типами
                 photo_channel_message_ids TEXT,     -- JSON-массив message_id канала
                 FOREIGN KEY (item_id) REFERENCES checklist_items(id)
             )
@@ -115,24 +119,33 @@ def init_db():
         # Миграции для checklist_items
         item_columns = _get_columns(conn, "checklist_items")
         if "requires_photo" not in item_columns:
+            logger.info("Добавляем колонку requires_photo в checklist_items")
             conn.execute("ALTER TABLE checklist_items ADD COLUMN requires_photo BOOLEAN DEFAULT 0")
         if "requires_notification" not in item_columns:
+            logger.info("Добавляем колонку requires_notification в checklist_items")
             conn.execute("ALTER TABLE checklist_items ADD COLUMN requires_notification BOOLEAN DEFAULT 0")
         if "notification_time" not in item_columns:
+            logger.info("Добавляем колонку notification_time в checklist_items")
             conn.execute("ALTER TABLE checklist_items ADD COLUMN notification_time TEXT")
         if "due_date" not in item_columns:
+            logger.info("Добавляем колонку due_date в checklist_items")
             conn.execute("ALTER TABLE checklist_items ADD COLUMN due_date TEXT")
         if "is_recurring" not in item_columns:
+            logger.info("Добавляем колонку is_recurring в checklist_items")
             conn.execute("ALTER TABLE checklist_items ADD COLUMN is_recurring BOOLEAN DEFAULT 1")
         if "days_of_week" not in item_columns:
+            logger.info("Добавляем колонку days_of_week в checklist_items")
             conn.execute("ALTER TABLE checklist_items ADD COLUMN days_of_week TEXT")
+            # Переносим данные из day_of_week в days_of_week
             conn.execute("UPDATE checklist_items SET days_of_week = CAST(day_of_week AS TEXT) WHERE day_of_week IS NOT NULL")
 
         # Миграции для checklist_shared_progress – добавляем новые поля
         progress_columns = _get_columns(conn, "checklist_shared_progress")
         if "photo_file_ids" not in progress_columns:
+            logger.info("Добавляем колонку photo_file_ids в checklist_shared_progress")
             conn.execute("ALTER TABLE checklist_shared_progress ADD COLUMN photo_file_ids TEXT")
         if "photo_channel_message_ids" not in progress_columns:
+            logger.info("Добавляем колонку photo_channel_message_ids в checklist_shared_progress")
             conn.execute("ALTER TABLE checklist_shared_progress ADD COLUMN photo_channel_message_ids TEXT")
 
         conn.commit()
@@ -143,6 +156,7 @@ def init_db():
 
     from .shifts import import_shift_types
     import_shift_types()
+    logger.info("Инициализация базы данных завершена.")
 
 
 init_db()

@@ -97,6 +97,7 @@ def get_checklist_items(user_id):
         return []
 
     shared_progress = get_shared_progress(location, date)
+    logger.info(f"get_checklist_items: shared_progress keys: {list(shared_progress.keys())}")
 
     result = []
     for item in items:
@@ -104,23 +105,29 @@ def get_checklist_items(user_id):
         progress = shared_progress.get(item["id"])
         item["completed"] = progress.get("completed", 0) == 1 if progress else False
 
-        # Получаем список медиа-объектов из нового поля или из старого
         media_items = []
-        if progress and progress.get("photo_file_ids"):
-            try:
-                media_items = json.loads(progress["photo_file_ids"])
-                # Если это список строк (старый формат), преобразуем в объекты
-                if media_items and isinstance(media_items[0], str):
-                    media_items = [{"type": "photo", "file_id": f} for f in media_items]
-            except:
-                media_items = []
-        elif progress and progress.get("photo_file_id"):
-            media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
+        if progress:
+            raw = progress.get("photo_file_ids")
+            logger.info(f"item {item['id']}: raw photo_file_ids = {raw}")
+            if raw:
+                try:
+                    media_items = json.loads(raw)
+                    logger.info(f"item {item['id']}: parsed media_items = {media_items}")
+                    if media_items and isinstance(media_items[0], str):
+                        media_items = [{"type": "photo", "file_id": f} for f in media_items]
+                        logger.info(f"item {item['id']}: converted to objects")
+                except Exception as e:
+                    logger.warning(f"item {item['id']}: failed to parse photo_file_ids: {e}")
+                    media_items = []
+            elif progress.get("photo_file_id"):
+                media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
+                logger.info(f"item {item['id']}: using old photo_file_id")
+        else:
+            logger.info(f"item {item['id']}: no progress")
 
         item["media_items"] = media_items
         item["has_photo"] = bool(media_items)
         item["photo_count"] = len(media_items)
-        # Для обратной совместимости (старый код может использовать photo_file_id)
         if media_items:
             item["photo_file_id"] = media_items[0]["file_id"]
         else:
@@ -178,13 +185,10 @@ def toggle_item(user_id, item_id):
 
 
 def attach_media_to_task(user_id, item_id, media_items: list, channel_message_ids: list, mark_done=False):
-    """
-    Сохраняет список медиа-объектов (с типами) и message_id канала для задачи.
-    media_items: список словарей [{"type": "photo", "file_id": "..."}, ...]
-    channel_message_ids: список message_id из канала (должен совпадать по длине)
-    """
+    logger.info(f"attach_media_to_task: user_id={user_id}, item_id={item_id}, media_items={media_items}, channel_message_ids={channel_message_ids}")
     shift = get_active_shift(user_id)
     if not shift:
+        logger.warning("Нет активной смены, пропускаем сохранение")
         return
     location = shift["location"]
     date = today_msk_str()
@@ -198,7 +202,6 @@ def attach_media_to_task(user_id, item_id, media_items: list, channel_message_id
             "SELECT id FROM checklist_shared_progress WHERE location = ? AND date = ? AND item_id = ?",
             (location, date, item_id)
         ).fetchone()
-        # Сохраняем как JSON-массив объектов
         if existing:
             conn.execute(
                 """
@@ -208,6 +211,7 @@ def attach_media_to_task(user_id, item_id, media_items: list, channel_message_id
                 """,
                 (json.dumps(media_items), json.dumps(channel_message_ids), existing["id"])
             )
+            logger.info(f"Обновлена запись прогресса id={existing['id']}")
         else:
             conn.execute(
                 """
@@ -218,6 +222,7 @@ def attach_media_to_task(user_id, item_id, media_items: list, channel_message_id
                 (location, date, item_id, 1 if mark_done else 0, user_id,
                  json.dumps(media_items), json.dumps(channel_message_ids))
             )
+            logger.info("Создана новая запись прогресса")
         conn.commit()
 
 

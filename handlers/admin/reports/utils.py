@@ -133,24 +133,26 @@ def get_day_report(date_str: str) -> dict:
             completed = progress.get("completed", 0) == 1 if progress else False
             item["completed"] = completed
 
-            # Извлекаем медиа
+            # Извлекаем медиа с логированием
             media_items = []
             if progress:
-                if progress.get("photo_file_ids"):
+                raw = progress.get("photo_file_ids")
+                logger.debug(f"Админ: item {item['id']} raw photo_file_ids = {raw}")
+                if raw:
                     try:
-                        media_items = json.loads(progress["photo_file_ids"])
-                        logger.debug(f"📸 Загружено media_items из photo_file_ids: {len(media_items)} шт.")
+                        media_items = json.loads(raw)
+                        logger.debug(f"Админ: item {item['id']} parsed media_items = {media_items}")
                         if media_items and isinstance(media_items[0], str):
                             media_items = [{"type": "photo", "file_id": f} for f in media_items]
-                            logger.debug("🔄 Преобразовано из списка строк в объекты")
+                            logger.debug("Админ: преобразовано из списка строк в объекты")
                     except Exception as e:
-                        logger.warning(f"⚠️ Ошибка парсинга photo_file_ids: {e}")
+                        logger.warning(f"Админ: item {item['id']} failed to parse photo_file_ids: {e}")
                         media_items = []
                 elif progress.get("photo_file_id"):
                     media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
-                    logger.debug(f"📸 Используем старое photo_file_id: {progress['photo_file_id']}")
+                    logger.debug(f"Админ: item {item['id']} using old photo_file_id")
             else:
-                logger.debug(f"ℹ️ Прогресс отсутствует для item {item['id']}")
+                logger.debug(f"Админ: item {item['id']} no progress")
 
             item["media_items"] = media_items
             item["media_count"] = len(media_items)
@@ -169,7 +171,6 @@ def get_day_report(date_str: str) -> dict:
         result[loc_key]["total"] = total
         result[loc_key]["grouped"] = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
 
-        # Исправлено: безопасное получение media_count через .get()
         total_media = sum(item.get("media_count", 0) for item in items)
         logger.info(f"📊 Итог для {loc_key}: {done}/{total} выполнено, вложений: {total_media}")
 

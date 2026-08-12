@@ -271,7 +271,7 @@ def add_checklist_item(
     notification_time: str | None = None,
     due_date: str | None = None,
     is_recurring: bool = True,
-    days_of_week: str | None = None   # новое поле
+    days_of_week: str | None = None
 ):
     """
     Добавляет новый пункт чек-листа.
