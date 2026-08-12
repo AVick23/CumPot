@@ -10,7 +10,6 @@ from .constants import (
     CB_PHOTO_CANCEL,
     CB_BACK_MENU,
     CB_BACK_CATEGORIES,
-    # CB_HOME удалён, так как не используется
 )
 
 

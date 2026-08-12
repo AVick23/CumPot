@@ -1,28 +1,30 @@
-from telegram.ext import CallbackQueryHandler, MessageHandler, filters
+# Экспортируем всё для регистрации в employee/__init__.py
 from .handlers import (
-    edit_callback,
-    edit_text_input,
+    show_categories,
+    category_selection,
+    show_checklist,
+    show_current_checklist,
+    show_item_detail,
+    view_item,
+    toggle_item_callback,
+    show_photo_prompt,
+    photo_input,
+    photo_wrong_type,
+    photo_cancel,
+    photo_state_guard,
+    show_progress,
+    progress_back,
+    noop,
 )
-from .constants import (
-    ADMIN_EDIT_LOCATION, ADMIN_EDIT_CATEGORY, ADMIN_EDIT_ITEMS,
-    ADMIN_ITEM_DETAIL, ADMIN_DELETE_CONFIRM, ADMIN_ADD_DAY,
-    ADMIN_AWAIT_NEW_TEXT, ADMIN_AWAIT_EDIT_TEXT,
-    ADMIN_AWAIT_ITEM_TYPE, ADMIN_AWAIT_DATE,
-    ADMIN_AWAIT_HOUR, ADMIN_AWAIT_MINUTE,
-    ADMIN_AWAIT_PHOTO_FLAG, ADMIN_AWAIT_NOTIFICATION_FLAG,
-    ADMIN_AWAIT_DAYS,
-    ADMIN_EDIT_TOGGLE_PHOTO, ADMIN_EDIT_TOGGLE_NOTIFICATION, ADMIN_EDIT_CHANGE_TIME,
-    CB_HOME, CB_TO_EDIT, CB_TO_CATEGORIES, CB_TO_ITEMS,
-    CB_LOC_PREFIX, CB_CAT_PREFIX, CB_PAGE_PREFIX,
-    CB_ITEM_PREFIX, CB_EDIT_ITEM_PREFIX, CB_DELETE_ITEM_PREFIX,
-    CB_CONFIRM_DELETE_PREFIX, CB_ADD, CB_ADD_DAY_PREFIX,
-    CB_CANCEL, CB_CANCEL_EDIT, CB_ADD_BACK_TEXT,
-    CB_ITEM_TYPE_PREFIX, CB_DATE_PREFIX, CB_MONTH_PREV, CB_MONTH_NEXT,
-    CB_HOUR_PREFIX, CB_MINUTE_PREFIX,
-    CB_PHOTO_FLAG_PREFIX, CB_NOTIF_FLAG_PREFIX, CB_FLAGS_SKIP,
-    CB_TOGGLE_PHOTO, CB_TOGGLE_NOTIFICATION, CB_CHANGE_TIME,
-    CB_DAY_TOGGLE_PREFIX, CB_DAYS_CONFIRM, CB_DAYS_CANCEL,
+from .keyboards import (
+    categories_keyboard,
+    checklist_keyboard,
+    item_detail_keyboard,
+    progress_keyboard,
+    photo_prompt_keyboard,
 )
+from .utils import build_photo_caption, item_detail_text
+from .constants import *
 
 
 def register_editor_states(states: dict):
