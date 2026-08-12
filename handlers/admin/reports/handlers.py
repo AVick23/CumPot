@@ -35,7 +35,6 @@ async def show_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE, mess
 
 async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, date_str: str,
                           message_id=None, notice=None) -> int:
-    logger.info(f"has_bar_media={has_bar_media}, has_kitchen_media={has_kitchen_media}")
     report = get_day_report(date_str)
     context.user_data["report_date"] = date_str  # для последующего показа вложений
 
