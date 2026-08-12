@@ -21,6 +21,7 @@ def edit_location_keyboard(counts: dict[str, int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"🍸 Бар · {counts.get('bar', 0)}", callback_data=f"{CB_LOC_PREFIX}:bar")],
         [InlineKeyboardButton(f"🍳 Кухня · {counts.get('kitchen', 0)}", callback_data=f"{CB_LOC_PREFIX}:kitchen")],
+        [InlineKeyboardButton("➕ Добавить пункт (выбрать категорию позже)", callback_data=CB_ADD)],
         [InlineKeyboardButton("🏠 Главное меню", callback_data=CB_HOME)],
     ])
 

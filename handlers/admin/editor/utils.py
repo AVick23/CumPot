@@ -9,7 +9,7 @@ from db.checklist import (
     update_checklist_item,
     delete_checklist_item as db_delete_item,
 )
-from .constants import PAGE_SIZE, DAILY_CATEGORIES, MSG_LIMIT, CATEGORY_LABELS
+from .constants import PAGE_SIZE, DAILY_CATEGORIES, MSG_LIMIT, CATEGORY_LABELS, LOCATIONS
 
 logger = logging.getLogger(__name__)
 
