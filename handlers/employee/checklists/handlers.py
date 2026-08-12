@@ -27,7 +27,6 @@ from .constants import (
     ITEM_DETAIL,
     PROGRESS_VIEW,
     AWAIT_TASK_PHOTO,
-    MAIN_MENU,  # НЕ ИМПОРТИРУЕМ ИЗ ВНЕШНЕГО, ОПРЕДЕЛЯЕМ НИЖЕ
     CATEGORY_NAMES,
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
@@ -38,9 +37,6 @@ from .constants import (
     CB_BACK_MENU,
     CB_BACK_CATEGORIES,
 )
-# Определяем MAIN_MENU локально (то же значение, что и в menu/constants.py)
-MAIN_MENU = 3
-
 from .keyboards import (
     categories_keyboard,
     checklist_keyboard,
@@ -48,6 +44,9 @@ from .keyboards import (
     progress_keyboard,
     photo_prompt_keyboard,
 )
+
+# Определяем MAIN_MENU локально (значение 3 соответствует menu/constants.py)
+MAIN_MENU = 3
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +61,8 @@ async def show_categories(
     if not user:
         return MAIN_MENU
 
-    # Проверяем, есть ли активная смена (используем get_checklist_items)
     items = get_checklist_items(user.id)
     if items is None:
-        # нет смены — показываем кнопку "В меню"
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
         await render(update, context, "Сначала начните смену.", kb, message_id)
@@ -105,7 +102,6 @@ async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return await show_checklist(update, context, category, message_id)
 
     if data == CB_BACK_MENU:
-        # возвращаем состояние MAIN_MENU, чтобы обработалось в employee/__init__.py
         return MAIN_MENU
 
     return await show_categories(update, context, message_id)
