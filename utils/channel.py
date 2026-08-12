@@ -13,7 +13,6 @@ async def send_photo_to_channel(
 ) -> int:
     """
     Отправляет одно фото в канал и возвращает message_id.
-    Сохранено для обратной совместимости.
     """
     if caption and len(caption) > 1000:
         caption = caption[:1000] + "…"
@@ -49,16 +48,15 @@ async def send_media_group_to_channel(
         if not file_id:
             continue
 
+        # Подпись только для первого элемента, обрезаем до 1024 символов
+        item_caption = caption[:1024] if i == 0 and caption else None
+
         if media_type == "photo":
-            media = InputMediaPhoto(media=file_id)
+            media = InputMediaPhoto(media=file_id, caption=item_caption)
         elif media_type == "video":
-            media = InputMediaVideo(media=file_id)
+            media = InputMediaVideo(media=file_id, caption=item_caption)
         else:
             continue
-
-        # Подпись только для первого элемента
-        if i == 0 and caption:
-            media.caption = caption[:1000]  # ограничение длины подписи
 
         media_group.append(media)
 
@@ -72,6 +70,5 @@ async def send_media_group_to_channel(
         )
         return [msg.message_id for msg in messages]
     except TelegramError as e:
-        # Если не удалось отправить группу, пробуем отправить по одному
-        # или просто логируем ошибку
+        # Логируем ошибку и пробрасываем дальше для обработки на верхнем уровне
         raise
