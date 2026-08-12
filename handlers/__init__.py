@@ -31,6 +31,7 @@ def register_handlers(app: Application):
     register_employee_states(states)
     register_admin_states(states)
 
+    # handlers/__init__.py
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_router)],
         states=states,
@@ -38,5 +39,6 @@ def register_handlers(app: Application):
         per_user=True,
         per_chat=False,
         allow_reentry=True,
+        state_key="employee_state",   # ← добавить эту строку
     )
     app.add_handler(conv_handler)
