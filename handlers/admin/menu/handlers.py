@@ -1,13 +1,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from .constants import ADMIN_MAIN, ADMIN_SHIFTS
+from .constants import ADMIN_MAIN, ADMIN_SHIFTS, CB_HOME, CB_SHIFTS, CB_CALENDAR, CB_EDIT
 from .keyboards import main_menu_keyboard, shifts_keyboard
 from .utils import render
 
 
 async def show_main(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
     """Главное меню админа"""
-    # Очистка контекста (будет выполнена при переходе)
     text = "🏠 Админ-панель\n\nВыберите раздел."
     if notice:
         text = f"{notice}\n\n{text}"
