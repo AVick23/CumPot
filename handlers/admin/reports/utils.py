@@ -137,7 +137,7 @@ def get_day_report(date_str: str) -> dict:
             media_items = []
             if progress:
                 raw = progress.get("photo_file_ids")
-                logger.info(f"Админ: item {item['id']} raw photo_file_ids = {raw}")  # INFO вместо DEBUG
+                logger.info(f"Админ: item {item['id']} raw photo_file_ids = {raw}")
                 if raw:
                     try:
                         media_items = json.loads(raw)

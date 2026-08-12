@@ -94,14 +94,21 @@ async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, da
 async def show_location_media(update: Update, context: ContextTypes.DEFAULT_TYPE, location: str, date_str: str, message_id=None) -> int:
     logger.info(f"👁 Админ запросил вложения для локации {location} за {date_str}")
     report = get_day_report(date_str)
+    logger.info(f"📋 report keys: {report.keys()}")
     loc_data = report.get(location)
+    logger.info(f"🔍 loc_data for {location}: {loc_data.keys() if loc_data else 'None'}")
     if not loc_data:
         logger.warning(f"⚠️ Нет данных по локации {location}")
         await render(update, context, "Нет данных по этой локации.", None, message_id)
         return ADMIN_DAY_REPORT
 
+    items = loc_data.get("items", [])
+    logger.info(f"📋 Найдено задач в локации: {len(items)}")
+    for idx, item in enumerate(items):
+        logger.info(f"  Задача {idx+1}: id={item.get('id')}, media_count={item.get('media_count')}, media_items={item.get('media_items')}")
+
     all_media = []
-    for item in loc_data.get("items", []):
+    for item in items:
         media = item.get("media_items", [])
         if media:
             logger.info(f"📦 Задача {item.get('id')} имеет {len(media)} вложений: {media}")
