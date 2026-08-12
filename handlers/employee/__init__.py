@@ -1,7 +1,15 @@
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
-from .menu import register_menu_states
-from .menu.handlers import employee_start
+from .menu.handlers import (
+    employee_start,
+    main_menu_callback,
+    shift_type_selection,
+    onboarding_name_input,
+    onboarding_wrong_type_name,
+    onboarding_position,
+    onboarding_position_guard,
+    onboarding_callback_guard,
+)
 from .checklists.handlers import (
     category_selection,
     view_item,
@@ -12,6 +20,19 @@ from .checklists.handlers import (
     photo_state_guard,
     progress_back,
     noop,
+)
+
+from .menu.constants import (
+    ONBOARD_NAME,
+    ONBOARD_POSITION,
+    MAIN_MENU,
+    SELECT_SHIFT_TYPE,
+    CB_START_SHIFT,
+    CB_CHECKLIST,
+    CB_PROGRESS,
+    CB_POSITION_PREFIX,
+    CB_BACK_MENU,
+    CB_SHIFT_TYPE_PREFIX,
 )
 
 from .checklists.constants import (
@@ -29,8 +50,6 @@ from .checklists.constants import (
     CB_BACK_CATEGORIES,
 )
 
-from .menu.constants import CB_BACK_MENU
-
 
 def get_employee_entry_point():
     return employee_start
@@ -43,17 +62,42 @@ def register_employee_states(states: dict):
             CallbackQueryHandler(noop, pattern="^noop$"),
         ]
 
+    # Онбординг: ФИО
+    states[ONBOARD_NAME] = [
+        MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_name_input),
+        MessageHandler(~filters.TEXT & ~filters.COMMAND, onboarding_wrong_type_name),
+        CallbackQueryHandler(onboarding_callback_guard),
+    ]
+
+    # Онбординг: позиция
+    states[ONBOARD_POSITION] = [
+        CallbackQueryHandler(onboarding_position, pattern=f"^{CB_POSITION_PREFIX}.*"),
+        CallbackQueryHandler(onboarding_position_guard),
+    ]
+
+    # Главное меню
+    states[MAIN_MENU] = [
+        CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$"),
+        CallbackQueryHandler(noop, pattern="^noop$"),
+    ]
+
+    # Выбор смены
+    states[SELECT_SHIFT_TYPE] = [
+        CallbackQueryHandler(shift_type_selection, pattern=f"^{CB_SHIFT_TYPE_PREFIX}.*|^{CB_BACK_MENU}$"),
+        CallbackQueryHandler(noop, pattern="^noop$"),
+    ]
+
     # Категории
-    states[CATEGORY_SELECT] = emp_state(
-        category_selection,
-        f"^{CB_CATEGORY_PREFIX}.*|^{CB_BACK_MENU}$"
-    )
+    states[CATEGORY_SELECT] = [
+        CallbackQueryHandler(category_selection, pattern=f"^{CB_CATEGORY_PREFIX}.*|^{CB_BACK_MENU}$"),
+        CallbackQueryHandler(noop, pattern="^noop$"),
+    ]
 
     # Список задач
-    states[CHECKLIST_VIEW] = emp_state(
-        view_item,
-        f"^{CB_ITEM_PREFIX}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MENU}$"
-    )
+    states[CHECKLIST_VIEW] = [
+        CallbackQueryHandler(view_item, pattern=f"^{CB_ITEM_PREFIX}.*|^{CB_BACK_CATEGORIES}$|^{CB_BACK_MENU}$"),
+        CallbackQueryHandler(noop, pattern="^noop$"),
+    ]
 
     # Карточка задачи
     states[ITEM_DETAIL] = [
@@ -72,10 +116,10 @@ def register_employee_states(states: dict):
     ]
 
     # Прогресс
-    states[PROGRESS_VIEW] = emp_state(
-        progress_back,
-        f"^{CB_BACK_MENU}$"
-    )
+    states[PROGRESS_VIEW] = [
+        CallbackQueryHandler(progress_back, pattern=f"^{CB_BACK_MENU}$"),
+        CallbackQueryHandler(noop, pattern="^noop$"),
+    ]
 
     # Ожидание фото
     states[AWAIT_TASK_PHOTO] = [
@@ -84,6 +128,3 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(photo_cancel, pattern=f"^{CB_PHOTO_CANCEL}$"),
         CallbackQueryHandler(photo_state_guard),
     ]
-
-    # Регистрируем состояния онбординга и главного меню (включая выбор смены)
-    register_menu_states(states)
