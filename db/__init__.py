@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import json
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "bot.db")
 
@@ -58,26 +59,26 @@ def init_db():
             )
         """)
 
-        # Таблица пунктов чек-листов (добавлена колонка days_of_week)
+        # Таблица пунктов чек-листов
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT,                   -- 'daily', 'weekly', 'once'
-                location TEXT,               -- 'bar' или 'kitchen'
-                category TEXT,               -- 'opening', 'daytime', 'closing', 'weekly'
-                day_of_week INTEGER,         -- 0-6 для weekly (старое поле, для обратной совместимости)
-                days_of_week TEXT,           -- строка "0,1,2" для weekly (новое поле)
+                type TEXT,
+                location TEXT,
+                category TEXT,
+                day_of_week INTEGER,
+                days_of_week TEXT,
                 sort_order INTEGER,
                 text TEXT,
                 requires_photo BOOLEAN DEFAULT 0,
                 requires_notification BOOLEAN DEFAULT 0,
-                notification_time TEXT,      -- HH:MM, время отправки уведомления
-                due_date TEXT,               -- YYYY-MM-DD для type='once', NULL для остальных
-                is_recurring BOOLEAN DEFAULT 1  -- 1 — постоянная, 0 — одноразовая
+                notification_time TEXT,
+                due_date TEXT,
+                is_recurring BOOLEAN DEFAULT 1
             )
         """)
 
-        # Таблица общего прогресса
+        # Таблица общего прогресса – добавляем поля для списка файлов
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_shared_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,8 +88,10 @@ def init_db():
                 completed BOOLEAN DEFAULT 0,
                 completed_at TEXT,
                 completed_by INTEGER,
-                photo_file_id TEXT,
-                photo_channel_message_id INTEGER,
+                photo_file_id TEXT,                 -- оставлено для обратной совместимости
+                photo_channel_message_id INTEGER,   -- оставлено для обратной совместимости
+                photo_file_ids TEXT,                -- JSON-массив file_id
+                photo_channel_message_ids TEXT,     -- JSON-массив message_id канала
                 FOREIGN KEY (item_id) REFERENCES checklist_items(id)
             )
         """)
@@ -109,7 +112,7 @@ def init_db():
             )
         """)
 
-        # Безопасная миграция для старых баз
+        # Миграции для checklist_items
         item_columns = _get_columns(conn, "checklist_items")
         if "requires_photo" not in item_columns:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN requires_photo BOOLEAN DEFAULT 0")
@@ -121,19 +124,23 @@ def init_db():
             conn.execute("ALTER TABLE checklist_items ADD COLUMN due_date TEXT")
         if "is_recurring" not in item_columns:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN is_recurring BOOLEAN DEFAULT 1")
-        # Добавляем новую колонку days_of_week
         if "days_of_week" not in item_columns:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN days_of_week TEXT")
-            # Переносим данные из day_of_week в days_of_week (для существующих записей)
             conn.execute("UPDATE checklist_items SET days_of_week = CAST(day_of_week AS TEXT) WHERE day_of_week IS NOT NULL")
+
+        # Миграции для checklist_shared_progress – добавляем новые поля
+        progress_columns = _get_columns(conn, "checklist_shared_progress")
+        if "photo_file_ids" not in progress_columns:
+            conn.execute("ALTER TABLE checklist_shared_progress ADD COLUMN photo_file_ids TEXT")
+        if "photo_channel_message_ids" not in progress_columns:
+            conn.execute("ALTER TABLE checklist_shared_progress ADD COLUMN photo_channel_message_ids TEXT")
 
         conn.commit()
 
-    # Импорт стартовых чек-листов
+    # Импорт стартовых чек-листов и типов смен
     from .checklist import import_checklist_items
     import_checklist_items()
 
-    # Импорт типов смен
     from .shifts import import_shift_types
     import_shift_types()
 

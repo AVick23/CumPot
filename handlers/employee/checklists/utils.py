@@ -1,4 +1,6 @@
 import logging
+import json
+import asyncio
 from telegram.error import BadRequest
 from utils.time_utils import today_msk_str, time_msk_str, now_msk
 from db.users import get_user
@@ -7,7 +9,7 @@ from db.checklist import (
     get_items_for_location_and_day,
     get_shared_progress,
     save_shared_progress,
-    save_shared_photo,
+    save_shared_photo,  # оставлено для обратной совместимости
 )
 from .constants import CATEGORY_NAMES, CATEGORY_ORDER, MSG_LIMIT, LOCATIONS
 
@@ -88,9 +90,8 @@ def get_checklist_items(user_id):
     if not shift:
         return None
     location = shift["location"]
-    date = today_msk_str()                # ← дата (строка)
+    date = today_msk_str()
 
-    # Исправлено: передаём дату, а не day_of_week
     items = get_items_for_location_and_day(location, date)
     if not items:
         return []
@@ -102,8 +103,20 @@ def get_checklist_items(user_id):
         item = dict(item)
         progress = shared_progress.get(item["id"])
         item["completed"] = progress.get("completed", 0) == 1 if progress else False
-        item["has_photo"] = bool(progress and progress.get("photo_file_id"))
-        item["photo_file_id"] = progress.get("photo_file_id") if progress else None
+
+        # Получаем список file_id из нового поля или из старого
+        photo_file_ids = []
+        if progress and progress.get("photo_file_ids"):
+            try:
+                photo_file_ids = json.loads(progress["photo_file_ids"])
+            except:
+                photo_file_ids = []
+        elif progress and progress.get("photo_file_id"):
+            photo_file_ids = [progress["photo_file_id"]]
+
+        item["photo_file_ids"] = photo_file_ids
+        item["has_photo"] = bool(photo_file_ids)
+        item["photo_count"] = len(photo_file_ids)
         result.append(item)
     return result
 
@@ -155,7 +168,11 @@ def toggle_item(user_id, item_id):
     return new_state
 
 
-def attach_photo_to_task(user_id, item_id, file_id, channel_message_id, mark_done=False):
+def attach_media_to_task(user_id, item_id, file_ids: list, channel_message_ids: list, mark_done=False):
+    """
+    Сохраняет список file_id и channel_message_id для задачи.
+    file_ids и channel_message_ids – списки одинаковой длины.
+    """
     shift = get_active_shift(user_id)
     if not shift:
         return
@@ -164,7 +181,38 @@ def attach_photo_to_task(user_id, item_id, file_id, channel_message_id, mark_don
 
     if mark_done:
         save_shared_progress(location, date, item_id, True, user_id)
-    save_shared_photo(location, date, item_id, file_id, channel_message_id, user_id)
+
+    from db import get_connection
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM checklist_shared_progress WHERE location = ? AND date = ? AND item_id = ?",
+            (location, date, item_id)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE checklist_shared_progress
+                SET photo_file_ids = ?, photo_channel_message_ids = ?, photo_file_id = NULL
+                WHERE id = ?
+                """,
+                (json.dumps(file_ids), json.dumps(channel_message_ids), existing["id"])
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO checklist_shared_progress
+                (location, date, item_id, completed, completed_by, photo_file_ids, photo_channel_message_ids, photo_file_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (location, date, item_id, 1 if mark_done else 0, user_id,
+                 json.dumps(file_ids), json.dumps(channel_message_ids))
+            )
+        conn.commit()
+
+
+# Для обратной совместимости (одиночное фото)
+def attach_photo_to_task(user_id, item_id, file_id, channel_message_id, mark_done=False):
+    attach_media_to_task(user_id, item_id, [file_id], [channel_message_id], mark_done)
 
 
 def get_user_progress_summary(user_id):
@@ -200,7 +248,8 @@ def percent(done, total):
 def item_detail_text(item: dict) -> str:
     status_text = "✅ Выполнено" if item.get("completed") else "⚪️ Не выполнено"
     category_label = CATEGORY_NAMES.get(item.get("category"), item.get("category"))
-    photo_text = "🖼 Фото прикреплено" if item.get("has_photo") else "🖼 Фото: нет"
+    photo_count = len(item.get("photo_file_ids", []))
+    photo_text = f"🖼 Фото/видео: {photo_count} шт." if photo_count else "🖼 Файлы: нет"
     return (
         "📌 Задача\n\n"
         f"{item.get('text')}\n\n"

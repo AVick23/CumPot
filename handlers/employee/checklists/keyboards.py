@@ -10,6 +10,7 @@ from .constants import (
     CB_PHOTO_CANCEL,
     CB_BACK_MENU,
     CB_BACK_CATEGORIES,
+    CB_PHOTO_DONE,
 )
 
 
@@ -40,8 +41,9 @@ def checklist_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for item in items:
         status = "✅" if item.get("completed") else "⚪️"
-        photo = "🖼" if item.get("has_photo") else ""
-        label = f"{status}{photo} {_clip(item.get('text'), 33)}"
+        photo_count = len(item.get("photo_file_ids", []))
+        photo_icon = f"🖼{photo_count}" if photo_count else ""
+        label = f"{status}{photo_icon} {_clip(item.get('text'), 33)}"
         rows.append([
             InlineKeyboardButton(label, callback_data=f"{CB_ITEM_PREFIX}{item['id']}")
         ])
@@ -91,7 +93,10 @@ def progress_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def photo_prompt_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✖️ Отмена", callback_data=CB_PHOTO_CANCEL)]
-    ])
+def photo_prompt_keyboard(has_photos: bool = False) -> InlineKeyboardMarkup:
+    """Клавиатура для запроса фото. Если есть фото, показываем кнопку 'Готово'."""
+    buttons = []
+    if has_photos:
+        buttons.append(InlineKeyboardButton("✅ Готово", callback_data=CB_PHOTO_DONE))
+    buttons.append(InlineKeyboardButton("✖️ Отмена", callback_data=CB_PHOTO_CANCEL))
+    return InlineKeyboardMarkup([buttons])
