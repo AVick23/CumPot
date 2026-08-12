@@ -1,37 +1,45 @@
-import math
 import logging
-from datetime import datetime
 from telegram.error import BadRequest
-from db import get_connection
+from utils.time_utils import today_msk_str, time_msk_str, now_msk
+from db.users import get_user
+from db.shifts import get_active_shift
 from db.checklist import (
-    get_all_items,
-    add_checklist_item,
-    update_checklist_item,
-    delete_checklist_item as db_delete_item,
+    get_items_for_location_and_day,
+    get_shared_progress,
+    save_shared_progress,
+    save_shared_photo,
 )
-from .constants import PAGE_SIZE, DAILY_CATEGORIES, MSG_LIMIT, CATEGORY_LABELS
+from .constants import CATEGORY_NAMES, CATEGORY_ORDER, MSG_LIMIT, LOCATIONS
 
 logger = logging.getLogger(__name__)
 
-
-def clip(text: str | None, limit: int = 35) -> str:
-    text = " ".join((text or "").split())
-    if len(text) <= limit:
-        return text
-    return text[:limit - 1].rstrip() + "…"
+# ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
+def set_state(context, state):
+    context.user_data["state"] = state
+    return state
 
 
-def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
+def current_state(context):
+    return context.user_data.get("state", 3)
+
+
+def truncate_text(text, limit=MSG_LIMIT):
     text = text or ""
     if len(text) <= limit:
         return text
     return text[:limit - 1].rstrip() + "…"
 
 
+async def answer(query, text=None, show_alert=False):
+    try:
+        await query.answer(text or "", show_alert=show_alert)
+    except Exception:
+        pass
+
+
 async def render(update, context, text, reply_markup=None, message_id=None):
     text = truncate_text(text, MSG_LIMIT)
     chat_id = update.effective_chat.id if update.effective_chat else None
-
     if chat_id and message_id:
         try:
             await context.bot.edit_message_text(
@@ -45,7 +53,6 @@ async def render(update, context, text, reply_markup=None, message_id=None):
             if "Message is not modified" in str(e):
                 return message_id
             logger.warning("Edit failed: %s", e)
-
     if chat_id:
         msg = await context.bot.send_message(
             chat_id=chat_id,
@@ -56,116 +63,171 @@ async def render(update, context, text, reply_markup=None, message_id=None):
     return None
 
 
-def get_location_counts() -> dict[str, int]:
-    counts = {"bar": 0, "kitchen": 0}
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT location, COUNT(*) AS cnt FROM checklist_items GROUP BY location"
-        ).fetchall()
-        for row in rows:
-            counts[row["location"]] = row["cnt"]
-    return counts
+async def cleanup_message(context, chat_id, message_id, fallback_text="✅ Готово"):
+    if not chat_id or not message_id:
+        return
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        return
+    except Exception:
+        pass
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=fallback_text,
+            reply_markup=None,
+        )
+    except Exception:
+        pass
 
 
-def get_category_counts(location: str) -> dict[str, int]:
-    # Добавляем "once"
-    all_cats = [key for key, _ in DAILY_CATEGORIES] + ["weekly", "once"]
-    counts = {key: 0 for key in all_cats}
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT category, COUNT(*) AS cnt FROM checklist_items WHERE location = ? GROUP BY category",
-            (location,)
-        ).fetchall()
-        for row in rows:
-            counts[row["category"]] = row["cnt"]
-    return counts
+# ---------- РАБОТА С ЧЕК-ЛИСТАМИ (ОБЩИЙ ПРОГРЕСС) ----------
+def get_checklist_items(user_id):
+    shift = get_active_shift(user_id)
+    if not shift:
+        return None
+    location = shift["location"]
+    date = today_msk_str()                # ← дата (строка)
+
+    # Исправлено: передаём дату, а не day_of_week
+    items = get_items_for_location_and_day(location, date)
+    if not items:
+        return []
+
+    shared_progress = get_shared_progress(location, date)
+
+    result = []
+    for item in items:
+        item = dict(item)
+        progress = shared_progress.get(item["id"])
+        item["completed"] = progress.get("completed", 0) == 1 if progress else False
+        item["has_photo"] = bool(progress and progress.get("photo_file_id"))
+        item["photo_file_id"] = progress.get("photo_file_id") if progress else None
+        result.append(item)
+    return result
 
 
-def get_items_for_editor(location: str, category: str) -> list[dict]:
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM checklist_items WHERE location = ? AND category = ? ORDER BY sort_order, id",
-            (location, category)
-        ).fetchall()
-        return [dict(row) for row in rows]
+def get_categories_stats(user_id):
+    items = get_checklist_items(user_id)
+    if items is None:
+        return None
+    stats = {}
+    for item in items:
+        cat = item.get("category") or "weekly"
+        stats.setdefault(cat, {"done": 0, "total": 0})
+        stats[cat]["total"] += 1
+        if item.get("completed"):
+            stats[cat]["done"] += 1
+    return stats
 
 
-def paginate_items(items: list[dict], page: int) -> tuple[list[dict], int, int]:
-    total_pages = max(1, math.ceil(len(items) / PAGE_SIZE))
-    page = max(1, min(page, total_pages))
-    start = (page - 1) * PAGE_SIZE
-    return items[start:start + PAGE_SIZE], total_pages, page
+def get_items_by_category(user_id, category):
+    items = get_checklist_items(user_id)
+    if items is None:
+        return None
+    return [item for item in items if item.get("category") == category]
 
 
-def get_item(item_id: int) -> dict | None:
-    with get_connection() as conn:
-        row = conn.execute("SELECT * FROM checklist_items WHERE id = ?", (item_id,)).fetchone()
-        return dict(row) if row else None
+def get_item_by_id(user_id, item_id):
+    items = get_checklist_items(user_id)
+    if items is None:
+        return None
+    for item in items:
+        if item["id"] == item_id:
+            return item
+    return None
 
 
-def create_item(
-    item_type: str,
-    location: str,
-    category: str,
-    day_of_week: int | None,
-    text: str,
-    requires_photo: bool = False,
-    requires_notification: bool = False,
-    notification_time: str | None = None,
-    due_date: str | None = None,
-    is_recurring: bool = True,
-    days_of_week: str | None = None   # новое поле
-) -> None:
-    add_checklist_item(
-        item_type, location, category, day_of_week, text,
-        requires_photo, requires_notification, notification_time,
-        due_date, is_recurring, days_of_week
+def toggle_item(user_id, item_id):
+    shift = get_active_shift(user_id)
+    if not shift:
+        return None
+    location = shift["location"]
+    date = today_msk_str()
+
+    shared_progress = get_shared_progress(location, date)
+    progress = shared_progress.get(item_id)
+    current_state = progress.get("completed", 0) == 1 if progress else False
+    new_state = not current_state
+
+    save_shared_progress(location, date, item_id, new_state, user_id)
+    return new_state
+
+
+def attach_photo_to_task(user_id, item_id, file_id, channel_message_id, mark_done=False):
+    shift = get_active_shift(user_id)
+    if not shift:
+        return
+    location = shift["location"]
+    date = today_msk_str()
+
+    if mark_done:
+        save_shared_progress(location, date, item_id, True, user_id)
+    save_shared_photo(location, date, item_id, file_id, channel_message_id, user_id)
+
+
+def get_user_progress_summary(user_id):
+    items = get_checklist_items(user_id)
+    if items is None:
+        return None
+    total = len(items)
+    done = sum(1 for item in items if item.get("completed"))
+    categories = {}
+    for item in items:
+        cat = item.get("category") or "weekly"
+        categories.setdefault(cat, {"done": 0, "total": 0})
+        categories[cat]["total"] += 1
+        if item.get("completed"):
+            categories[cat]["done"] += 1
+    ordered = {cat: categories[cat] for cat in CATEGORY_ORDER if cat in categories}
+    return done, total, items, ordered
+
+
+def progress_bar(done, total, size=10):
+    if total <= 0:
+        return "▱" * size
+    filled = round(size * done / total)
+    filled = max(0, min(size, filled))
+    return "▰" * filled + "▱" * (size - filled)
+
+
+def percent(done, total):
+    return int(done / total * 100) if total else 0
+
+
+# ---------- UI ПОМОЩНИКИ ----------
+def item_detail_text(item: dict) -> str:
+    status_text = "✅ Выполнено" if item.get("completed") else "⚪️ Не выполнено"
+    category_label = CATEGORY_NAMES.get(item.get("category"), item.get("category"))
+    photo_text = "🖼 Фото прикреплено" if item.get("has_photo") else "🖼 Фото: нет"
+    return (
+        "📌 Задача\n\n"
+        f"{item.get('text')}\n\n"
+        f"Статус: {status_text}\n"
+        f"Категория: {category_label}\n"
+        f"{photo_text}"
     )
 
 
-def update_item_text(item_id: int, text: str) -> None:
-    update_checklist_item(item_id, text=text.strip())
-
-
-def update_item_flags(item_id: int, requires_photo: bool = None, requires_notification: bool = None, notification_time: str = None) -> None:
-    kwargs = {}
-    if requires_photo is not None:
-        kwargs["requires_photo"] = 1 if requires_photo else 0
-    if requires_notification is not None:
-        kwargs["requires_notification"] = 1 if requires_notification else 0
-    if notification_time is not None:
-        kwargs["notification_time"] = notification_time
-    if kwargs:
-        update_checklist_item(item_id, **kwargs)
-
-
-def update_item_days(item_id: int, days_of_week: str) -> None:
-    """Обновляет дни недели для weekly задачи."""
-    update_checklist_item(item_id, days_of_week=days_of_week)
-
-
-def remove_item(item_id: int) -> None:
-    db_delete_item(item_id)
-
-
-def parse_due_date(date_str: str) -> str | None:
-    try:
-        for fmt in ("%d.%m.%Y", "%d-%m-%Y", "%Y-%m-%d"):
-            try:
-                dt = datetime.strptime(date_str, fmt)
-                return dt.strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-        return None
-    except Exception:
-        return None
-
-
-def get_breadcrumb(location: str = None, category: str = None) -> str:
-    """Формирует хлебные крошки для навигации."""
-    parts = ["🏠 Главная"]
-    if location:
-        parts.append(LOCATIONS.get(location, location))
-    if category:
-        parts.append(CATEGORY_LABELS.get(category, category))
-    return " → ".join(parts)
+def build_photo_caption(user_id: int, item: dict) -> str:
+    user_db = get_user(user_id)
+    full_name = "Сотрудник"
+    position_label = "—"
+    if user_db:
+        full_name = user_db.get("full_name") or "Сотрудник"
+        position = user_db.get("position")
+        position_label = LOCATIONS.get(position, position or "—")
+    today = today_msk_str()
+    now_time = time_msk_str()
+    caption = (
+        "📷 Фото к задаче\n\n"
+        f"👤 {full_name}\n"
+        f"📍 {position_label}\n"
+        f"📅 {today}\n"
+        f"🕒 {now_time}\n\n"
+        f"Задача:\n{item.get('text')}"
+    )
+    if len(caption) > 1000:
+        caption = caption[:1000] + "…"
+    return caption
