@@ -32,8 +32,9 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 location TEXT NOT NULL,
                 name TEXT NOT NULL,
-                start_time TEXT NOT NULL,
-                days TEXT NOT NULL,  -- 'all' или 'mon,tue,wed,...' или 'sat,sun'
+                start_time TEXT NOT NULL,      -- время начала (HH:MM)
+                duration INTEGER NOT NULL,     -- длительность в минутах
+                days TEXT NOT NULL,            -- 'all', 'mon,tue,...' или 'sat,sun'
                 sort_order INTEGER DEFAULT 0
             )
         """)
@@ -45,7 +46,7 @@ def init_db():
                 user_id INTEGER,
                 shift_type_id INTEGER,
                 date TEXT,
-                start_time TEXT,
+                start_time TEXT,               -- фактическое время начала
                 active BOOLEAN DEFAULT 1,
                 FOREIGN KEY (user_id) REFERENCES users(tg_id),
                 FOREIGN KEY (shift_type_id) REFERENCES shift_types(id)

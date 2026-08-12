@@ -7,37 +7,78 @@ def _auto_close_outdated_shifts(conn):
     conn.execute("UPDATE shifts SET active = 0 WHERE active = 1 AND date < ?", (today,))
 
 
-# ------------------------------------------------------------
+# ============================================================
 # ТИПЫ СМЕН
-# ------------------------------------------------------------
+# ============================================================
 def import_shift_types():
-    """Создаёт типы смен при первом запуске."""
+    """Создаёт типы смен при первом запуске с правильными длительностями."""
     with get_connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM shift_types").fetchone()[0]
         if count > 0:
             return
 
-        # Базовая настройка: бар и кухня, с учётом дней недели
         shift_types = [
-            # Бар
-            {"location": "bar", "name": "Утро (будни)", "start_time": "09:00", "days": "mon,tue,wed,thu,fri"},
-            {"location": "bar", "name": "Утро (выходные)", "start_time": "07:00", "days": "sat,sun"},
-            {"location": "bar", "name": "День", "start_time": "13:00", "days": "all"},
-            {"location": "bar", "name": "Вечер", "start_time": "08:00", "days": "all"},
-            # Кухня
-            {"location": "kitchen", "name": "Ранняя (будни)", "start_time": "07:00", "days": "mon,tue,wed,thu,fri"},
-            {"location": "kitchen", "name": "Поздняя (будни)", "start_time": "09:00", "days": "mon,tue,wed,thu,fri"},
-            {"location": "kitchen", "name": "Ранняя (выходные)", "start_time": "08:00", "days": "sat,sun"},
-            {"location": "kitchen", "name": "Поздняя (выходные)", "start_time": "09:00", "days": "sat,sun"},
+            # ---------- БАР ----------
+            {
+                "location": "bar",
+                "name": "Утро (будни)",
+                "start_time": "07:00",
+                "duration": 540,   # 9 часов (до 16:00)
+                "days": "mon,tue,wed,thu,fri"
+            },
+            {
+                "location": "bar",
+                "name": "Утро (выходные)",
+                "start_time": "07:00",
+                "duration": 420,   # 7 часов (до 14:00)
+                "days": "sat,sun"
+            },
+            {
+                "location": "bar",
+                "name": "День",
+                "start_time": "10:00",
+                "duration": 780,   # 13 часов (до 23:00)
+                "days": "all"
+            },
+            {
+                "location": "bar",
+                "name": "Вечер",
+                "start_time": "15:00",
+                "duration": 480,   # 8 часов (до 23:00)
+                "days": "all"
+            },
+
+            # ---------- КУХНЯ ----------
+            {
+                "location": "kitchen",
+                "name": "Ранняя (будни)",
+                "start_time": "07:00",
+                "duration": 540,   # 9 часов (до 16:00)
+                "days": "mon,tue,wed,thu,fri"
+            },
+            {
+                "location": "kitchen",
+                "name": "Ранняя (выходные)",
+                "start_time": "08:00",
+                "duration": 720,   # 12 часов (до 20:00)
+                "days": "sat,sun"
+            },
+            {
+                "location": "kitchen",
+                "name": "Поздняя",
+                "start_time": "09:00",
+                "duration": 750,   # 12.5 часов (до 21:30)
+                "days": "all"
+            },
         ]
 
         for i, st in enumerate(shift_types):
             conn.execute(
                 """
-                INSERT INTO shift_types (location, name, start_time, days, sort_order)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO shift_types (location, name, start_time, duration, days, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (st["location"], st["name"], st["start_time"], st["days"], i)
+                (st["location"], st["name"], st["start_time"], st["duration"], st["days"], i)
             )
         conn.commit()
 
@@ -69,9 +110,9 @@ def get_shift_type(shift_type_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-# ------------------------------------------------------------
+# ============================================================
 # УПРАВЛЕНИЕ СМЕНАМИ
-# ------------------------------------------------------------
+# ============================================================
 def start_shift(user_id: int, shift_type_id: int):
     """
     Начинает смену с указанным типом.
@@ -103,7 +144,11 @@ def get_active_shift(user_id: int) -> dict | None:
         _auto_close_outdated_shifts(conn)
         row = conn.execute(
             """
-            SELECT s.*, st.location, st.name AS shift_name, st.start_time AS shift_start_time
+            SELECT s.*,
+                   st.location,
+                   st.name AS shift_name,
+                   st.start_time AS planned_start,
+                   st.duration AS shift_duration
             FROM shifts s
             LEFT JOIN shift_types st ON s.shift_type_id = st.id
             WHERE s.user_id = ? AND s.active = 1 AND s.date = ?
@@ -124,8 +169,12 @@ def get_shifts_for_date(date: str) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT s.*, u.first_name, u.last_name, u.full_name,
-                   st.name AS shift_name, st.location, st.start_time AS shift_start_time
+            SELECT s.*,
+                   u.first_name, u.last_name, u.full_name,
+                   st.name AS shift_name,
+                   st.location,
+                   st.start_time AS planned_start,
+                   st.duration AS shift_duration
             FROM shifts s
             JOIN users u ON s.user_id = u.tg_id
             LEFT JOIN shift_types st ON s.shift_type_id = st.id
@@ -142,7 +191,11 @@ def get_shift_for_date(user_id: int, date: str) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT s.*, st.location, st.name AS shift_name, st.start_time AS shift_start_time
+            SELECT s.*,
+                   st.location,
+                   st.name AS shift_name,
+                   st.start_time AS planned_start,
+                   st.duration AS shift_duration
             FROM shifts s
             LEFT JOIN shift_types st ON s.shift_type_id = st.id
             WHERE s.user_id = ? AND s.date = ?
