@@ -1,3 +1,4 @@
+from datetime import datetime  # ДОБАВЛЕНО
 from telegram import Update
 from telegram.ext import ContextTypes
 from .constants import (
@@ -36,7 +37,6 @@ from .utils import (
 import logging
 
 logger = logging.getLogger(__name__)
-
 
 async def show_edit_locations(update: Update, context: ContextTypes.DEFAULT_TYPE,
                               message_id=None, notice=None) -> int:

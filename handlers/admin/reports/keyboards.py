@@ -3,7 +3,7 @@ from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constants import (
     CB_HOME, CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX,
-    WEEKDAYS_SHORT, MONTHS
+    WEEKDAYS_SHORT, MONTHS, CB_TO_CALENDAR  # добавлен импорт
 )
 
 
