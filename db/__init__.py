@@ -58,14 +58,15 @@ def init_db():
             )
         """)
 
-        # Таблица пунктов чек-листов (обновлена с notification_time)
+        # Таблица пунктов чек-листов (добавлена колонка days_of_week)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 type TEXT,                   -- 'daily', 'weekly', 'once'
                 location TEXT,               -- 'bar' или 'kitchen'
                 category TEXT,               -- 'opening', 'daytime', 'closing', 'weekly'
-                day_of_week INTEGER,         -- 0-6 для weekly, NULL для других
+                day_of_week INTEGER,         -- 0-6 для weekly (старое поле, для обратной совместимости)
+                days_of_week TEXT,           -- строка "0,1,2" для weekly (новое поле)
                 sort_order INTEGER,
                 text TEXT,
                 requires_photo BOOLEAN DEFAULT 0,
@@ -120,6 +121,11 @@ def init_db():
             conn.execute("ALTER TABLE checklist_items ADD COLUMN due_date TEXT")
         if "is_recurring" not in item_columns:
             conn.execute("ALTER TABLE checklist_items ADD COLUMN is_recurring BOOLEAN DEFAULT 1")
+        # Добавляем новую колонку days_of_week
+        if "days_of_week" not in item_columns:
+            conn.execute("ALTER TABLE checklist_items ADD COLUMN days_of_week TEXT")
+            # Переносим данные из day_of_week в days_of_week (для существующих записей)
+            conn.execute("UPDATE checklist_items SET days_of_week = CAST(day_of_week AS TEXT) WHERE day_of_week IS NOT NULL")
 
         conn.commit()
 

@@ -1,6 +1,6 @@
 from . import get_connection
 from utils.time_utils import today_msk_str, time_msk_str, now_msk
-from datetime import datetime  # добавлен для работы с датами
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -81,37 +81,37 @@ def import_checklist_items():
             conn.execute(
                 """
                 INSERT INTO checklist_items
-                (type, location, category, day_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (type, location, category, day_of_week, days_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                ('daily', 'bar', _clean(item, 'category'), None, 0, _clean(item, 'text'), 0, 0, None, 1)
+                ('daily', 'bar', _clean(item, 'category'), None, None, 0, _clean(item, 'text'), 0, 0, None, 1)
             )
         for item in KITCHEN_DAILY_ITEMS:
             conn.execute(
                 """
                 INSERT INTO checklist_items
-                (type, location, category, day_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (type, location, category, day_of_week, days_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                ('daily', 'kitchen', _clean(item, 'category'), None, 0, _clean(item, 'text'), 0, 0, None, 1)
+                ('daily', 'kitchen', _clean(item, 'category'), None, None, 0, _clean(item, 'text'), 0, 0, None, 1)
             )
         for day, text in BAR_WEEKLY_ITEMS.items():
             conn.execute(
                 """
                 INSERT INTO checklist_items
-                (type, location, category, day_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (type, location, category, day_of_week, days_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                ('weekly', 'bar', 'weekly', int(day), 0, text.strip(), 0, 0, None, 1)
+                ('weekly', 'bar', 'weekly', int(day), str(day), 0, text.strip(), 0, 0, None, 1)
             )
         for day, text in KITCHEN_WEEKLY_ITEMS.items():
             conn.execute(
                 """
                 INSERT INTO checklist_items
-                (type, location, category, day_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (type, location, category, day_of_week, days_of_week, sort_order, text, requires_photo, requires_notification, notification_time, is_recurring)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                ('weekly', 'kitchen', 'weekly', int(day), 0, text.strip(), 0, 0, None, 1)
+                ('weekly', 'kitchen', 'weekly', int(day), str(day), 0, text.strip(), 0, 0, None, 1)
             )
         conn.commit()
         logger.info("Импорт чек-листов успешно завершён.")
@@ -121,7 +121,7 @@ def get_items_for_location_and_day(location: str, date: str) -> list[dict]:
     """
     Возвращает все задачи для локации и даты:
     - daily (всегда)
-    - weekly, если day_of_week совпадает с днём date
+    - weekly, если день недели присутствует в days_of_week (или, если days_of_week NULL, используется day_of_week)
     - once (одноразовые) с due_date == date
     Учитывает поля requires_photo, requires_notification, notification_time.
     """
@@ -129,6 +129,9 @@ def get_items_for_location_and_day(location: str, date: str) -> list[dict]:
         day_of_week = now_msk().weekday()
     else:
         day_of_week = datetime.strptime(date, "%Y-%m-%d").weekday()
+
+    day_str = str(day_of_week)
+
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -136,7 +139,10 @@ def get_items_for_location_and_day(location: str, date: str) -> list[dict]:
             WHERE location = ?
               AND (
                   type = 'daily'
-                  OR (type = 'weekly' AND day_of_week = ?)
+                  OR (type = 'weekly' AND (
+                      days_of_week LIKE ? OR days_of_week LIKE ? OR days_of_week LIKE ?
+                      OR (day_of_week = ? AND days_of_week IS NULL)
+                  ))
                   OR (type = 'once' AND due_date = ?)
               )
             ORDER BY
@@ -149,7 +155,10 @@ def get_items_for_location_and_day(location: str, date: str) -> list[dict]:
                 END,
                 sort_order ASC, id ASC
             """,
-            (location, day_of_week, date)
+            (location,
+             f"%{day_str}%", f"{day_str},%", f"%,{day_str}%",  # для days_of_week
+             day_of_week,  # для старых записей
+             date)
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -260,12 +269,14 @@ def add_checklist_item(
     requires_notification: bool = False,
     notification_time: str | None = None,
     due_date: str | None = None,
-    is_recurring: bool = True
+    is_recurring: bool = True,
+    days_of_week: str | None = None   # новое поле
 ):
     """
     Добавляет новый пункт чек-листа.
     Для type='once' нужно указать due_date, is_recurring=False.
     notification_time — строка HH:MM, обязательна, если requires_notification=True.
+    days_of_week — строка "0,1,2" для weekly (может быть None, тогда используется day_of_week).
     """
     with get_connection() as conn:
         row = conn.execute(
@@ -274,23 +285,22 @@ def add_checklist_item(
         ).fetchone()
         order = (row['max_order'] or 0) + 1
 
-        # Если type='once', принудительно установим is_recurring=0
         if item_type == 'once':
             is_recurring = False
             day_of_week = None
+            days_of_week = None
 
-        # Если требуется уведомление, но время не указано — установим None (будет ошибка валидации на уровне UI)
         if requires_notification and not notification_time:
-            notification_time = None  # или можно установить время по умолчанию, но лучше попросить пользователя
+            notification_time = None
 
         conn.execute(
             """
             INSERT INTO checklist_items
-            (type, location, category, day_of_week, sort_order, text,
+            (type, location, category, day_of_week, days_of_week, sort_order, text,
              requires_photo, requires_notification, notification_time, due_date, is_recurring)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (item_type, location, category, day_of_week, order, text.strip(),
+            (item_type, location, category, day_of_week, days_of_week, order, text.strip(),
              1 if requires_photo else 0,
              1 if requires_notification else 0,
              notification_time,
@@ -303,11 +313,12 @@ def add_checklist_item(
 def update_checklist_item(item_id: int, **kwargs):
     """
     Обновляет любые поля пункта чек-листа.
-    Допустимые ключи: text, requires_photo, requires_notification, notification_time, due_date, is_recurring, category, location, day_of_week, type.
+    Допустимые ключи: text, requires_photo, requires_notification, notification_time,
+                       due_date, is_recurring, category, location, day_of_week, type, days_of_week.
     """
     allowed_fields = {
         'text', 'requires_photo', 'requires_notification', 'notification_time',
-        'due_date', 'is_recurring', 'category', 'location', 'day_of_week', 'type'
+        'due_date', 'is_recurring', 'category', 'location', 'day_of_week', 'type', 'days_of_week'
     }
     updates = []
     params = []
@@ -325,7 +336,6 @@ def update_checklist_item(item_id: int, **kwargs):
 
 def delete_checklist_item(item_id: int):
     with get_connection() as conn:
-        # Удаляем связанные записи прогресса и уведомлений
         conn.execute("DELETE FROM checklist_shared_progress WHERE item_id = ?", (item_id,))
         conn.execute("DELETE FROM checklist_notifications_sent WHERE item_id = ?", (item_id,))
         conn.execute("DELETE FROM checklist_items WHERE id = ?", (item_id,))
@@ -336,7 +346,6 @@ def delete_checklist_item(item_id: int):
 # УВЕДОМЛЕНИЯ
 # ------------------------------------------------------------
 def mark_notification_sent(item_id: int, date: str):
-    """Отмечает, что уведомление по задаче за дату уже отправлено."""
     with get_connection() as conn:
         sent_at = time_msk_str()
         conn.execute(
@@ -350,7 +359,6 @@ def mark_notification_sent(item_id: int, date: str):
 
 
 def is_notification_sent(item_id: int, date: str) -> bool:
-    """Проверяет, отправлено ли уведомление по задаче за дату."""
     with get_connection() as conn:
         row = conn.execute(
             "SELECT id FROM checklist_notifications_sent WHERE item_id = ? AND date = ?",
@@ -360,10 +368,6 @@ def is_notification_sent(item_id: int, date: str) -> bool:
 
 
 def get_items_requiring_notification(location: str, date: str) -> list[dict]:
-    """
-    Возвращает задачи для локации и даты, у которых requires_notification = True,
-    notification_time не NULL и уведомление ещё не было отправлено.
-    """
     items = get_items_for_location_and_day(location, date)
     result = []
     for item in items:
