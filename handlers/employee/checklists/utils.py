@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 # ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
 def set_state(context, state):
-    context.user_data["employee_state"] = state
+    context.user_data["state"] = state   # было "employee_state"
     return state
 
 
 def current_state(context):
-    return context.user_data.get("employee_state", 3)
+    return context.user_data.get("state", 3)   # было "employee_state"
 
 
 def truncate_text(text, limit=MSG_LIMIT):

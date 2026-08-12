@@ -1,5 +1,5 @@
 # Состояния (используются в employee/__init__.py)
-CATEGORY_SELECT = 4
+CATEGORY_SELECT = 11      # ← исправлено, уникальное значение
 CHECKLIST_VIEW = 5
 ITEM_DETAIL = 6
 PROGRESS_VIEW = 7

@@ -2,7 +2,7 @@
 ONBOARD_NAME = 1
 ONBOARD_POSITION = 2
 MAIN_MENU = 3
-SELECT_SHIFT_TYPE = 4
+SELECT_SHIFT_TYPE = 10   # ← исправлено, уникальное значение
 
 # Callback data
 CB_START_SHIFT = "start_shift"

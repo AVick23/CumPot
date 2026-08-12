@@ -1,4 +1,4 @@
-from .constants import LOCATIONS, MSG_LIMIT
+from .constants import LOCATIONS, MSG_LIMIT, MAIN_MENU  # добавил импорт MAIN_MENU
 from telegram.error import BadRequest
 import logging
 
@@ -103,10 +103,11 @@ async def answer(query, text: str | None = None, show_alert: bool = False):
         pass
 
 
+# ===== ИСПРАВЛЕНИЕ: используем "state" вместо "employee_state" =====
 def set_state(context, state: int) -> int:
-    context.user_data["employee_state"] = state
+    context.user_data["state"] = state   # было "employee_state"
     return state
 
 
 def get_current_state(context) -> int:
-    return context.user_data.get("employee_state", MAIN_MENU)
+    return context.user_data.get("state", MAIN_MENU)   # было "employee_state"

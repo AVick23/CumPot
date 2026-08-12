@@ -579,4 +579,5 @@ async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await answer(query)
-    return context.user_data.get("employee_state", MAIN_MENU)
+    # ИСПРАВЛЕНИЕ: используем "state" вместо "employee_state"
+    return context.user_data.get("state", MAIN_MENU)
