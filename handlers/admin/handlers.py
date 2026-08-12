@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
 from db.users import save_user
+from utils.time_utils import now_msk, today_msk_str
 
 from .constants import (
     ADMIN_MAIN, ADMIN_SHIFTS, ADMIN_CALENDAR, ADMIN_DAY_REPORT,
@@ -124,14 +125,14 @@ async def show_main(update, context, message_id=None, notice=None) -> int:
 
 async def show_shifts(update, context, message_id=None, notice=None) -> int:
     clear_temp(context)
-    # Показываем отчёт за сегодня (используем ту же функцию, что и для даты)
-    today = datetime.now().strftime("%Y-%m-%d")
+    # Используем МСК-дату
+    today = today_msk_str()
     return await show_day_report(update, context, today, message_id, notice)
 
 
 async def show_calendar(update, context, message_id=None, notice=None) -> int:
     clear_temp(context)
-    now = datetime.now()
+    now = now_msk()  # МСК
     year = context.user_data.get("calendar_year", now.year)
     month = context.user_data.get("calendar_month", now.month)
     context.user_data["calendar_year"] = year
@@ -403,8 +404,8 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return await show_edit_locations(update, context, message_id)
 
     if data == CB_PREV_MONTH:
-        year = context.user_data.get("calendar_year", datetime.now().year)
-        month = context.user_data.get("calendar_month", datetime.now().month)
+        year = context.user_data.get("calendar_year", now_msk().year)
+        month = context.user_data.get("calendar_month", now_msk().month)
         if month == 1:
             month, year = 12, year - 1
         else:
@@ -413,8 +414,8 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return await show_calendar(update, context, message_id)
 
     if data == CB_NEXT_MONTH:
-        year = context.user_data.get("calendar_year", datetime.now().year)
-        month = context.user_data.get("calendar_month", datetime.now().month)
+        year = context.user_data.get("calendar_year", now_msk().year)
+        month = context.user_data.get("calendar_month", now_msk().month)
         if month == 12:
             month, year = 1, year + 1
         else:
