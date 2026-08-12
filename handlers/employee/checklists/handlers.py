@@ -187,6 +187,7 @@ async def show_item_detail(
         item_id,
         bool(item.get("completed")),
         bool(item.get("has_photo")),
+        bool(item.get("requires_photo")),   # Добавлен параметр
     )
 
     await render(update, context, text, kb, message_id)
@@ -225,6 +226,7 @@ async def send_new_item_detail(
         item_id,
         bool(item.get("completed")),
         bool(item.get("has_photo")),
+        bool(item.get("requires_photo")),   # Добавлен параметр
     )
 
     await context.bot.send_message(
@@ -324,6 +326,12 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         except (TypeError, ValueError):
             await answer(query)
             return await show_current_checklist(update, context, message_id)
+
+        # Проверяем, требует ли задача фото и ещё не выполнена
+        item = get_item_by_id(user.id, item_id)
+        if item and item.get("requires_photo") and not item.get("completed"):
+            await answer(query, "Эта задача требует фото. Используйте кнопку 'Выполнить с фото'.", show_alert=True)
+            return await show_item_detail(update, context, item_id, message_id)
 
         new_state = toggle_item(user.id, item_id)
 

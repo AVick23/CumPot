@@ -52,13 +52,15 @@ def checklist_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def item_detail_keyboard(item_id: int, is_completed: bool, has_photo: bool = False) -> InlineKeyboardMarkup:
+def item_detail_keyboard(item_id: int, is_completed: bool, has_photo: bool = False, requires_photo: bool = False) -> InlineKeyboardMarkup:
     rows = []
 
     if not is_completed:
-        rows.append([
-            InlineKeyboardButton("✅ Выполнить", callback_data=f"{CB_TOGGLE_PREFIX}{item_id}")
-        ])
+        # Если задача требует фото, не показываем кнопку "Выполнить" (без фото)
+        if not requires_photo:
+            rows.append([
+                InlineKeyboardButton("✅ Выполнить", callback_data=f"{CB_TOGGLE_PREFIX}{item_id}")
+            ])
         rows.append([
             InlineKeyboardButton("📷 Выполнить с фото", callback_data=f"{CB_PHOTO_PREFIX}{item_id}")
         ])
