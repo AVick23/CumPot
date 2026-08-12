@@ -206,7 +206,15 @@ def get_shared_progress(location: str, date: str) -> dict[int, dict]:
             """,
             (location, date)
         ).fetchall()
-        return {row["item_id"]: dict(row) for row in rows}
+        result = {row["item_id"]: dict(row) for row in rows}
+        if result:
+            # Логируем первую запись, чтобы увидеть ключи
+            first_item = next(iter(result.values()))
+            logger.info(f"get_shared_progress: keys in result: {list(first_item.keys())}")
+            logger.info(f"get_shared_progress: sample photo_file_ids = {first_item.get('photo_file_ids')}")
+        else:
+            logger.info(f"get_shared_progress: no records for {location} {date}")
+        return result
 
 
 def save_shared_photo(location: str, date: str, item_id: int, file_id: str, channel_message_id: int, completed_by: int = None):

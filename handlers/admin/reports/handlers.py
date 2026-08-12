@@ -104,15 +104,17 @@ async def show_location_media(update: Update, context: ContextTypes.DEFAULT_TYPE
     for item in loc_data.get("items", []):
         media = item.get("media_items", [])
         if media:
-            logger.info(f"📦 Задача {item.get('id')} имеет {len(media)} вложений")
+            logger.info(f"📦 Задача {item.get('id')} имеет {len(media)} вложений: {media}")
             all_media.extend(media)
+        else:
+            logger.info(f"ℹ️ Задача {item.get('id')} не имеет вложений")
+
+    logger.info(f"📦 Всего вложений для отображения: {len(all_media)}")
 
     if not all_media:
         logger.warning(f"⚠️ Нет вложений для локации {location}")
         await render(update, context, "Нет вложений.", None, message_id)
         return ADMIN_DAY_REPORT
-
-    logger.info(f"📦 Всего вложений для отображения: {len(all_media)}")
 
     if len(all_media) > 10:
         all_media = all_media[:10]

@@ -137,28 +137,30 @@ def get_day_report(date_str: str) -> dict:
             media_items = []
             if progress:
                 raw = progress.get("photo_file_ids")
-                logger.debug(f"Админ: item {item['id']} raw photo_file_ids = {raw}")
+                logger.info(f"Админ: item {item['id']} raw photo_file_ids = {raw}")  # INFO вместо DEBUG
                 if raw:
                     try:
                         media_items = json.loads(raw)
-                        logger.debug(f"Админ: item {item['id']} parsed media_items = {media_items}")
+                        logger.info(f"Админ: item {item['id']} parsed media_items = {media_items}")
                         if media_items and isinstance(media_items[0], str):
                             media_items = [{"type": "photo", "file_id": f} for f in media_items]
-                            logger.debug("Админ: преобразовано из списка строк в объекты")
+                            logger.info("Админ: преобразовано из списка строк в объекты")
                     except Exception as e:
                         logger.warning(f"Админ: item {item['id']} failed to parse photo_file_ids: {e}")
                         media_items = []
                 elif progress.get("photo_file_id"):
                     media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
-                    logger.debug(f"Админ: item {item['id']} using old photo_file_id")
+                    logger.info(f"Админ: item {item['id']} using old photo_file_id")
             else:
-                logger.debug(f"Админ: item {item['id']} no progress")
+                logger.info(f"Админ: item {item['id']} no progress")
 
             item["media_items"] = media_items
             item["media_count"] = len(media_items)
 
             if item["media_count"] > 0:
                 logger.info(f"✅ Задача {item['id']} имеет {item['media_count']} вложений")
+            else:
+                logger.info(f"ℹ️ Задача {item['id']} не имеет вложений")
 
             total += 1
             if completed:
