@@ -8,7 +8,7 @@ from .constants import (
     CB_NOTIF_FLAG_PREFIX, CB_FLAGS_SKIP,
     LOCATIONS, DAILY_CATEGORIES, CATEGORY_LABELS, WEEKDAYS_SHORT,
 )
-from ..utils import clip
+from .utils import clip   # исправлено: из локального utils, а не из родительского
 
 
 def edit_location_keyboard(counts: dict[str, int]) -> InlineKeyboardMarkup:
