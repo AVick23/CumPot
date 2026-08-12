@@ -1,5 +1,5 @@
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 from utils.channel import send_photo_to_channel
@@ -45,7 +45,7 @@ from .keyboards import (
     photo_prompt_keyboard,
 )
 
-# Определяем MAIN_MENU локально (значение 3 соответствует menu/constants.py)
+# MAIN_MENU = 3 (совпадает с menu/constants.py)
 MAIN_MENU = 3
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,6 @@ async def show_categories(
 
     items = get_checklist_items(user.id)
     if items is None:
-        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
         await render(update, context, "Сначала начните смену.", kb, message_id)
         return CATEGORY_SELECT
@@ -73,7 +72,6 @@ async def show_categories(
         text = "📋 Чек-лист\n\nНа сегодня задач нет."
         if notice:
             text = f"{notice}\n\n{text}"
-        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
         await render(update, context, text, kb, message_id)
         return set_state(context, CATEGORY_SELECT)
@@ -536,7 +534,6 @@ async def show_progress(
 
     if total == 0:
         text = "📊 Прогресс\n\nНа сегодня задач нет."
-        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
     else:
         bar = progress_bar(done, total)

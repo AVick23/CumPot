@@ -1,28 +1,26 @@
 import logging
 from telegram.error import BadRequest
-from utils.time_utils import today_msk_str, time_msk_str
+from utils.time_utils import today_msk_str, time_msk_str, now_msk
 from db.users import get_user
 from db.shifts import get_active_shift
 from db.checklist import (
     get_items_for_location_and_day,
-    save_progress,
-    get_progress_for_user_date,
-    save_progress_photo,
-    get_photos_for_user_date,
+    get_shared_progress,
+    save_shared_progress,
+    save_shared_photo,
 )
-from .constants import CATEGORY_NAMES, CATEGORY_ORDER, MSG_LIMIT
+from .constants import CATEGORY_NAMES, CATEGORY_ORDER, MSG_LIMIT, LOCATIONS
 
 logger = logging.getLogger(__name__)
 
-
-# ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С СОСТОЯНИЯМИ ----------
+# ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
 def set_state(context, state):
     context.user_data["employee_state"] = state
     return state
 
 
 def current_state(context):
-    return context.user_data.get("employee_state", 3)  # MAIN_MENU
+    return context.user_data.get("employee_state", 3)
 
 
 def truncate_text(text, limit=MSG_LIMIT):
@@ -84,27 +82,28 @@ async def cleanup_message(context, chat_id, message_id, fallback_text="✅ Го�
         pass
 
 
-# ---------- РАБОТА С ЧЕК-ЛИСТАМИ ----------
+# ---------- РАБОТА С ЧЕК-ЛИСТАМИ (ОБЩИЙ ПРОГРЕСС) ----------
 def get_checklist_items(user_id):
     shift = get_active_shift(user_id)
     if not shift:
         return None
     location = shift["location"]
-    day_of_week = now_msk().weekday()  # нужно импортировать now_msk
-    date_str = today_msk_str()
+    date = today_msk_str()
+    day_of_week = now_msk().weekday()
+
     items = get_items_for_location_and_day(location, day_of_week)
     if not items:
         return []
-    progress = get_progress_for_user_date(user_id, date_str)
-    progress_dict = {p["item_id"]: p["completed"] for p in progress}
-    photos = get_photos_for_user_date(user_id, date_str)
+
+    shared_progress = get_shared_progress(location, date)
+
     result = []
     for item in items:
         item = dict(item)
-        item["completed"] = progress_dict.get(item["id"], 0) == 1
-        photo = photos.get(item["id"])
-        item["has_photo"] = bool(photo)
-        item["photo_file_id"] = photo["file_id"] if photo else None
+        progress = shared_progress.get(item["id"])
+        item["completed"] = progress.get("completed", 0) == 1 if progress else False
+        item["has_photo"] = bool(progress and progress.get("photo_file_id"))
+        item["photo_file_id"] = progress.get("photo_file_id") if progress else None
         result.append(item)
     return result
 
@@ -141,18 +140,31 @@ def get_item_by_id(user_id, item_id):
 
 
 def toggle_item(user_id, item_id):
-    item = get_item_by_id(user_id, item_id)
-    if item is None:
+    shift = get_active_shift(user_id)
+    if not shift:
         return None
-    new_state = not bool(item.get("completed"))
-    save_progress(user_id, item_id, new_state)
+    location = shift["location"]
+    date = today_msk_str()
+
+    shared_progress = get_shared_progress(location, date)
+    progress = shared_progress.get(item_id)
+    current_state = progress.get("completed", 0) == 1 if progress else False
+    new_state = not current_state
+
+    save_shared_progress(location, date, item_id, new_state, user_id)
     return new_state
 
 
 def attach_photo_to_task(user_id, item_id, file_id, channel_message_id, mark_done=False):
+    shift = get_active_shift(user_id)
+    if not shift:
+        return
+    location = shift["location"]
+    date = today_msk_str()
+
     if mark_done:
-        save_progress(user_id, item_id, True)
-    save_progress_photo(user_id, item_id, file_id, channel_message_id)
+        save_shared_progress(location, date, item_id, True, user_id)
+    save_shared_photo(location, date, item_id, file_id, channel_message_id, user_id)
 
 
 def get_user_progress_summary(user_id):
@@ -189,7 +201,6 @@ def item_detail_text(item: dict) -> str:
     status_text = "✅ Выполнено" if item.get("completed") else "⚪️ Не выполнено"
     category_label = CATEGORY_NAMES.get(item.get("category"), item.get("category"))
     photo_text = "🖼 Фото прикреплено" if item.get("has_photo") else "🖼 Фото: нет"
-
     return (
         "📌 Задача\n\n"
         f"{item.get('text')}\n\n"
@@ -201,19 +212,14 @@ def item_detail_text(item: dict) -> str:
 
 def build_photo_caption(user_id: int, item: dict) -> str:
     user_db = get_user(user_id)
-
     full_name = "Сотрудник"
     position_label = "—"
-
     if user_db:
         full_name = user_db.get("full_name") or "Сотрудник"
         position = user_db.get("position")
-        from .constants import LOCATIONS  # импортируем локально, чтобы избежать цикла
         position_label = LOCATIONS.get(position, position or "—")
-
     today = today_msk_str()
     now_time = time_msk_str()
-
     caption = (
         "📷 Фото к задаче\n\n"
         f"👤 {full_name}\n"
@@ -222,12 +228,6 @@ def build_photo_caption(user_id: int, item: dict) -> str:
         f"🕒 {now_time}\n\n"
         f"Задача:\n{item.get('text')}"
     )
-
     if len(caption) > 1000:
         caption = caption[:1000] + "…"
-
     return caption
-
-
-# Чтобы использовать now_msk, импортируем из time_utils
-from utils.time_utils import now_msk

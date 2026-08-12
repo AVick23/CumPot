@@ -11,11 +11,6 @@ def get_connection():
     return conn
 
 
-def _get_columns(conn, table_name: str) -> set[str]:
-    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-    return {row["name"] for row in rows}
-
-
 def init_db():
     with get_connection() as conn:
         # Таблица пользователей
@@ -57,37 +52,25 @@ def init_db():
             )
         """)
 
-        # Таблица прогресса выполнения
+        # НОВАЯ ТАБЛИЦА ОБЩЕГО ПРОГРЕССА (без привязки к пользователю)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS checklist_progress (
+            CREATE TABLE IF NOT EXISTS checklist_shared_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                item_id INTEGER,
-                date TEXT,
+                location TEXT NOT NULL,
+                date TEXT NOT NULL,
+                item_id INTEGER NOT NULL,
                 completed BOOLEAN DEFAULT 0,
-                completed_at TEXT
+                completed_at TEXT,
+                completed_by INTEGER,
+                photo_file_id TEXT,
+                photo_channel_message_id INTEGER,
+                FOREIGN KEY (item_id) REFERENCES checklist_items(id)
             )
         """)
-
-        # ✅ НОВАЯ ТАБЛИЦА ДЛЯ ФОТО
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS checklist_progress_photos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                item_id INTEGER,
-                date TEXT,
-                file_id TEXT,
-                channel_message_id INTEGER,
-                created_at TEXT
-            )
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_shared_progress
+            ON checklist_shared_progress(location, date, item_id)
         """)
-
-        # Безопасная миграция для старых баз
-        user_columns = _get_columns(conn, "users")
-        if "full_name" not in user_columns:
-            conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT")
-        if "position" not in user_columns:
-            conn.execute("ALTER TABLE users ADD COLUMN position TEXT")
 
         conn.commit()
 

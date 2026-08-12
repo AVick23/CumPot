@@ -1,9 +1,12 @@
 from . import get_connection
-from utils.time_utils import today_msk_str, time_msk_str
+from utils.time_utils import today_msk_str, time_msk_str, now_msk
 import logging
 
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------
+# СТАРТОВЫЕ ЧЕК-ЛИСТЫ (импорт при создании БД)
+# ------------------------------------------------------------
 BAR_DAILY_ITEMS = [
     {"category": "opening", "text": "Включить свет и электричество (рубильники 10-16, 23-29)"},
     {"category": "opening", "text": "Включить бойлер, кофемашину, кофемолку, ледогенератор, свет витрины, кассу, колонку"},
@@ -61,7 +64,6 @@ KITCHEN_WEEKLY_ITEMS = {
 
 
 def _clean(item: dict, key: str) -> str:
-    """Безопасное извлечение значения с учётом возможных пробелов в ключах"""
     return item.get(key, item.get(f"{key} ", "")).strip()
 
 
@@ -73,31 +75,26 @@ def import_checklist_items():
             return
 
         logger.info("Начинаю импорт стартовых чек-листов...")
-
         for item in BAR_DAILY_ITEMS:
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
                 ('daily', 'bar', _clean(item, 'category'), None, 0, _clean(item, 'text'))
             )
-
         for item in KITCHEN_DAILY_ITEMS:
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
                 ('daily', 'kitchen', _clean(item, 'category'), None, 0, _clean(item, 'text'))
             )
-
         for day, text in BAR_WEEKLY_ITEMS.items():
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
                 ('weekly', 'bar', 'weekly', int(day), 0, text.strip())
             )
-
         for day, text in KITCHEN_WEEKLY_ITEMS.items():
             conn.execute(
                 "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
                 ('weekly', 'kitchen', 'weekly', int(day), 0, text.strip())
             )
-
         conn.commit()
         logger.info("Импорт чек-листов успешно завершён.")
 
@@ -121,123 +118,100 @@ def get_items_for_location_and_day(location: str, day_of_week: int) -> list[dict
         return [dict(row) for row in rows]
 
 
-def save_progress(user_id: int, item_id: int, completed: bool = True):
-    date = today_msk_str()
+# ------------------------------------------------------------
+# ОБЩИЙ ПРОГРЕСС (для локации и даты, без привязки к пользователю)
+# ------------------------------------------------------------
+def save_shared_progress(location: str, date: str, item_id: int, completed: bool = True, completed_by: int = None):
     completed_at = time_msk_str() if completed else None
-
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT id FROM checklist_progress WHERE user_id = ? AND item_id = ? AND date = ?",
-            (user_id, item_id, date)
+        existing = conn.execute(
+            "SELECT id FROM checklist_shared_progress WHERE location = ? AND date = ? AND item_id = ?",
+            (location, date, item_id)
         ).fetchone()
-
-        if row:
+        if existing:
             conn.execute(
-                "UPDATE checklist_progress SET completed = ?, completed_at = ? WHERE id = ?",
-                (1 if completed else 0, completed_at, row['id'])
+                """
+                UPDATE checklist_shared_progress
+                SET completed = ?, completed_at = ?, completed_by = ?
+                WHERE id = ?
+                """,
+                (1 if completed else 0, completed_at, completed_by, existing["id"])
             )
         else:
             conn.execute(
-                "INSERT INTO checklist_progress (user_id, item_id, date, completed, completed_at) VALUES (?, ?, ?, ?, ?)",
-                (user_id, item_id, date, 1 if completed else 0, completed_at)
+                """
+                INSERT INTO checklist_shared_progress
+                (location, date, item_id, completed, completed_at, completed_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (location, date, item_id, 1 if completed else 0, completed_at, completed_by)
             )
         conn.commit()
 
 
-def get_progress_for_user_date(user_id: int, date: str) -> list[dict]:
+def get_shared_progress(location: str, date: str) -> dict[int, dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT item_id, completed, completed_at FROM checklist_progress WHERE user_id = ? AND date = ?",
-            (user_id, date)
+            """
+            SELECT item_id, completed, completed_at, completed_by,
+                   photo_file_id, photo_channel_message_id
+            FROM checklist_shared_progress
+            WHERE location = ? AND date = ?
+            """,
+            (location, date)
         ).fetchall()
+        return {row["item_id"]: dict(row) for row in rows}
+
+
+def save_shared_photo(location: str, date: str, item_id: int, file_id: str, channel_message_id: int, completed_by: int = None):
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM checklist_shared_progress WHERE location = ? AND date = ? AND item_id = ?",
+            (location, date, item_id)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE checklist_shared_progress
+                SET photo_file_id = ?, photo_channel_message_id = ?
+                WHERE id = ?
+                """,
+                (file_id, channel_message_id, existing["id"])
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO checklist_shared_progress
+                (location, date, item_id, completed, completed_at, completed_by, photo_file_id, photo_channel_message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (location, date, item_id, 0, None, completed_by, file_id, channel_message_id)
+            )
+        conn.commit()
+
+
+def delete_shared_progress(location: str, date: str, item_id: int):
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM checklist_shared_progress WHERE location = ? AND date = ? AND item_id = ?",
+            (location, date, item_id)
+        )
+        conn.commit()
+
+
+# ------------------------------------------------------------
+# РЕДАКТОР ЧЕК-ЛИСТОВ
+# ------------------------------------------------------------
+def get_all_items() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM checklist_items ORDER BY location, category, sort_order, id").fetchall()
         return [dict(row) for row in rows]
 
 
-def save_progress_photo(
-    user_id: int,
-    item_id: int,
-    file_id: str,
-    channel_message_id: int
-):
-    """
-    Сохраняет фото, привязанное к задаче за сегодня.
-    Если фото уже было — заменяет его.
-    """
-    date = today_msk_str()
-    created_at = time_msk_str()
-
+def get_item_by_id(item_id: int) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT id
-            FROM checklist_progress_photos
-            WHERE user_id = ? AND item_id = ? AND date = ?
-            """,
-            (user_id, item_id, date)
-        ).fetchone()
-
-        if row:
-            conn.execute(
-                """
-                UPDATE checklist_progress_photos
-                SET file_id = ?, channel_message_id = ?, created_at = ?
-                WHERE id = ?
-                """,
-                (file_id, channel_message_id, created_at, row['id'])
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO checklist_progress_photos
-                (user_id, item_id, date, file_id, channel_message_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (user_id, item_id, date, file_id, channel_message_id, created_at)
-            )
-
-        conn.commit()
-
-
-def get_progress_photo(user_id: int, item_id: int, date: str) -> dict | None:
-    with get_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM checklist_progress_photos
-            WHERE user_id = ? AND item_id = ? AND date = ?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (user_id, item_id, date)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM checklist_items WHERE id = ?", (item_id,)).fetchone()
         return dict(row) if row else None
-
-
-def get_photos_for_user_date(user_id: int, date: str) -> dict[int, dict]:
-    """
-    Возвращает фото пользователя за дату.
-    Формат:
-    {
-        item_id: photo_row,
-        ...
-    }
-    """
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM checklist_progress_photos
-            WHERE user_id = ? AND date = ?
-            """,
-            (user_id, date)
-        ).fetchall()
-
-        result = {}
-        for row in rows:
-            row = dict(row)
-            result[row["item_id"]] = row
-
-        return result
 
 
 def add_checklist_item(item_type: str, location: str, category: str, day_of_week: int | None, text: str):
@@ -247,7 +221,6 @@ def add_checklist_item(item_type: str, location: str, category: str, day_of_week
             (location, category)
         ).fetchone()
         order = (row['max_order'] or 0) + 1
-
         conn.execute(
             "INSERT INTO checklist_items (type, location, category, day_of_week, sort_order, text) VALUES (?, ?, ?, ?, ?, ?)",
             (item_type, location, category, day_of_week, order, text.strip())
@@ -265,11 +238,3 @@ def delete_checklist_item(item_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM checklist_items WHERE id = ?", (item_id,))
         conn.commit()
-
-
-def get_all_items() -> list[dict]:
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM checklist_items ORDER BY location, category, sort_order, id"
-        ).fetchall()
-        return [dict(row) for row in rows]

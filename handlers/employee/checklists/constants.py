@@ -17,11 +17,6 @@ CB_BACK_MENU = "back_menu"
 CB_BACK_CATEGORIES = "back_cats"
 
 # UI
-LOCATIONS = {
-    "bar": "🍸 Бар",
-    "kitchen": "🍳 Кухня",
-}
-
 CATEGORY_NAMES = {
     "opening": "☀️ Открытие",
     "daytime": "🌤 В течение дня",
@@ -29,4 +24,8 @@ CATEGORY_NAMES = {
     "weekly": "📆 Недельные",
 }
 CATEGORY_ORDER = ["opening", "daytime", "closing", "weekly"]
+LOCATIONS = {
+    "bar": "🍸 Бар",
+    "kitchen": "🍳 Кухня",
+}
 MSG_LIMIT = 3800
