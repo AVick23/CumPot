@@ -1,6 +1,9 @@
 from telegram.ext import ContextTypes
 from telegram import InputMediaPhoto, InputMediaVideo
 from telegram.error import TelegramError
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ID закрытого канала, куда будут отправляться фото и видео
 PHOTO_CHANNEL_ID = -1004343960839
@@ -17,11 +20,13 @@ async def send_photo_to_channel(
     if caption and len(caption) > 1000:
         caption = caption[:1000] + "…"
 
+    logger.info(f"📤 Отправка одиночного фото в канал {PHOTO_CHANNEL_ID}, file_id={photo_file_id[:20]}...")
     message = await context.bot.send_photo(
         chat_id=PHOTO_CHANNEL_ID,
         photo=photo_file_id,
         caption=caption,
     )
+    logger.info(f"✅ Фото отправлено, message_id={message.message_id}")
     return message.message_id
 
 
@@ -35,10 +40,14 @@ async def send_media_group_to_channel(
     Поддерживает фото и видео.
     """
     if not media_items:
+        logger.warning("⚠️ Попытка отправить пустой альбом")
         return []
+
+    logger.info(f"📤 Отправка альбома в канал {PHOTO_CHANNEL_ID}, количество файлов: {len(media_items)}")
 
     # Ограничение Telegram: не более 10 элементов в одной группе
     if len(media_items) > 10:
+        logger.warning(f"⚠️ Альбом содержит {len(media_items)} файлов, обрезаем до 10")
         media_items = media_items[:10]
 
     media_group = []
@@ -61,6 +70,7 @@ async def send_media_group_to_channel(
         media_group.append(media)
 
     if not media_group:
+        logger.warning("⚠️ Не удалось сформировать медиагруппу")
         return []
 
     try:
@@ -68,7 +78,9 @@ async def send_media_group_to_channel(
             chat_id=PHOTO_CHANNEL_ID,
             media=media_group,
         )
-        return [msg.message_id for msg in messages]
+        message_ids = [msg.message_id for msg in messages]
+        logger.info(f"✅ Альбом отправлен, получены message_id: {message_ids}")
+        return message_ids
     except TelegramError as e:
-        # Логируем ошибку и пробрасываем дальше для обработки на верхнем уровне
+        logger.error(f"❌ Ошибка отправки альбома: {e}")
         raise

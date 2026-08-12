@@ -35,8 +35,9 @@ async def show_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE, mess
 
 async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, date_str: str,
                           message_id=None, notice=None) -> int:
+    logger.info(f"📊 Запрос отчёта за {date_str}")
     report = get_day_report(date_str)
-    context.user_data["report_date"] = date_str  # для последующего показа вложений
+    context.user_data["report_date"] = date_str
 
     lines = [f"📊 Отчёт за {format_date_ru(date_str)}", ""]
 
@@ -65,14 +66,12 @@ async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, da
                 cat_label = CATEGORY_LABELS.get(cat, cat)
                 cat_done = sum(1 for i in cat_items if i.get("completed"))
                 lines.append(f"  {cat_label}: {cat_done}/{len(cat_items)}")
-                # Проверяем наличие медиа и добавляем в строки
                 for item in cat_items:
                     if item.get("media_count", 0) > 0:
                         if loc_key == "bar":
                             has_bar_media = True
                         else:
                             has_kitchen_media = True
-                        # Добавляем иконку с количеством вложений
                         text_preview = item.get("text", "")[:35]
                         if len(item.get("text", "")) > 35:
                             text_preview += "…"
@@ -86,30 +85,38 @@ async def show_day_report(update: Update, context: ContextTypes.DEFAULT_TYPE, da
     if notice:
         text = f"{notice}\n\n{text}"
 
+    logger.info(f"🟢 has_bar_media={has_bar_media}, has_kitchen_media={has_kitchen_media}")
     kb = day_report_keyboard(has_bar_media, has_kitchen_media)
     await render(update, context, text, kb, message_id)
     return ADMIN_DAY_REPORT
 
 
 async def show_location_media(update: Update, context: ContextTypes.DEFAULT_TYPE, location: str, date_str: str, message_id=None) -> int:
+    logger.info(f"👁 Админ запросил вложения для локации {location} за {date_str}")
     report = get_day_report(date_str)
     loc_data = report.get(location)
     if not loc_data:
+        logger.warning(f"⚠️ Нет данных по локации {location}")
         await render(update, context, "Нет данных по этой локации.", None, message_id)
         return ADMIN_DAY_REPORT
 
-    # Собираем все медиа из задач
     all_media = []
     for item in loc_data.get("items", []):
-        all_media.extend(item.get("media_items", []))
+        media = item.get("media_items", [])
+        if media:
+            logger.info(f"📦 Задача {item.get('id')} имеет {len(media)} вложений")
+            all_media.extend(media)
 
     if not all_media:
+        logger.warning(f"⚠️ Нет вложений для локации {location}")
         await render(update, context, "Нет вложений.", None, message_id)
         return ADMIN_DAY_REPORT
 
-    # Ограничиваем 10 файлами (лимит Telegram)
+    logger.info(f"📦 Всего вложений для отображения: {len(all_media)}")
+
     if len(all_media) > 10:
         all_media = all_media[:10]
+        logger.info("✂️ Обрезано до 10 вложений")
 
     media_group = []
     for i, media in enumerate(all_media):
@@ -126,9 +133,10 @@ async def show_location_media(update: Update, context: ContextTypes.DEFAULT_TYPE
     if media_group:
         try:
             await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
+            logger.info(f"✅ Вложения отправлены админу")
             notice = "Вложения отправлены выше."
         except Exception as e:
-            logger.error(f"Failed to send media group: {e}")
+            logger.error(f"❌ Ошибка отправки вложений админу: {e}")
             notice = "Не удалось отправить вложения."
     else:
         notice = "Нет подходящих медиа."
@@ -138,9 +146,16 @@ async def show_location_media(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
     data = query.data
     message_id = query.message.message_id if query.message else None
+
+    logger.info(f"🔄 Получен callback: {data}")
+
+    if data == "noop":
+        await query.answer()
+        return _current_state(context)
+
+    await query.answer()
 
     if data == CB_HOME:
         from ..menu.handlers import show_main
@@ -175,14 +190,17 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         try:
             date_str = data.split(":", 1)[1]
             date_str = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+            logger.info(f"📅 Выбран день: {date_str}")
             return await show_day_report(update, context, date_str, message_id)
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ Ошибка разбора даты: {e}")
             return await show_calendar(update, context, message_id)
 
     if data.startswith("show_media:"):
         location = data.split(":", 1)[1]
         date_str = context.user_data.get("report_date")
         if not date_str:
+            logger.warning("⚠️ Дата не найдена для показа вложений")
             return await show_calendar(update, context, message_id, notice="Дата не найдена.")
         return await show_location_media(update, context, location, date_str, message_id)
 

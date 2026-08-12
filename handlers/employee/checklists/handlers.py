@@ -373,8 +373,10 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             return await show_current_checklist(update, context, message_id)
 
         item = get_item_by_id(user.id, item_id)
+        logger.info(f"👁 Запрос просмотра вложений для задачи {item_id}")
 
         if not item or not item.get("media_items"):
+            logger.warning(f"⚠️ Вложения не найдены для задачи {item_id}")
             await answer(query, "Вложения не найдены")
             return await show_item_detail(update, context, item_id, message_id)
 
@@ -382,9 +384,10 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         if chat_id:
             try:
                 media_items = item.get("media_items", [])
-                # Ограничиваем 10 элементами для альбома
+                logger.info(f"📦 Количество вложений: {len(media_items)}")
                 if len(media_items) > 10:
                     media_items = media_items[:10]
+                    logger.info("✂️ Обрезано до 10 вложений")
 
                 from telegram import InputMediaPhoto, InputMediaVideo
                 media_group = []
@@ -400,12 +403,13 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                     media_group.append(media_obj)
 
                 if media_group:
+                    logger.info(f"📤 Отправка {len(media_group)} вложений пользователю")
                     await context.bot.send_media_group(chat_id=chat_id, media=media_group)
                     await answer(query, "Вложения отправлены выше")
                 else:
                     await answer(query, "Нет подходящих вложений для отправки")
             except Exception as e:
-                logger.warning("View media failed: %s", e)
+                logger.error(f"❌ Ошибка отправки вложений: {e}")
                 await answer(query, "Не удалось отправить вложения")
         else:
             await answer(query, "Не удалось отправить вложения")
@@ -448,8 +452,11 @@ async def _process_media_items(update: Update, context: ContextTypes.DEFAULT_TYP
     mark_done = bool(meta.get("mark_done"))
     prompt_message_id = meta.get("prompt_message_id")
 
+    logger.info(f"📥 Обработка медиа для задачи {item_id}, количество файлов: {len(items)}, mark_done={mark_done}")
+
     task_item = get_item_by_id(user.id, item_id)
     if not task_item:
+        logger.warning(f"⚠️ Задача {item_id} не найдена")
         context.user_data.pop("await_photo", None)
         await context.bot.send_message(chat_id=chat_id, text="⚠️ Задача не найдена.")
         return MAIN_MENU
@@ -460,8 +467,9 @@ async def _process_media_items(update: Update, context: ContextTypes.DEFAULT_TYP
     # Отправляем альбом в канал
     try:
         message_ids = await send_media_group_to_channel(context, items, caption)
+        logger.info(f"📨 Альбом отправлен в канал, message_ids: {message_ids}")
     except Exception as e:
-        logger.error("Failed to send media group to channel: %s", e)
+        logger.error(f"❌ Не удалось отправить альбом в канал: {e}")
         await context.bot.send_message(
             chat_id=chat_id,
             text="⚠️ Не удалось загрузить альбом в канал. Попробуйте отправить файлы по одному."
@@ -476,6 +484,7 @@ async def _process_media_items(update: Update, context: ContextTypes.DEFAULT_TYP
         channel_message_ids=message_ids,
         mark_done=mark_done,
     )
+    logger.info(f"💾 Медиа сохранены для задачи {item_id}")
 
     context.user_data.pop("await_photo", None)
     await cleanup_message(context, chat_id, prompt_message_id, "✅ Альбом получен")
@@ -493,8 +502,11 @@ async def _handle_single_media(update: Update, context: ContextTypes.DEFAULT_TYP
     mark_done = bool(meta.get("mark_done"))
     prompt_message_id = meta.get("prompt_message_id")
 
+    logger.info(f"📥 Обработка одиночного медиа для задачи {item_id}, mark_done={mark_done}")
+
     task_item = get_item_by_id(user.id, item_id)
     if not task_item:
+        logger.warning(f"⚠️ Задача {item_id} не найдена")
         context.user_data.pop("await_photo", None)
         await context.bot.send_message(chat_id=chat_id, text="⚠️ Задача не найдена.")
         return MAIN_MENU
@@ -502,6 +514,7 @@ async def _handle_single_media(update: Update, context: ContextTypes.DEFAULT_TYP
     # Определяем тип медиа
     media_item = _extract_media_item(update.message)
     if not media_item:
+        logger.warning("⚠️ Не удалось распознать файл")
         await context.bot.send_message(
             chat_id=chat_id,
             text="⚠️ Не удалось распознать файл. Отправьте фото или видео."
@@ -512,8 +525,9 @@ async def _handle_single_media(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         caption = build_photo_caption(user.id, task_item)
         message_id = await send_photo_to_channel(context, media_item["file_id"], caption)
+        logger.info(f"📨 Одиночный файл отправлен в канал, message_id={message_id}")
     except Exception as e:
-        logger.error("Failed to send photo to channel: %s", e)
+        logger.error(f"❌ Не удалось отправить файл в канал: {e}")
         await context.bot.send_message(
             chat_id=chat_id,
             text="⚠️ Не удалось загрузить файл в канал. Попробуйте ещё раз."
@@ -528,6 +542,7 @@ async def _handle_single_media(update: Update, context: ContextTypes.DEFAULT_TYP
         channel_message_ids=[message_id],
         mark_done=mark_done,
     )
+    logger.info(f"💾 Медиа сохранено для задачи {item_id}")
 
     context.user_data.pop("await_photo", None)
     await cleanup_message(context, chat_id, prompt_message_id, "✅ Файл получен")
@@ -547,6 +562,7 @@ async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     meta = context.user_data.get("await_photo")
     if not meta:
+        logger.warning("⚠️ Получено фото, но нет активного ожидания")
         await context.bot.send_message(
             chat_id=chat_id,
             text="Начните заново с /start."
@@ -555,8 +571,10 @@ async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     # Проверяем, является ли сообщение частью альбома
     if _is_album_message(update.message):
+        logger.info(f"📸 Обнаружен альбом, media_group_id={update.message.media_group_id}")
         return await _handle_album_part(update, context, meta)
     else:
+        logger.info("📸 Получено одиночное медиа")
         return await _handle_single_media(update, context, meta)
 
 
@@ -576,18 +594,20 @@ async def _handle_album_part(update: Update, context: ContextTypes.DEFAULT_TYPE,
             "last_update": update,
             "timer_started": False,
         }
+        logger.info(f"🔄 Начало сбора альбома {media_group_id}")
 
     # Добавляем текущий файл
     item = _extract_media_item(update.message)
     if item:
         _album_buffer[media_group_id]["items"].append(item)
         _album_buffer[media_group_id]["last_update"] = update
+        logger.info(f"➕ Добавлен файл в альбом {media_group_id}, всего: {len(_album_buffer[media_group_id]['items'])}")
 
     # Если таймер ещё не запущен, запускаем его
     if not _album_buffer[media_group_id]["timer_started"]:
         _album_buffer[media_group_id]["timer_started"] = True
-        # Планируем обработку через 1.5 секунды
         asyncio.create_task(_process_album_after_delay(media_group_id, context))
+        logger.info(f"⏳ Запущен таймер для альбома {media_group_id}")
 
     return AWAIT_TASK_PHOTO
 
@@ -596,27 +616,31 @@ async def _process_album_after_delay(media_group_id: str, context: ContextTypes.
     """Обрабатывает собранный альбом после задержки."""
     global _album_buffer
 
-    await asyncio.sleep(1.5)  # ждём, пока придут все части альбома
+    await asyncio.sleep(1.5)
 
     album_data = _album_buffer.pop(media_group_id, None)
     if not album_data:
+        logger.warning(f"⚠️ Альбом {media_group_id} не найден в буфере")
         return
 
     items = album_data.get("items", [])
     if not items:
+        logger.warning(f"⚠️ Альбом {media_group_id} пуст")
         return
 
     update = album_data.get("last_update")
     meta = album_data.get("meta")
 
     if not update or not meta:
+        logger.warning(f"⚠️ Альбом {media_group_id} не имеет обновления или мета")
         return
 
-    # Обрабатываем собранные файлы
+    logger.info(f"📦 Альбом {media_group_id} собран, файлов: {len(items)}")
+
     try:
         await _process_media_items(update, context, meta, items)
     except Exception as e:
-        logger.error("Error processing album: %s", e)
+        logger.error(f"❌ Ошибка обработки альбома {media_group_id}: {e}")
         chat_id = update.effective_chat.id
         if chat_id:
             await context.bot.send_message(
@@ -656,6 +680,7 @@ async def photo_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         prompt_message_id = query.message.message_id
 
     context.user_data.pop("await_photo", None)
+    logger.info(f"❌ Отмена прикрепления фото для задачи {item_id}")
 
     await cleanup_message(context, chat_id, prompt_message_id, "❌ Отменено")
 
