@@ -1,49 +1,54 @@
-from telegram.ext import (
-    CallbackQueryHandler,
-    MessageHandler,
-    filters,
-)
+from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
-from .handlers import (
-    employee_start,
-    onboarding_name_input,
-    onboarding_wrong_type_name,
-    onboarding_position,
-    onboarding_position_guard,
-    onboarding_callback_guard,
-    main_menu_callback,
+from .menu.handlers import employee_start
+from .menu.handlers import main_menu_callback
+from .checklists.handlers import (
     category_selection,
     view_item,
     toggle_item_callback,
-    progress_back,
     photo_input,
     photo_wrong_type,
     photo_cancel,
     photo_state_guard,
-    noop as employee_noop,
+    progress_back,
+    noop,
 )
 
-from .constants import (
+# Импортируем константы из menu
+from .menu.constants import (
     ONBOARD_NAME,
     ONBOARD_POSITION,
     MAIN_MENU,
+    CB_START_SHIFT,
+    CB_CHECKLIST,
+    CB_PROGRESS,
+    CB_POSITION_PREFIX,
+    CB_BACK_MENU,
+)
+
+# Импортируем константы из checklists
+from .checklists.constants import (
     CATEGORY_SELECT,
     CHECKLIST_VIEW,
     ITEM_DETAIL,
     PROGRESS_VIEW,
     AWAIT_TASK_PHOTO,
-    CB_START_SHIFT,
-    CB_CHECKLIST,
-    CB_PROGRESS,
-    CB_POSITION_PREFIX,
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
     CB_TOGGLE_PREFIX,
     CB_PHOTO_PREFIX,
     CB_VIEW_PHOTO_PREFIX,
     CB_PHOTO_CANCEL,
-    CB_BACK_MENU,
     CB_BACK_CATEGORIES,
+)
+
+# Импорты из menu для онбординга
+from .menu.handlers import (
+    onboarding_name_input,
+    onboarding_wrong_type_name,
+    onboarding_position,
+    onboarding_position_guard,
+    onboarding_callback_guard,
 )
 
 
@@ -53,15 +58,12 @@ def get_employee_entry_point():
 
 
 def register_employee_states(states: dict):
-    """
-    Регистрирует все состояния сотрудника в переданный словарь states.
-    Корневой роутер не знает о деталях реализации employee.
-    """
+    """Регистрирует все состояния сотрудника в переданный словарь states."""
 
     def emp_state(handler, pattern: str):
         return [
             CallbackQueryHandler(handler, pattern=pattern),
-            CallbackQueryHandler(employee_noop, pattern="^noop$"),
+            CallbackQueryHandler(noop, pattern="^noop$"),
         ]
 
     # Онбординг: ФИО
@@ -108,7 +110,7 @@ def register_employee_states(states: dict):
             )
         ),
         CallbackQueryHandler(photo_cancel, pattern=f"^{CB_PHOTO_CANCEL}$"),
-        CallbackQueryHandler(employee_noop, pattern="^noop$"),
+        CallbackQueryHandler(noop, pattern="^noop$"),
     ]
 
     # Прогресс
