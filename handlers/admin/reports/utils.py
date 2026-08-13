@@ -1,45 +1,83 @@
 import json
-from datetime import datetime
-from telegram.error import BadRequest
 import logging
+from datetime import datetime
+
+from telegram.error import BadRequest
+
+try:
+    from utils.time_utils import now_msk
+except Exception:
+    def now_msk():
+        return datetime.now()
+
 from db import get_connection
-from db.checklist import get_items_for_location_and_day, get_shared_progress
+from db.checklist import (
+    get_items_for_location_and_day,
+    get_shared_progress,
+)
 from db.shifts import get_shifts_for_date
+
 from .constants import (
-    CATEGORY_ORDER, LOCATIONS, MSG_LIMIT, MONTHS_GEN,
+    CATEGORY_ORDER,
+    CATEGORY_LABELS,
+    LOCATIONS,
+    MSG_LIMIT,
+    MONTHS_GEN,
+    WEEKDAYS_FULL,
+    REPORT_MODE_SHORT,
+    REPORT_MODE_FULL,
 )
 
-
 logger = logging.getLogger(__name__)
+
+
+# =========================================================
+# TEXT HELPERS
+# =========================================================
+
+def _clip(text: str | None, limit: int = 80) -> str:
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
 
 
 def full_name(user: dict | None) -> str:
     if not user:
         return "Пользователь"
+
     full = (user.get("full_name") or "").strip()
     if full:
         return full
+
     first = (user.get("first_name") or "").strip()
     last = (user.get("last_name") or "").strip()
     username = (user.get("username") or "").strip()
+
     name = " ".join([x for x in [first, last] if x]).strip()
     if name:
         return name
+
     if username:
         return f"@{username}"
+
     return str(user.get("tg_id", "Пользователь"))
 
 
 def progress_bar(done: int, total: int, size: int = 10) -> str:
     if total <= 0:
         return "▱" * size
+
     filled = round(size * done / total)
     filled = max(0, min(size, filled))
+
     return "▰" * filled + "▱" * (size - filled)
 
 
 def percent(done: int, total: int) -> int:
-    return int(done / total * 100) if total else 0
+    if total <= 0:
+        return 0
+    return int(done / total * 100)
 
 
 def format_date_ru(date_str: str) -> str:
@@ -50,14 +88,22 @@ def format_date_ru(date_str: str) -> str:
         return date_str
 
 
+def format_weekday_ru(date_str: str) -> str:
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return WEEKDAYS_FULL[dt.weekday()]
+    except Exception:
+        return ""
+
+
 def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
     text = text or ""
     if len(text) <= limit:
         return text
-    return text[:limit - 1].rstrip() + "…"
+    return text[: limit - 1].rstrip() + "…"
 
 
-async def render(update, context, text, reply_markup=None, message_id=None):
+async def render(update, context, text: str, reply_markup=None, message_id=None):
     text = truncate_text(text, MSG_LIMIT)
     chat_id = update.effective_chat.id if update.effective_chat else None
 
@@ -82,100 +128,330 @@ async def render(update, context, text, reply_markup=None, message_id=None):
             reply_markup=reply_markup,
         )
         return msg.message_id
+
     return None
 
 
+# =========================================================
+# CALENDAR DATA
+# =========================================================
+
 def get_shift_days_for_month(year: int, month: int) -> set[str]:
     start_date = f"{year:04d}-{month:02d}-01"
-    end_date = f"{year + 1}-01-01" if month == 12 else f"{year:04d}-{month + 1:02d}-01"
+    end_date = (
+        f"{year + 1}-01-01"
+        if month == 12
+        else f"{year:04d}-{month + 1:02d}-01"
+    )
+
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT date FROM shifts WHERE date >= ? AND date < ?",
-            (start_date, end_date)
+            """
+            SELECT DISTINCT date
+            FROM shifts
+            WHERE date >= ? AND date < ?
+            """,
+            (start_date, end_date),
         ).fetchall()
-        return {row["date"] for row in rows}
 
+    return {row["date"] for row in rows}
+
+
+# =========================================================
+# MEDIA HELPERS
+# =========================================================
+
+def _parse_media(raw) -> list[dict]:
+    """
+    Поддерживает:
+    - JSON-массив строк: ["file_id_1", "file_id_2"]
+    - JSON-массив объектов: [{"type": "photo", "file_id": "..."}]
+    - старый вариант, когда просто строка или список через запятую
+    """
+    if not raw:
+        return []
+
+    data = raw
+
+    if isinstance(data, str):
+        data = data.strip()
+        if not data:
+            return []
+
+        try:
+            data = json.loads(data)
+        except Exception:
+            data = [x.strip() for x in data.split(",") if x.strip()]
+
+    if isinstance(data, str):
+        data = [data]
+
+    if not isinstance(data, list):
+        return []
+
+    result = []
+
+    for entry in data:
+        if isinstance(entry, str):
+            if entry.strip():
+                result.append(
+                    {
+                        "type": "photo",
+                        "file_id": entry.strip(),
+                    }
+                )
+            continue
+
+        if isinstance(entry, dict):
+            file_id = entry.get("file_id")
+            if not file_id:
+                continue
+
+            result.append(
+                {
+                    "type": entry.get("type", "photo"),
+                    "file_id": file_id,
+                }
+            )
+
+    return result
+
+
+# =========================================================
+# DAY REPORT DATA
+# =========================================================
 
 def get_day_report(date_str: str) -> dict:
-    logger.info(f"🔍 Генерация отчёта за {date_str}")
     shifts = get_shifts_for_date(date_str)
-    logger.info(f"📋 Найдено смен: {len(shifts)}")
 
     result = {
         "date": date_str,
-        "bar": {"shifts": [], "items": [], "done": 0, "total": 0, "grouped": {}},
-        "kitchen": {"shifts": [], "items": [], "done": 0, "total": 0, "grouped": {}},
+        "bar": {
+            "shifts": [],
+            "items": [],
+            "done": 0,
+            "total": 0,
+            "grouped": {},
+            "media_count": 0,
+            "has_media": False,
+        },
+        "kitchen": {
+            "shifts": [],
+            "items": [],
+            "done": 0,
+            "total": 0,
+            "grouped": {},
+            "media_count": 0,
+            "has_media": False,
+        },
     }
 
+    # Смены
     for shift in shifts:
-        loc = shift["location"]
+        loc = shift.get("location")
         if loc in result:
             result[loc]["shifts"].append(shift)
 
+    # Чек-листы и прогресс
     for loc_key in ["bar", "kitchen"]:
-        logger.info(f"🔍 Обработка локации {loc_key}")
         items = get_items_for_location_and_day(loc_key, date_str)
+
         if not items:
-            logger.info(f"❌ Нет задач для {loc_key}")
-            result[loc_key]["items"] = []
             continue
 
         shared_progress = get_shared_progress(loc_key, date_str)
-        logger.info(f"📊 Прогресс для {loc_key}: {len(shared_progress)} записей")
 
         grouped = {}
+        enriched_items = []
+
         done = 0
         total = 0
-        items_with_media = []  # новый список для хранения обогащённых задач
+        media_count = 0
 
         for item in items:
-            item_dict = dict(item)  # создаём копию
-            progress = shared_progress.get(item_dict["id"])
-            completed = progress.get("completed", 0) == 1 if progress else False
+            item_dict = dict(item)
+
+            item_id = item_dict.get("id")
+            progress = shared_progress.get(item_id)
+
+            completed = bool(progress and progress.get("completed"))
             item_dict["completed"] = completed
 
-            # Извлекаем медиа с логированием
             media_items = []
+
             if progress:
-                raw = progress.get("photo_file_ids")
-                logger.info(f"Админ: item {item_dict['id']} raw photo_file_ids = {raw}")
-                if raw:
-                    try:
-                        media_items = json.loads(raw)
-                        logger.info(f"Админ: item {item_dict['id']} parsed media_items = {media_items}")
-                        if media_items and isinstance(media_items[0], str):
-                            media_items = [{"type": "photo", "file_id": f} for f in media_items]
-                            logger.info("Админ: преобразовано из списка строк в объекты")
-                    except Exception as e:
-                        logger.warning(f"Админ: item {item_dict['id']} failed to parse photo_file_ids: {e}")
-                        media_items = []
-                elif progress.get("photo_file_id"):
-                    media_items = [{"type": "photo", "file_id": progress["photo_file_id"]}]
-                    logger.info(f"Админ: item {item_dict['id']} using old photo_file_id")
-            else:
-                logger.info(f"Админ: item {item_dict['id']} no progress")
+                media_items = _parse_media(progress.get("photo_file_ids"))
+
+                # Обратная совместимость со старым photo_file_id
+                if not media_items and progress.get("photo_file_id"):
+                    media_items = [
+                        {
+                            "type": "photo",
+                            "file_id": progress.get("photo_file_id"),
+                        }
+                    ]
 
             item_dict["media_items"] = media_items
             item_dict["media_count"] = len(media_items)
 
-            if item_dict["media_count"] > 0:
-                logger.info(f"✅ Задача {item_dict['id']} имеет {item_dict['media_count']} вложений")
-            else:
-                logger.info(f"ℹ️ Задача {item_dict['id']} не имеет вложений")
-
             total += 1
+            media_count += len(media_items)
+
             if completed:
                 done += 1
-            cat = item_dict.get("category") or "weekly"
-            grouped.setdefault(cat, []).append(item_dict)
-            items_with_media.append(item_dict)  # сохраняем обогащённый словарь
 
-        result[loc_key]["items"] = items_with_media
+            category = item_dict.get("category") or "weekly"
+            grouped.setdefault(category, []).append(item_dict)
+
+            enriched_items.append(item_dict)
+
+        # Сортируем категории в красивом порядке
+        ordered_grouped = {}
+
+        for cat in CATEGORY_ORDER:
+            if cat in grouped:
+                ordered_grouped[cat] = grouped[cat]
+
+        for cat, cat_items in grouped.items():
+            if cat not in ordered_grouped:
+                ordered_grouped[cat] = cat_items
+
+        result[loc_key]["items"] = enriched_items
         result[loc_key]["done"] = done
         result[loc_key]["total"] = total
-        result[loc_key]["grouped"] = {cat: grouped[cat] for cat in CATEGORY_ORDER if cat in grouped}
-
-        total_media = sum(item.get("media_count", 0) for item in items_with_media)
-        logger.info(f"📊 Итог для {loc_key}: {done}/{total} выполнено, вложений: {total_media}")
+        result[loc_key]["grouped"] = ordered_grouped
+        result[loc_key]["media_count"] = media_count
+        result[loc_key]["has_media"] = media_count > 0
 
     return result
+
+
+# =========================================================
+# REPORT TEXT
+# =========================================================
+
+def build_report_text(
+    report: dict,
+    mode: str = REPORT_MODE_SHORT,
+    show_photos: bool = True,
+) -> tuple[str, bool, bool]:
+    date_str = report.get("date", "")
+
+    header = f"📊 {format_date_ru(date_str)}"
+    weekday = format_weekday_ru(date_str)
+
+    if weekday:
+        header += f" · {weekday}"
+
+    lines = [header, ""]
+
+    total_done = report["bar"]["done"] + report["kitchen"]["done"]
+    total_all = report["bar"]["total"] + report["kitchen"]["total"]
+    total_media = report["bar"]["media_count"] + report["kitchen"]["media_count"]
+
+    if total_all > 0:
+        lines.append(
+            f"Итого: {total_done}/{total_all} · {percent(total_done, total_all)}%"
+        )
+    else:
+        lines.append("Задач нет")
+
+    if show_photos and total_media > 0:
+        lines.append(f"Фото: {total_media}")
+
+    lines.append("")
+
+    has_bar_media = report["bar"]["has_media"]
+    has_kitchen_media = report["kitchen"]["has_media"]
+
+    for loc_key in ["bar", "kitchen"]:
+        loc_data = report[loc_key]
+        loc_label = LOCATIONS[loc_key]
+
+        shifts = loc_data["shifts"]
+        items = loc_data["items"]
+        grouped = loc_data["grouped"]
+
+        done = loc_data["done"]
+        total = loc_data["total"]
+        loc_media_count = loc_data["media_count"]
+
+        if mode == REPORT_MODE_FULL:
+            lines.append(loc_label)
+
+            if shifts:
+                names = ", ".join(full_name(s) for s in shifts)
+                lines.append(f"Команда: {names}")
+            else:
+                lines.append("Смен нет")
+
+            if total > 0:
+                lines.append(
+                    f"Прогресс: {progress_bar(done, total)} {done}/{total} · {percent(done, total)}%"
+                )
+
+                if show_photos and loc_media_count > 0:
+                    lines.append(f"Фото: {loc_media_count}")
+
+                lines.append("")
+
+                for category, category_items in grouped.items():
+                    category_label = CATEGORY_LABELS.get(category, category)
+                    category_done = sum(1 for i in category_items if i.get("completed"))
+
+                    lines.append(
+                        f"{category_label} · {category_done}/{len(category_items)}"
+                    )
+
+                    for item in category_items:
+                        mark = "✓" if item.get("completed") else "○"
+                        text = _clip(item.get("text"), 70)
+
+                        suffix = ""
+
+                        if show_photos and item.get("media_count", 0) > 0:
+                            suffix = f" · 📸{item['media_count']}"
+
+                        lines.append(f"{mark} {text}{suffix}")
+
+                    lines.append("")
+            else:
+                lines.append("Чек-лист пуст")
+                lines.append("")
+
+        else:
+            lines.append(loc_label)
+
+            if shifts:
+                names = ", ".join(full_name(s) for s in shifts)
+                lines.append(f"Смены: {len(shifts)} · {names}")
+            else:
+                lines.append("Смен нет")
+
+            if total > 0:
+                lines.append(
+                    f"Прогресс: {done}/{total} · {percent(done, total)}%"
+                )
+
+                left = total - done
+                if left > 0:
+                    lines.append(f"Осталось: {left}")
+
+                if show_photos and loc_media_count > 0:
+                    lines.append(f"Фото: {loc_media_count}")
+            else:
+                lines.append("Чек-лист пуст")
+
+            lines.append("")
+
+    text = "\n".join(lines).strip()
+    return text, has_bar_media, has_kitchen_media
+
+
+def get_report_text(
+    date_str: str,
+    mode: str,
+    show_photos: bool,
+) -> tuple[str, bool, bool]:
+    report = get_day_report(date_str)
+    return build_report_text(report, mode, show_photos)

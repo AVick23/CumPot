@@ -1,12 +1,23 @@
 from telegram.ext import CallbackQueryHandler
-from .handlers import show_calendar, show_day_report, calendar_callback
-from .constants import ADMIN_CALENDAR, ADMIN_DAY_REPORT, CB_HOME, CB_TO_CALENDAR, CB_PREV_MONTH, CB_NEXT_MONTH, CB_DAY_PREFIX
+
+from .handlers import calendar_callback
+from .constants import (
+    ADMIN_CALENDAR,
+    ADMIN_DAY_REPORT,
+)
 
 
 def register_report_states(states: dict):
+    """
+    Регистрируем состояния отчётов.
+
+    Используется один CallbackQueryHandler на состояние,
+    чтобы не зависеть от хрупких regex-паттернов.
+    """
     states[ADMIN_CALENDAR] = [
-        CallbackQueryHandler(calendar_callback, pattern=f"^{CB_PREV_MONTH}$|^{CB_NEXT_MONTH}$|^{CB_DAY_PREFIX}:.*|^{CB_HOME}$"),
+        CallbackQueryHandler(calendar_callback),
     ]
+
     states[ADMIN_DAY_REPORT] = [
-        CallbackQueryHandler(calendar_callback, pattern=f"^{CB_TO_CALENDAR}$|^{CB_HOME}$|^show_media:.*$"),
+        CallbackQueryHandler(calendar_callback),
     ]
