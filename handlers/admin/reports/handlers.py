@@ -176,119 +176,96 @@ async def show_day_report(
 
 
 async def show_location_media(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    location: str,
-    date_str: str,
-    message_id=None,
+    update: Update, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    location: str, 
+    date_str: str, 
+    message_id=None
 ) -> int:
-    chat_id = update.effective_chat.id if update.effective_chat else None
-
-    if not chat_id:
-        return await show_day_report(
-            update,
-            context,
-            date_str,
-            message_id,
-            notice="Не удалось отправить вложения.",
-        )
-
-    if location not in LOCATIONS:
-        return await show_day_report(
-            update,
-            context,
-            date_str,
-            message_id,
-            notice="Неизвестная локация.",
-        )
-
+    logger.info(f"👁 Админ запросил вложения для локации {location} за {date_str}")
+    
     report = get_day_report(date_str)
     loc_data = report.get(location)
 
     if not loc_data:
-        return await show_day_report(
-            update,
-            context,
-            date_str,
-            message_id,
-            notice="Нет данных по этой локации.",
-        )
+        logger.warning(f"⚠️ Нет данных по локации {location}")
+        await render(update, context, "Нет данных по этой локации.", None, message_id)
+        return ADMIN_DAY_REPORT
 
-    media = []
+    # Собираем ВСЕ медиафайлы без обрезки
+    all_media = []
+    items = loc_data.get("items", [])
+    
+    for item in items:
+        media = item.get("media_items", [])
+        if media:
+            all_media.extend(media)
 
-    for item in loc_data.get("items", []):
-        item_media = item.get("media_items", [])
-        if item_media:
-            media.extend(item_media)
+    if not all_media:
+        logger.warning(f"⚠️ Нет вложений для локации {location}")
+        await render(update, context, "Нет вложений для отображения.", None, message_id)
+        return ADMIN_DAY_REPORT
 
-    if not media:
-        return await show_day_report(
-            update,
-            context,
-            date_str,
-            message_id,
-            notice="Нет вложений.",
-        )
+    logger.info(f"📦 Всего найдено вложений: {len(all_media)}. Начинаю отправку...")
 
-    total_media = len(media)
-
-    if total_media > MEDIA_SEND_LIMIT:
-        media_to_send = media[:MEDIA_SEND_LIMIT]
-        notice = f"Отправлены первые {MEDIA_SEND_LIMIT} из {total_media}."
-    else:
-        media_to_send = media
-        notice = "Вложения отправлены выше."
-
+    # Константы для разбиения
+    MEDIA_CHUNK_SIZE = 10  # Максимум для одного send_media_group
+    chunk_count = (len(all_media) + MEDIA_CHUNK_SIZE - 1) // MEDIA_CHUNK_SIZE
+    
+    sent_successfully = False
+    
     try:
-        for start in range(0, len(media_to_send), MEDIA_CHUNK_SIZE):
-            chunk = media_to_send[start:start + MEDIA_CHUNK_SIZE]
+        for i in range(0, len(all_media), MEDIA_CHUNK_SIZE):
+            chunk = all_media[i : i + MEDIA_CHUNK_SIZE]
+            current_chunk_num = (i // MEDIA_CHUNK_SIZE) + 1
+            
             media_group = []
-
-            for index, media_item in enumerate(chunk):
+            
+            for idx, media_item in enumerate(chunk):
                 file_id = media_item.get("file_id")
-
+                media_type = media_item.get("type", "photo")
+                
                 if not file_id:
                     continue
 
-                caption = (
-                    f"📸 {LOCATIONS.get(location, location)} · {format_date_ru(date_str)}"
-                    if start == 0 and index == 0
-                    else None
-                )
+                # Подпись ставим ТОЛЬКО на первое фото самого первого альбома
+                # Остальные фото в группе и последующие группы идут без подписи,
+                # чтобы не дублировать текст при просмотре альбома
+                caption = None
+                if i == 0 and idx == 0:
+                    caption = f"📸 {LOCATIONS.get(location, location)}\n🗓 {format_date_ru(date_str)}"
+                    if chunk_count > 1:
+                        caption += f"\n(Альбом {current_chunk_num} из {chunk_count})"
 
-                if media_item.get("type") == "video":
-                    media_group.append(
-                        InputMediaVideo(
-                            media=file_id,
-                            caption=caption,
-                        )
-                    )
+                if media_type == "video":
+                    media_obj = InputMediaVideo(media=file_id, caption=caption)
                 else:
-                    media_group.append(
-                        InputMediaPhoto(
-                            media=file_id,
-                            caption=caption,
-                        )
-                    )
+                    media_obj = InputMediaPhoto(media=file_id, caption=caption)
+                    
+                media_group.append(media_obj)
 
             if media_group:
                 await context.bot.send_media_group(
-                    chat_id=chat_id,
-                    media=media_group,
+                    chat_id=update.effective_chat.id, 
+                    media=media_group
                 )
-
+                logger.info(f"✅ Отправлен альбом {current_chunk_num}/{chunk_count} ({len(media_group)} файлов)")
+                
+        sent_successfully = True
+        
     except Exception as e:
-        logger.error("Ошибка отправки вложений: %s", e)
-        notice = "Не удалось отправить вложения."
+        logger.error(f"❌ Ошибка отправки вложений админу: {e}", exc_info=True)
+        
+    # Формируем уведомление о результате
+    if sent_successfully:
+        notice = f"✅ Отправлено {len(all_media)} вложений."
+        if chunk_count > 1:
+            notice += f" ({chunk_count} альбома)"
+    else:
+        notice = "⚠️ Не удалось отправить все вложения. Проверьте логи."
 
-    return await show_day_report(
-        update,
-        context,
-        date_str,
-        message_id,
-        notice=notice,
-    )
-
+    # Возвращаемся к экрану отчёта с уведомлением
+    return await show_day_report(update, context, date_str, message_id, notice=notice)
 
 # =========================================================
 # CALLBACK ROUTER
