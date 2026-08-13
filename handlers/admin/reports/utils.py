@@ -26,6 +26,7 @@ from .constants import (
     WEEKDAYS_FULL,
     REPORT_MODE_SHORT,
     REPORT_MODE_FULL,
+    PHOTO_PAGE_SIZE,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,8 +38,10 @@ logger = logging.getLogger(__name__)
 
 def _clip(text: str | None, limit: int = 80) -> str:
     text = " ".join((text or "").split())
+
     if len(text) <= limit:
         return text
+
     return text[: limit - 1].rstrip() + "…"
 
 
@@ -55,6 +58,7 @@ def full_name(user: dict | None) -> str:
     username = (user.get("username") or "").strip()
 
     name = " ".join([x for x in [first, last] if x]).strip()
+
     if name:
         return name
 
@@ -77,6 +81,7 @@ def progress_bar(done: int, total: int, size: int = 10) -> str:
 def percent(done: int, total: int) -> int:
     if total <= 0:
         return 0
+
     return int(done / total * 100)
 
 
@@ -98,8 +103,10 @@ def format_weekday_ru(date_str: str) -> str:
 
 def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
     text = text or ""
+
     if len(text) <= limit:
         return text
+
     return text[: limit - 1].rstrip() + "…"
 
 
@@ -130,6 +137,16 @@ async def render(update, context, text: str, reply_markup=None, message_id=None)
         return msg.message_id
 
     return None
+
+
+def paginate_list(items: list, page: int, page_size: int = PHOTO_PAGE_SIZE):
+    total_pages = max(1, (len(items) + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    return items[start:end], total_pages, page
 
 
 # =========================================================
@@ -163,10 +180,11 @@ def get_shift_days_for_month(year: int, month: int) -> set[str]:
 
 def _parse_media(raw) -> list[dict]:
     """
-    Поддерживает:
-    - JSON-массив строк: ["file_id_1", "file_id_2"]
-    - JSON-массив объектов: [{"type": "photo", "file_id": "..."}]
-    - старый вариант, когда просто строка или список через запятую
+    Парсим photo_file_ids.
+
+    Важно:
+    - если там объект с мета-данными, сохраняем его целиком;
+    - если строка, превращаем в объект photo.
     """
     if not raw:
         return []
@@ -175,6 +193,7 @@ def _parse_media(raw) -> list[dict]:
 
     if isinstance(data, str):
         data = data.strip()
+
         if not data:
             return []
 
@@ -204,15 +223,14 @@ def _parse_media(raw) -> list[dict]:
 
         if isinstance(entry, dict):
             file_id = entry.get("file_id")
+
             if not file_id:
                 continue
 
-            result.append(
-                {
-                    "type": entry.get("type", "photo"),
-                    "file_id": file_id,
-                }
-            )
+            media_item = dict(entry)
+            media_item.setdefault("type", "photo")
+
+            result.append(media_item)
 
     return result
 
@@ -246,13 +264,12 @@ def get_day_report(date_str: str) -> dict:
         },
     }
 
-    # Смены
     for shift in shifts:
         loc = shift.get("location")
+
         if loc in result:
             result[loc]["shifts"].append(shift)
 
-    # Чек-листы и прогресс
     for loc_key in ["bar", "kitchen"]:
         items = get_items_for_location_and_day(loc_key, date_str)
 
@@ -282,7 +299,6 @@ def get_day_report(date_str: str) -> dict:
             if progress:
                 media_items = _parse_media(progress.get("photo_file_ids"))
 
-                # Обратная совместимость со старым photo_file_id
                 if not media_items and progress.get("photo_file_id"):
                     media_items = [
                         {
@@ -305,7 +321,6 @@ def get_day_report(date_str: str) -> dict:
 
             enriched_items.append(item_dict)
 
-        # Сортируем категории в красивом порядке
         ordered_grouped = {}
 
         for cat in CATEGORY_ORDER:
@@ -369,7 +384,6 @@ def build_report_text(
         loc_label = LOCATIONS[loc_key]
 
         shifts = loc_data["shifts"]
-        items = loc_data["items"]
         grouped = loc_data["grouped"]
 
         done = loc_data["done"]
@@ -434,6 +448,7 @@ def build_report_text(
                 )
 
                 left = total - done
+
                 if left > 0:
                     lines.append(f"Осталось: {left}")
 
@@ -445,6 +460,7 @@ def build_report_text(
             lines.append("")
 
     text = "\n".join(lines).strip()
+
     return text, has_bar_media, has_kitchen_media
 
 
@@ -455,3 +471,139 @@ def get_report_text(
 ) -> tuple[str, bool, bool]:
     report = get_day_report(date_str)
     return build_report_text(report, mode, show_photos)
+
+
+# =========================================================
+# PHOTO REPORT DATA
+# =========================================================
+
+def get_photo_overview(date_str: str) -> dict:
+    report = get_day_report(date_str)
+
+    bar_count = report["bar"]["media_count"]
+    kitchen_count = report["kitchen"]["media_count"]
+
+    return {
+        "date": date_str,
+        "bar": bar_count,
+        "kitchen": kitchen_count,
+        "total": bar_count + kitchen_count,
+    }
+
+
+def get_location_photo_menu(date_str: str, location: str) -> dict:
+    report = get_day_report(date_str)
+
+    loc_data = report.get(location) or {}
+    items = loc_data.get("items", [])
+
+    items_with_media = [
+        item for item in items
+        if item.get("media_count", 0) > 0
+    ]
+
+    categories_raw = {}
+
+    total_media = 0
+
+    for item in items_with_media:
+        category = item.get("category") or "weekly"
+        media_count = item.get("media_count", 0)
+
+        categories_raw.setdefault(
+            category,
+            {
+                "media_count": 0,
+                "task_count": 0,
+            },
+        )
+
+        categories_raw[category]["media_count"] += media_count
+        categories_raw[category]["task_count"] += 1
+
+        total_media += media_count
+
+    ordered_categories = {}
+
+    for category in CATEGORY_ORDER:
+        if category in categories_raw:
+            ordered_categories[category] = categories_raw[category]
+
+    for category, data in categories_raw.items():
+        if category not in ordered_categories:
+            ordered_categories[category] = data
+
+    return {
+        "date": date_str,
+        "location": location,
+        "total_media": total_media,
+        "task_count": len(items_with_media),
+        "categories": ordered_categories,
+        "items": items_with_media,
+    }
+
+
+def get_category_photo_tasks(date_str: str, location: str, category: str) -> dict:
+    menu = get_location_photo_menu(date_str, location)
+
+    tasks = [
+        item for item in menu.get("items", [])
+        if item.get("category") == category
+    ]
+
+    media_count = sum(item.get("media_count", 0) for item in tasks)
+
+    return {
+        "date": date_str,
+        "location": location,
+        "category": category,
+        "tasks": tasks,
+        "media_count": media_count,
+        "task_count": len(tasks),
+    }
+
+
+def get_task_by_id_from_report(date_str: str, item_id: int) -> tuple[dict | None, str | None]:
+    report = get_day_report(date_str)
+
+    for loc_key in ["bar", "kitchen"]:
+        for item in report[loc_key]["items"]:
+            if item.get("id") == item_id:
+                return item, loc_key
+
+    return None, None
+
+
+def build_task_media_caption(item: dict, location: str, date_str: str) -> str:
+    location_label = LOCATIONS.get(location, location)
+    category_label = CATEGORY_LABELS.get(item.get("category"), item.get("category"))
+
+    media_count = item.get("media_count", 0)
+
+    user_name = None
+
+    for media in item.get("media_items", []):
+        if isinstance(media, dict) and media.get("user_name"):
+            user_name = media.get("user_name")
+            break
+
+    lines = [
+        "📌 Фото к задаче",
+        "",
+        item.get("text") or "",
+        "",
+        f"📍 {location_label}",
+        f"📂 {category_label}",
+        f"🗓 {format_date_ru(date_str)}",
+        f"🖼 {media_count} шт.",
+    ]
+
+    if user_name:
+        lines.append(f"👤 {user_name}")
+
+    caption = "\n".join(lines)
+
+    if len(caption) > 1024:
+        caption = caption[:1023] + "…"
+
+    return caption

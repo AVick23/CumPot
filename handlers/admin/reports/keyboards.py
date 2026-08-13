@@ -14,12 +14,32 @@ from .constants import (
     CB_REPORT_FULL,
     CB_REPORT_PHOTOS_ON,
     CB_REPORT_PHOTOS_OFF,
-    CB_SHOW_MEDIA_PREFIX,
+    CB_PHOTO_REPORT,
+    CB_PHOTO_LOC_PREFIX,
+    CB_PHOTO_CAT_PREFIX,
+    CB_PHOTO_ALL_LOC,
+    CB_PHOTO_ALL_CAT,
+    CB_PHOTO_TASK_PREFIX,
+    CB_PHOTO_PAGE_PREFIX,
+    CB_PHOTO_BACK_DAY,
+    CB_PHOTO_BACK_OVERVIEW,
+    CB_PHOTO_BACK_LOC,
     REPORT_MODE_SHORT,
     REPORT_MODE_FULL,
     MONTHS,
     WEEKDAYS_SHORT,
+    CATEGORY_ORDER,
+    CATEGORY_LABELS,
 )
+
+
+def _clip(text: str | None, limit: int = 35) -> str:
+    text = " ".join((text or "").split())
+
+    if len(text) <= limit:
+        return text
+
+    return text[: limit - 1].rstrip() + "…"
 
 
 def calendar_keyboard(
@@ -31,7 +51,6 @@ def calendar_keyboard(
 ) -> InlineKeyboardMarkup:
     rows = []
 
-    # Шапка месяца
     rows.append(
         [
             InlineKeyboardButton("◀️", callback_data=CB_PREV_MONTH),
@@ -40,7 +59,6 @@ def calendar_keyboard(
         ]
     )
 
-    # Дни недели
     rows.append(
         [
             InlineKeyboardButton(day, callback_data=CB_NOOP)
@@ -53,7 +71,6 @@ def calendar_keyboard(
 
     row = []
 
-    # Пустые клетки до первого дня месяца
     for _ in range(first_weekday):
         row.append(InlineKeyboardButton(" ", callback_data=CB_NOOP))
 
@@ -103,7 +120,6 @@ def day_report_keyboard(
 ) -> InlineKeyboardMarkup:
     rows = []
 
-    # Режим отчёта
     rows.append(
         [
             InlineKeyboardButton(
@@ -117,7 +133,6 @@ def day_report_keyboard(
         ]
     )
 
-    # Фото в отчёте
     rows.append(
         [
             InlineKeyboardButton(
@@ -131,32 +146,174 @@ def day_report_keyboard(
         ]
     )
 
-    # Кнопки отправки медиа, если фото включены и есть вложения
-    if show_photos:
-        media_row = []
-
-        if has_bar_media:
-            media_row.append(
+    if show_photos and (has_bar_media or has_kitchen_media):
+        rows.append(
+            [
                 InlineKeyboardButton(
-                    "📸 Бар",
-                    callback_data=f"{CB_SHOW_MEDIA_PREFIX}:bar",
+                    "📸 Фотоотчёт",
+                    callback_data=CB_PHOTO_REPORT,
                 )
-            )
-
-        if has_kitchen_media:
-            media_row.append(
-                InlineKeyboardButton(
-                    "📸 Кухня",
-                    callback_data=f"{CB_SHOW_MEDIA_PREFIX}:kitchen",
-                )
-            )
-
-        if media_row:
-            rows.append(media_row)
+            ]
+        )
 
     rows.append(
         [
             InlineKeyboardButton("◀️ Календарь", callback_data=CB_TO_CALENDAR),
+            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def photo_overview_keyboard(
+    bar_media_count: int,
+    kitchen_media_count: int,
+) -> InlineKeyboardMarkup:
+    rows = []
+
+    if bar_media_count > 0:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"🍸 Бар · {bar_media_count}",
+                    callback_data=f"{CB_PHOTO_LOC_PREFIX}:bar",
+                )
+            ]
+        )
+
+    if kitchen_media_count > 0:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"🍳 Кухня · {kitchen_media_count}",
+                    callback_data=f"{CB_PHOTO_LOC_PREFIX}:kitchen",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ Отчёт", callback_data=CB_PHOTO_BACK_DAY),
+            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def photo_location_keyboard(location_menu: dict) -> InlineKeyboardMarkup:
+    rows = []
+
+    total_media = location_menu.get("total_media", 0)
+
+    if total_media > 0:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"📤 Отправить всё · {total_media}",
+                    callback_data=CB_PHOTO_ALL_LOC,
+                )
+            ]
+        )
+
+    categories = location_menu.get("categories", {})
+
+    for category in CATEGORY_ORDER:
+        if category not in categories:
+            continue
+
+        cat_data = categories[category]
+        media_count = cat_data.get("media_count", 0)
+
+        if media_count <= 0:
+            continue
+
+        label = f"{CATEGORY_LABELS.get(category, category)} · {media_count}"
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"{CB_PHOTO_CAT_PREFIX}:{category}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ Локации", callback_data=CB_PHOTO_BACK_OVERVIEW),
+            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def photo_category_keyboard(
+    location: str,
+    category: str,
+    page_items: list[dict],
+    page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
+    rows = []
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "📤 Отправить всю категорию",
+                callback_data=CB_PHOTO_ALL_CAT,
+            )
+        ]
+    )
+
+    for item in page_items:
+        media_count = item.get("media_count", 0)
+        text = _clip(item.get("text"), 30)
+
+        label = f"{text} · 🖼{media_count}"
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"{CB_PHOTO_TASK_PREFIX}:{item.get('id')}",
+                )
+            ]
+        )
+
+    if total_pages > 1:
+        nav_row = []
+
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    "←",
+                    callback_data=f"{CB_PHOTO_PAGE_PREFIX}:{page - 1}",
+                )
+            )
+
+        nav_row.append(
+            InlineKeyboardButton(
+                f"{page}/{total_pages}",
+                callback_data=CB_NOOP,
+            )
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(
+                    "→",
+                    callback_data=f"{CB_PHOTO_PAGE_PREFIX}:{page + 1}",
+                )
+            )
+
+        rows.append(nav_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ Категории", callback_data=CB_PHOTO_BACK_LOC),
             InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
         ]
     )

@@ -1,4 +1,5 @@
 # Экспортируем всё для регистрации в employee/__init__.py
+
 from .handlers import (
     show_categories,
     category_selection,
@@ -16,6 +17,7 @@ from .handlers import (
     progress_back,
     noop,
 )
+
 from .keyboards import (
     categories_keyboard,
     checklist_keyboard,
@@ -23,5 +25,10 @@ from .keyboards import (
     progress_keyboard,
     photo_prompt_keyboard,
 )
-from .utils import build_photo_caption, item_detail_text
+
+from .utils import (
+    build_photo_caption,
+    item_detail_text,
+)
+
 from .constants import *

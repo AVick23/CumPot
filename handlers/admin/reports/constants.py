@@ -5,6 +5,10 @@
 ADMIN_CALENDAR = 103
 ADMIN_DAY_REPORT = 104
 
+ADMIN_PHOTO_OVERVIEW = 130
+ADMIN_PHOTO_LOCATION = 131
+ADMIN_PHOTO_CATEGORY = 132
+
 
 # =========================================================
 # CALLBACK DATA
@@ -27,8 +31,25 @@ CB_REPORT_FULL = "rep_full"
 CB_REPORT_PHOTOS_ON = "rep_photos_on"
 CB_REPORT_PHOTOS_OFF = "rep_photos_off"
 
-# Отправка медиа
+# Новый фотоотчёт
+CB_PHOTO_REPORT = "photo_report"
+
+# Legacy-кнопки, на случай старых callback
 CB_SHOW_MEDIA_PREFIX = "media"
+
+# Навигация по фотоотчёту
+CB_PHOTO_LOC_PREFIX = "ploc"
+CB_PHOTO_CAT_PREFIX = "pcat"
+
+CB_PHOTO_ALL_LOC = "pallloc"
+CB_PHOTO_ALL_CAT = "pallcat"
+
+CB_PHOTO_TASK_PREFIX = "ptask"
+CB_PHOTO_PAGE_PREFIX = "ppg"
+
+CB_PHOTO_BACK_DAY = "pback_day"
+CB_PHOTO_BACK_OVERVIEW = "pback_overview"
+CB_PHOTO_BACK_LOC = "pback_loc"
 
 
 # =========================================================
@@ -108,6 +129,12 @@ CATEGORY_LABELS = {
 
 MSG_LIMIT = 3800
 
-# Сколько фото отправлять за один раз и сколько максимум
+# Сколько медиа отправлять в одном альбоме
 MEDIA_CHUNK_SIZE = 10
-MEDIA_SEND_LIMIT = 30
+
+# Сколько задач с фото показывать на одной странице
+PHOTO_PAGE_SIZE = 8
+
+# Небольшая пауза между отправками альбомов разных задач,
+# чтобы не упёрться в flood-limit Telegram
+TASK_SEND_DELAY = 0.35

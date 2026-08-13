@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from .constants import (
     CATEGORY_NAMES,
     CATEGORY_ORDER,
@@ -15,85 +16,184 @@ from .constants import (
 
 def _clip(text: str | None, limit: int = 35) -> str:
     text = " ".join((text or "").split())
+
     if len(text) <= limit:
         return text
-    return text[:limit - 1].rstrip() + "…"
+
+    return text[: limit - 1].rstrip() + "…"
 
 
 def categories_keyboard(stats: dict[str, dict]) -> InlineKeyboardMarkup:
     rows = []
+
     for cat in CATEGORY_ORDER:
         if cat not in stats:
             continue
+
         item = stats[cat]
-        if item.get("total", 0) <= 0:
+        total = item.get("total", 0)
+        done = item.get("done", 0)
+
+        if total <= 0:
             continue
-        label = f"{CATEGORY_NAMES.get(cat, cat)} · {item['done']}/{item['total']}"
-        rows.append([
-            InlineKeyboardButton(label, callback_data=f"{CB_CATEGORY_PREFIX}{cat}")
-        ])
-    rows.append([InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)])
+
+        if done == total:
+            emoji = "✅"
+        elif done > 0:
+            emoji = "🕘"
+        else:
+            emoji = "⚪️"
+
+        label = f"{emoji} {CATEGORY_NAMES.get(cat, cat)} · {done}/{total}"
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"{CB_CATEGORY_PREFIX}{cat}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)
+        ]
+    )
+
     return InlineKeyboardMarkup(rows)
 
 
 def checklist_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
     rows = []
+
     for item in items:
-        status = "✅" if item.get("completed") else "⚪️"
-        photo_count = item.get("photo_count", 0)
-        photo_icon = f"🖼{photo_count}" if photo_count else ""
-        label = f"{status}{photo_icon} {_clip(item.get('text'), 33)}"
-        rows.append([
-            InlineKeyboardButton(label, callback_data=f"{CB_ITEM_PREFIX}{item['id']}")
-        ])
-    rows.append([
-        InlineKeyboardButton("◀️ Категории", callback_data=CB_BACK_CATEGORIES),
-        InlineKeyboardButton("🏠 Меню", callback_data=CB_BACK_MENU),
-    ])
+        completed = bool(item.get("completed"))
+        requires_photo = bool(item.get("requires_photo"))
+        photo_count = int(item.get("photo_count", 0) or 0)
+
+        if completed:
+            status = "✅"
+        elif requires_photo:
+            status = "📸"
+        else:
+            status = "⚪️"
+
+        photo_badge = f"🖼{photo_count} " if photo_count > 0 else ""
+        text = _clip(item.get("text"), 32)
+
+        label = f"{status} {photo_badge}{text}".strip()
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"{CB_ITEM_PREFIX}{item.get('id')}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ Категории", callback_data=CB_BACK_CATEGORIES),
+            InlineKeyboardButton("🏠 Меню", callback_data=CB_BACK_MENU),
+        ]
+    )
+
     return InlineKeyboardMarkup(rows)
 
 
-def item_detail_keyboard(item_id: int, is_completed: bool, has_photo: bool = False, requires_photo: bool = False) -> InlineKeyboardMarkup:
+def item_detail_keyboard(
+    item_id: int,
+    is_completed: bool,
+    has_photo: bool = False,
+    requires_photo: bool = False,
+) -> InlineKeyboardMarkup:
     rows = []
 
     if not is_completed:
         if not requires_photo:
-            rows.append([
-                InlineKeyboardButton("✅ Выполнить", callback_data=f"{CB_TOGGLE_PREFIX}{item_id}")
-            ])
-        rows.append([
-            InlineKeyboardButton("📷 Выполнить с фото", callback_data=f"{CB_PHOTO_PREFIX}{item_id}")
-        ])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "✅ Выполнить",
+                        callback_data=f"{CB_TOGGLE_PREFIX}{item_id}",
+                    )
+                ]
+            )
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "📸 Выполнить с фото",
+                    callback_data=f"{CB_PHOTO_PREFIX}{item_id}",
+                )
+            ]
+        )
     else:
-        rows.append([
-            InlineKeyboardButton("↩️ Отменить", callback_data=f"{CB_TOGGLE_PREFIX}{item_id}")
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "↩️ Отменить",
+                    callback_data=f"{CB_TOGGLE_PREFIX}{item_id}",
+                )
+            ]
+        )
+
         photo_label = "📷 Заменить фото" if has_photo else "📷 Прикрепить фото"
-        rows.append([
-            InlineKeyboardButton(photo_label, callback_data=f"{CB_PHOTO_PREFIX}{item_id}")
-        ])
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    photo_label,
+                    callback_data=f"{CB_PHOTO_PREFIX}{item_id}",
+                )
+            ]
+        )
 
     if has_photo:
-        rows.append([
-            InlineKeyboardButton("👁 Посмотреть фото", callback_data=f"{CB_VIEW_PHOTO_PREFIX}{item_id}")
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "👁 Посмотреть фото",
+                    callback_data=f"{CB_VIEW_PHOTO_PREFIX}{item_id}",
+                )
+            ]
+        )
 
-    rows.append([
-        InlineKeyboardButton("◀️ К списку", callback_data=CB_BACK_CATEGORIES)
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ К списку", callback_data=CB_BACK_CATEGORIES)
+        ]
+    )
 
     return InlineKeyboardMarkup(rows)
 
 
 def progress_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]
-    ])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)
+            ]
+        ]
+    )
 
 
 def photo_prompt_keyboard(has_photos: bool = False) -> InlineKeyboardMarkup:
-    buttons = []
-    if has_photos:
-        buttons.append(InlineKeyboardButton("✅ Готово", callback_data=CB_PHOTO_DONE))
-    buttons.append(InlineKeyboardButton("✖️ Отмена", callback_data=CB_PHOTO_CANCEL))
-    return InlineKeyboardMarkup([buttons])
+    """
+    Сейчас намеренно оставляем только отмену.
+
+    Альбом обрабатывается автоматически после загрузки всех частей,
+    поэтому кнопка "Готово" не нужна и только путает пользователя.
+    """
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✖️ Отмена",
+                    callback_data=CB_PHOTO_CANCEL,
+                )
+            ]
+        ]
+    )

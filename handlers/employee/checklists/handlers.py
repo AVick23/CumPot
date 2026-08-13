@@ -1,13 +1,20 @@
 import logging
-import json
 import asyncio
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+
+from telegram import (
+    Update,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InputMediaPhoto,
+    InputMediaVideo,
+)
 from telegram.ext import ContextTypes
-from telegram.error import BadRequest
-from utils.channel import send_photo_to_channel, send_media_group_to_channel
-from db.users import get_user
+
+from utils.channel import send_media_group_to_channel
+
 from .utils import (
     set_state,
+    current_state,
     answer,
     render,
     cleanup_message,
@@ -23,6 +30,7 @@ from .utils import (
     item_detail_text,
     build_photo_caption,
 )
+
 from .constants import (
     CATEGORY_SELECT,
     CHECKLIST_VIEW,
@@ -30,6 +38,7 @@ from .constants import (
     PROGRESS_VIEW,
     AWAIT_TASK_PHOTO,
     CATEGORY_NAMES,
+    CB_NOOP,
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
     CB_TOGGLE_PREFIX,
@@ -38,8 +47,9 @@ from .constants import (
     CB_PHOTO_CANCEL,
     CB_BACK_MENU,
     CB_BACK_CATEGORIES,
-    CB_PHOTO_DONE,
+    MEDIA_CHUNK_SIZE,
 )
+
 from .keyboards import (
     categories_keyboard,
     checklist_keyboard,
@@ -52,9 +62,13 @@ MAIN_MENU = 3
 
 logger = logging.getLogger(__name__)
 
-# Хранилище для собираемых альбомов (media_group_id -> данные)
+# Буфер для сборки альбомов
 _album_buffer: dict[str, dict] = {}
 
+
+# =========================================================
+# CATEGORY SCREEN
+# =========================================================
 
 async def show_categories(
     update: Update,
@@ -63,29 +77,62 @@ async def show_categories(
     notice: str | None = None,
 ) -> int:
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
 
-    items = get_checklist_items(user.id)
-    if items is None:
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
-        await render(update, context, "Сначала начните смену.", kb, message_id)
-        return CATEGORY_SELECT
+    logger.info("📋 Пользователь %s открыл список категорий", user.id)
 
-    stats = get_categories_stats(user.id)
-    if not stats:
-        text = "📋 Чек-лист\n\nНа сегодня задач нет."
-        if notice:
-            text = f"{notice}\n\n{text}"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
-        await render(update, context, text, kb, message_id)
+    items = get_checklist_items(user.id)
+
+    if items is None:
+        logger.info("⚠️ Пользователь %s пытается открыть чек-лист без активной смены", user.id)
+
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)
+                ]
+            ]
+        )
+
+        await render(
+            update,
+            context,
+            "Сначала начните смену.",
+            kb,
+            message_id,
+        )
+
         return set_state(context, CATEGORY_SELECT)
 
-    text = "📋 Чек-лист\n\nВыберите категорию."
+    stats = get_categories_stats(user.id)
+
+    if not stats:
+        text = "📋 Чек-лист\n\nНа сегодня задач нет."
+
+        if notice:
+            text = f"{notice}\n\n{text}"
+
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)
+                ]
+            ]
+        )
+
+        await render(update, context, text, kb, message_id)
+
+        return set_state(context, CATEGORY_SELECT)
+
+    text = "📋 Чек-лист\n\nВыберите раздел."
+
     if notice:
         text = f"{notice}\n\n{text}"
 
     kb = categories_keyboard(stats)
+
     await render(update, context, text, kb, message_id)
 
     return set_state(context, CATEGORY_SELECT)
@@ -99,16 +146,27 @@ async def category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     message_id = query.message.message_id if query.message else None
 
+    logger.info("🔘 Пользователь нажал callback: %s", data)
+
     if data.startswith(CB_CATEGORY_PREFIX):
         category = data.split(":", 1)[1]
+
+        logger.info("📂 Выбрана категория: %s", category)
+
         context.user_data["current_category"] = category
+
         return await show_checklist(update, context, category, message_id)
 
     if data == CB_BACK_MENU:
+        logger.info("⬅️ Пользователь вернулся в меню из категорий")
         return MAIN_MENU
 
     return await show_categories(update, context, message_id)
 
+
+# =========================================================
+# CHECKLIST SCREEN
+# =========================================================
 
 async def show_checklist(
     update: Update,
@@ -118,17 +176,25 @@ async def show_checklist(
     notice: str | None = None,
 ) -> int:
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
+
+    logger.info("📂 Пользователь %s открывает категорию %s", user.id, category)
 
     items = get_items_by_category(user.id, category)
 
     if items is None:
         await render(update, context, "Сначала начните смену.", None, message_id)
-        return CATEGORY_SELECT
+        return set_state(context, CATEGORY_SELECT)
 
     if not items:
-        return await show_categories(update, context, message_id, notice="В этой категории нет задач.")
+        return await show_categories(
+            update,
+            context,
+            message_id,
+            notice="В этой категории нет задач.",
+        )
 
     context.user_data["current_category"] = category
 
@@ -148,6 +214,7 @@ async def show_checklist(
         text = f"{notice}\n\n{text}"
 
     kb = checklist_keyboard(items)
+
     await render(update, context, text, kb, message_id)
 
     return set_state(context, CHECKLIST_VIEW)
@@ -167,6 +234,10 @@ async def show_current_checklist(
     return await show_checklist(update, context, category, message_id, notice)
 
 
+# =========================================================
+# ITEM DETAIL
+# =========================================================
+
 async def show_item_detail(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -175,13 +246,23 @@ async def show_item_detail(
     notice: str | None = None,
 ) -> int:
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
+
+    logger.info("📌 Пользователь %s открывает задачу %s", user.id, item_id)
 
     item = get_item_by_id(user.id, item_id)
 
     if not item:
-        return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
+        logger.warning("⚠️ Задача %s не найдена для пользователя %s", item_id, user.id)
+
+        return await show_current_checklist(
+            update,
+            context,
+            message_id,
+            notice="⚠️ Задача не найдена.",
+        )
 
     text = item_detail_text(item)
 
@@ -196,6 +277,7 @@ async def show_item_detail(
     )
 
     await render(update, context, text, kb, message_id)
+
     return set_state(context, ITEM_DETAIL)
 
 
@@ -206,10 +288,12 @@ async def send_new_item_detail(
     notice: str | None = None,
 ) -> int:
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
 
     chat_id = update.effective_chat.id
+
     if not chat_id:
         return MAIN_MENU
 
@@ -218,8 +302,9 @@ async def send_new_item_detail(
     if not item:
         await context.bot.send_message(
             chat_id=chat_id,
-            text="⚠️ Задача не найдена."
+            text="⚠️ Задача не найдена.",
         )
+
         return MAIN_MENU
 
     text = item_detail_text(item)
@@ -240,6 +325,8 @@ async def send_new_item_detail(
         reply_markup=kb,
     )
 
+    logger.info("📌 Отправлена новая карточка задачи %s для пользователя %s", item_id, user.id)
+
     return set_state(context, ITEM_DETAIL)
 
 
@@ -250,10 +337,13 @@ async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await answer(query)
 
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
 
     message_id = query.message.message_id if query.message else None
+
+    logger.info("🔘 Пользователь %s нажал callback: %s", user.id, data)
 
     if data.startswith(CB_ITEM_PREFIX):
         try:
@@ -264,69 +354,34 @@ async def view_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return await show_item_detail(update, context, item_id, message_id)
 
     if data == CB_BACK_CATEGORIES:
+        logger.info("⬅️ Пользователь %s вернулся к категориям", user.id)
         return await show_categories(update, context, message_id)
 
     if data == CB_BACK_MENU:
+        logger.info("⬅️ Пользователь %s вернулся в меню", user.id)
         return MAIN_MENU
 
     return await show_current_checklist(update, context, message_id)
 
 
-async def show_photo_prompt(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    item_id: int,
-) -> int:
-    user = update.effective_user
-    if not user:
-        return MAIN_MENU
-
-    chat_id = update.effective_chat.id
-    if not chat_id:
-        return MAIN_MENU
-
-    item = get_item_by_id(user.id, item_id)
-
-    if not item:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="⚠️ Задача не найдена."
-        )
-        return MAIN_MENU
-
-    text = (
-        "📷 Отправьте одно или несколько фото/видео одним сообщением (альбомом).\n\n"
-        f"Задача:\n{item.get('text')}\n\n"
-        "После загрузки все файлы будут сохранены в служебный канал."
-    )
-
-    msg = await context.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        reply_markup=photo_prompt_keyboard(False),
-    )
-
-    context.user_data["await_photo"] = {
-        "item_id": item_id,
-        "mark_done": not bool(item.get("completed")),
-        "prompt_message_id": msg.message_id,
-        "collected_files": [],  # для накопления файлов при альбоме
-    }
-
-    return set_state(context, AWAIT_TASK_PHOTO)
-
+# =========================================================
+# TOGGLE / PHOTO / VIEW PHOTO CALLBACK
+# =========================================================
 
 async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     data = query.data or ""
 
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
 
     message_id = query.message.message_id if query.message else None
 
-    # ---------- ОБРАБОТКА ПРОСТОГО ВЫПОЛНЕНИЯ (TOGGLE) ----------
+    logger.info("🔘 Пользователь %s нажал callback: %s", user.id, data)
+
+    # Простое выполнение / отмена
     if data.startswith(CB_TOGGLE_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -334,24 +389,49 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await answer(query)
             return await show_current_checklist(update, context, message_id)
 
-        # Проверяем, требует ли задача фото и ещё не выполнена
         item = get_item_by_id(user.id, item_id)
+
         if item and item.get("requires_photo") and not item.get("completed"):
-            await answer(query, "Эта задача требует фото. Используйте кнопку 'Выполнить с фото'.", show_alert=True)
+            logger.info(
+                "⚠️ Пользователь %s попытался выполнить задачу %s без фото",
+                user.id,
+                item_id,
+            )
+
+            await answer(
+                query,
+                "Эта задача требует фото. Используйте кнопку «📸 Выполнить с фото».",
+                show_alert=True,
+            )
+
             return await show_item_detail(update, context, item_id, message_id)
 
         new_state = toggle_item(user.id, item_id)
 
         if new_state is None:
             await answer(query)
-            return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
+
+            return await show_current_checklist(
+                update,
+                context,
+                message_id,
+                notice="⚠️ Задача не найдена.",
+            )
 
         toast = "✅ Выполнено" if new_state else "↩️ Отменено"
+
+        logger.info(
+            "%s задача %s пользователем %s",
+            "✅ Выполнена" if new_state else "↩️ Отменена",
+            item_id,
+            user.id,
+        )
+
         await answer(query, toast)
 
         return await show_item_detail(update, context, item_id, message_id)
 
-    # ---------- ЗАПРОС НА ПРИКРЕПЛЕНИЕ ФОТО ----------
+    # Запрос фото
     if data.startswith(CB_PHOTO_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -363,12 +443,21 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
         if not item:
             await answer(query)
-            return await show_current_checklist(update, context, message_id, notice="⚠️ Задача не найдена.")
+
+            return await show_current_checklist(
+                update,
+                context,
+                message_id,
+                notice="⚠️ Задача не найдена.",
+            )
 
         await answer(query)
+
+        logger.info("📸 Пользователь %s запросил прикрепление фото к задаче %s", user.id, item_id)
+
         return await show_photo_prompt(update, context, item_id)
 
-    # ---------- ПРОСМОТР ПРИКРЕПЛЁННЫХ ВЛОЖЕНИЙ ----------
+    # Просмотр фото
     if data.startswith(CB_VIEW_PHOTO_PREFIX):
         try:
             item_id = int(data.split(":", 1)[1])
@@ -377,223 +466,187 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             return await show_current_checklist(update, context, message_id)
 
         item = get_item_by_id(user.id, item_id)
-        logger.info(f"👁 Запрос просмотра вложений для задачи {item_id}")
 
         if not item or not item.get("media_items"):
-            logger.warning(f"⚠️ Вложения не найдены для задачи {item_id}")
             await answer(query, "Вложения не найдены")
+
             return await show_item_detail(update, context, item_id, message_id)
 
         chat_id = update.effective_chat.id
-        if chat_id:
-            try:
-                media_items = item.get("media_items", [])
-                logger.info(f"📦 Количество вложений: {len(media_items)}")
-                if len(media_items) > 10:
-                    media_items = media_items[:10]
-                    logger.info("✂️ Обрезано до 10 вложений")
 
-                from telegram import InputMediaPhoto, InputMediaVideo
-                media_group = []
-                for i, media in enumerate(media_items):
-                    # ✅ Исправлено: caption передаётся в конструктор
-                    if media.get("type") == "photo":
-                        media_obj = InputMediaPhoto(
-                            media=media["file_id"],
-                            caption="📸 Вложения к задаче" if i == 0 else None
-                        )
-                    elif media.get("type") == "video":
-                        media_obj = InputMediaVideo(
-                            media=media["file_id"],
-                            caption="📸 Вложения к задаче" if i == 0 else None
-                        )
-                    else:
-                        continue
-                    media_group.append(media_obj)
-
-                if media_group:
-                    logger.info(f"📤 Отправка {len(media_group)} вложений пользователю")
-                    await context.bot.send_media_group(chat_id=chat_id, media=media_group)
-                    await answer(query, "Вложения отправлены выше")
-                else:
-                    await answer(query, "Нет подходящих вложений для отправки")
-            except Exception as e:
-                logger.error(f"❌ Ошибка отправки вложений: {e}")
-                await answer(query, "Не удалось отправить вложения")
-        else:
+        if not chat_id:
             await answer(query, "Не удалось отправить вложения")
+            return set_state(context, ITEM_DETAIL)
 
-        return set_state(context, ITEM_DETAIL)
+        await answer(query, "Отправляю вложения...")
 
-    # ---------- КНОПКИ НАВИГАЦИИ ----------
+        caption = f"📸 Вложения к задаче\n\n{item.get('text')}"
+
+        sent = await _send_media_to_chat(
+            context,
+            chat_id,
+            item.get("media_items", []),
+            caption=caption,
+        )
+
+        if sent:
+            logger.info(
+                "👁 Пользователь %s получил вложения по задаче %s",
+                user.id,
+                item_id,
+            )
+            return set_state(context, ITEM_DETAIL)
+
+        return await show_item_detail(
+            update,
+            context,
+            item_id,
+            message_id,
+            notice="⚠️ Не удалось отправить вложения.",
+        )
+
     await answer(query)
 
     if data == CB_BACK_CATEGORIES:
+        logger.info("⬅️ Пользователь %s вернулся к списку задач", user.id)
         return await show_current_checklist(update, context, message_id)
 
     if data == CB_BACK_MENU:
+        logger.info("⬅️ Пользователь %s вернулся в меню", user.id)
         return MAIN_MENU
+
+    if data == CB_NOOP:
+        return current_state(context)
 
     return await show_current_checklist(update, context, message_id)
 
 
-# ---------- ОБРАБОТКА ВХОДЯЩИХ ФОТО/ВИДЕО (ОДИНОЧНЫХ И АЛЬБОМОВ) ----------
-def _extract_media_item(message) -> dict | None:
-    """Извлекает информацию о медиа из сообщения."""
-    if message.photo:
-        return {"type": "photo", "file_id": message.photo[-1].file_id}
-    elif message.video:
-        return {"type": "video", "file_id": message.video.file_id}
-    return None
+# =========================================================
+# PHOTO PROMPT
+# =========================================================
 
-
-def _is_album_message(message) -> bool:
-    """Проверяет, является ли сообщение частью альбома."""
-    return hasattr(message, 'media_group_id') and message.media_group_id is not None
-
-
-async def _process_media_items(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                               meta: dict, items: list[dict]) -> int:
-    """Обрабатывает список медиа-файлов (альбом или несколько)."""
+async def show_photo_prompt(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    item_id: int,
+) -> int:
     user = update.effective_user
-    chat_id = update.effective_chat.id
 
-    item_id = meta.get("item_id")
-    mark_done = bool(meta.get("mark_done"))
-    prompt_message_id = meta.get("prompt_message_id")
-
-    logger.info(f"📥 Обработка медиа для задачи {item_id}, количество файлов: {len(items)}, mark_done={mark_done}")
-
-    task_item = get_item_by_id(user.id, item_id)
-    if not task_item:
-        logger.warning(f"⚠️ Задача {item_id} не найдена")
-        context.user_data.pop("await_photo", None)
-        await context.bot.send_message(chat_id=chat_id, text="⚠️ Задача не найдена.")
-        return MAIN_MENU
-
-    # Формируем подпись для альбома
-    caption = build_photo_caption(user.id, task_item)
-
-    # Отправляем альбом в канал
-    try:
-        message_ids = await send_media_group_to_channel(context, items, caption)
-        logger.info(f"📨 Альбом отправлен в канал, message_ids: {message_ids}")
-    except Exception as e:
-        logger.error(f"❌ Не удалось отправить альбом в канал: {e}")
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="⚠️ Не удалось загрузить альбом в канал. Попробуйте отправить файлы по одному."
-        )
-        return set_state(context, AWAIT_TASK_PHOTO)
-
-    # Сохраняем все file_id и message_id
-    attach_media_to_task(
-        user_id=user.id,
-        item_id=item_id,
-        media_items=items,
-        channel_message_ids=message_ids,
-        mark_done=mark_done,
-    )
-    logger.info(f"💾 Медиа сохранены для задачи {item_id}")
-
-    context.user_data.pop("await_photo", None)
-    await cleanup_message(context, chat_id, prompt_message_id, "✅ Альбом получен")
-
-    notice = "🎉 Молодец! Задача выполнена, альбом сохранён." if mark_done else "🎉 Молодец! Альбом сохранён."
-    return await send_new_item_detail(update, context, item_id, notice)
-
-
-async def _handle_single_media(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                               meta: dict) -> int:
-    """Обрабатывает одиночное фото или видео."""
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    item_id = meta.get("item_id")
-    mark_done = bool(meta.get("mark_done"))
-    prompt_message_id = meta.get("prompt_message_id")
-
-    logger.info(f"📥 Обработка одиночного медиа для задачи {item_id}, mark_done={mark_done}")
-
-    task_item = get_item_by_id(user.id, item_id)
-    if not task_item:
-        logger.warning(f"⚠️ Задача {item_id} не найдена")
-        context.user_data.pop("await_photo", None)
-        await context.bot.send_message(chat_id=chat_id, text="⚠️ Задача не найдена.")
-        return MAIN_MENU
-
-    # Определяем тип медиа
-    media_item = _extract_media_item(update.message)
-    if not media_item:
-        logger.warning("⚠️ Не удалось распознать файл")
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="⚠️ Не удалось распознать файл. Отправьте фото или видео."
-        )
-        return set_state(context, AWAIT_TASK_PHOTO)
-
-    # Отправляем одиночный файл в канал
-    try:
-        caption = build_photo_caption(user.id, task_item)
-        message_id = await send_photo_to_channel(context, media_item["file_id"], caption)
-        logger.info(f"📨 Одиночный файл отправлен в канал, message_id={message_id}")
-    except Exception as e:
-        logger.error(f"❌ Не удалось отправить файл в канал: {e}")
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="⚠️ Не удалось загрузить файл в канал. Попробуйте ещё раз."
-        )
-        return set_state(context, AWAIT_TASK_PHOTO)
-
-    # Сохраняем
-    attach_media_to_task(
-        user_id=user.id,
-        item_id=item_id,
-        media_items=[media_item],
-        channel_message_ids=[message_id],
-        mark_done=mark_done,
-    )
-    logger.info(f"💾 Медиа сохранено для задачи {item_id}")
-
-    context.user_data.pop("await_photo", None)
-    await cleanup_message(context, chat_id, prompt_message_id, "✅ Файл получен")
-
-    notice = "🎉 Молодец! Задача выполнена, файл сохранён." if mark_done else "🎉 Молодец! Файл сохранён."
-    return await send_new_item_detail(update, context, item_id, notice)
-
-
-async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user
     if not user:
         return MAIN_MENU
 
     chat_id = update.effective_chat.id
+
+    if not chat_id:
+        return MAIN_MENU
+
+    item = get_item_by_id(user.id, item_id)
+
+    if not item:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Задача не найдена.",
+        )
+
+        return MAIN_MENU
+
+    logger.info("📸 Пользователь %s открывает окно загрузки фото для задачи %s", user.id, item_id)
+
+    text = (
+        "📸 Прикрепите фото к задаче\n\n"
+        f"📌 {item.get('text')}\n\n"
+        "Отправьте фото или видео одним сообщением.\n"
+        "Можно отправить несколько файлов альбомом."
+    )
+
+    if item.get("requires_photo"):
+        text += "\n\n⚠️ Без фото эта задача не может быть выполнена."
+
+    msg = await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=photo_prompt_keyboard(bool(item.get("has_photo"))),
+    )
+
+    context.user_data["await_photo"] = {
+        "item_id": item_id,
+        "mark_done": not bool(item.get("completed")),
+        "prompt_message_id": msg.message_id,
+    }
+
+    return set_state(context, AWAIT_TASK_PHOTO)
+
+
+# =========================================================
+# PHOTO INPUT
+# =========================================================
+
+def _extract_media_item(message) -> dict | None:
+    if message.photo:
+        return {
+            "type": "photo",
+            "file_id": message.photo[-1].file_id,
+        }
+
+    if message.video:
+        return {
+            "type": "video",
+            "file_id": message.video.file_id,
+        }
+
+    return None
+
+
+def _is_album_message(message) -> bool:
+    return hasattr(message, "media_group_id") and message.media_group_id is not None
+
+
+async def photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+
+    if not user:
+        return MAIN_MENU
+
+    chat_id = update.effective_chat.id
+
     if not chat_id:
         return MAIN_MENU
 
     meta = context.user_data.get("await_photo")
+
     if not meta:
-        logger.warning("⚠️ Получено фото, но нет активного ожидания")
+        logger.warning("⚠️ Получено медиа, но нет активного ожидания фото")
+
         await context.bot.send_message(
             chat_id=chat_id,
-            text="Начните заново с /start."
+            text="Начните заново с /start.",
         )
+
         return MAIN_MENU
 
-    # Проверяем, является ли сообщение частью альбома
     if _is_album_message(update.message):
-        logger.info(f"📸 Обнаружен альбом, media_group_id={update.message.media_group_id}")
+        logger.info(
+            "📸 Пользователь %s отправил часть альбома media_group_id=%s",
+            user.id,
+            update.message.media_group_id,
+        )
+
         return await _handle_album_part(update, context, meta)
-    else:
-        logger.info("📸 Получено одиночное медиа")
-        return await _handle_single_media(update, context, meta)
+
+    logger.info("📸 Пользователь %s отправил одиночное медиа", user.id)
+
+    return await _handle_single_media(update, context, meta)
 
 
-async def _handle_album_part(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                             meta: dict) -> int:
-    """Собирает все части альбома с задержкой."""
+async def _handle_album_part(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    meta: dict,
+) -> int:
     global _album_buffer
 
     media_group_id = update.message.media_group_id
+
     if not media_group_id:
         return AWAIT_TASK_PHOTO
 
@@ -604,63 +657,263 @@ async def _handle_album_part(update: Update, context: ContextTypes.DEFAULT_TYPE,
             "last_update": update,
             "timer_started": False,
         }
-        logger.info(f"🔄 Начало сбора альбома {media_group_id}")
 
-    # Добавляем текущий файл
-    item = _extract_media_item(update.message)
-    if item:
-        _album_buffer[media_group_id]["items"].append(item)
+        logger.info("🔄 Начинаю сбор альбома %s", media_group_id)
+
+    media_item = _extract_media_item(update.message)
+
+    if media_item:
+        _album_buffer[media_group_id]["items"].append(media_item)
         _album_buffer[media_group_id]["last_update"] = update
-        logger.info(f"➕ Добавлен файл в альбом {media_group_id}, всего: {len(_album_buffer[media_group_id]['items'])}")
 
-    # Если таймер ещё не запущен, запускаем его
+        logger.info(
+            "➕ Добавлен файл в альбом %s. Всего файлов: %s",
+            media_group_id,
+            len(_album_buffer[media_group_id]["items"]),
+        )
+
     if not _album_buffer[media_group_id]["timer_started"]:
         _album_buffer[media_group_id]["timer_started"] = True
-        asyncio.create_task(_process_album_after_delay(media_group_id, context))
-        logger.info(f"⏳ Запущен таймер для альбома {media_group_id}")
+
+        asyncio.create_task(
+            _process_album_after_delay(media_group_id, context)
+        )
+
+        logger.info("⏳ Запущен таймер обработки альбома %s", media_group_id)
 
     return AWAIT_TASK_PHOTO
 
 
-async def _process_album_after_delay(media_group_id: str, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает собранный альбом после задержки."""
+async def _process_album_after_delay(
+    media_group_id: str,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     global _album_buffer
 
     await asyncio.sleep(1.5)
 
     album_data = _album_buffer.pop(media_group_id, None)
+
     if not album_data:
-        logger.warning(f"⚠️ Альбом {media_group_id} не найден в буфере")
+        logger.warning("⚠️ Альбом %s не найден в буфере", media_group_id)
         return
 
     items = album_data.get("items", [])
+
     if not items:
-        logger.warning(f"⚠️ Альбом {media_group_id} пуст")
+        logger.warning("⚠️ Альбом %s оказался пустым", media_group_id)
         return
 
     update = album_data.get("last_update")
     meta = album_data.get("meta")
 
     if not update or not meta:
-        logger.warning(f"⚠️ Альбом {media_group_id} не имеет обновления или мета")
+        logger.warning("⚠️ Альбом %s не имеет update или meta", media_group_id)
         return
 
-    logger.info(f"📦 Альбом {media_group_id} собран, файлов: {len(items)}")
+    logger.info("📦 Альбом %s собран. Файлов: %s", media_group_id, len(items))
 
     try:
         await _process_media_items(update, context, meta, items)
     except Exception as e:
-        logger.error(f"❌ Ошибка обработки альбома {media_group_id}: {e}")
+        logger.error("❌ Ошибка обработки альбома %s: %s", media_group_id, e, exc_info=True)
+
         chat_id = update.effective_chat.id
+
         if chat_id:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="⚠️ Произошла ошибка при обработке альбома. Попробуйте отправить файлы по одному."
+                text="⚠️ Произошла ошибка при обработке альбома. Попробуйте отправить файлы по одному.",
             )
+
+
+async def _process_media_items(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    meta: dict,
+    items: list[dict],
+) -> int:
+    user = update.effective_user
+
+    if not user:
+        return MAIN_MENU
+
+    chat_id = update.effective_chat.id
+
+    if not chat_id:
+        return MAIN_MENU
+
+    item_id = meta.get("item_id")
+    mark_done = bool(meta.get("mark_done"))
+    prompt_message_id = meta.get("prompt_message_id")
+
+    logger.info(
+        "📥 Обрабатываю медиа для задачи %s. Файлов: %s. mark_done=%s",
+        item_id,
+        len(items),
+        mark_done,
+    )
+
+    task_item = get_item_by_id(user.id, item_id)
+
+    if not task_item:
+        logger.warning("⚠️ Задача %s не найдена при обработке медиа", item_id)
+
+        context.user_data.pop("await_photo", None)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Задача не найдена.",
+        )
+
+        return MAIN_MENU
+
+    caption = build_photo_caption(user.id, task_item)
+
+    try:
+        channel_message_ids = await send_media_group_to_channel(
+            context,
+            items,
+            caption,
+        )
+
+        logger.info("📨 Медиа отправлены в канал. message_ids=%s", channel_message_ids)
+
+    except Exception as e:
+        logger.error("❌ Не удалось отправить медиа в канал: %s", e, exc_info=True)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Не удалось загрузить файлы в канал. Попробуйте отправить их по одному.",
+        )
+
+        return set_state(context, AWAIT_TASK_PHOTO)
+
+    attach_media_to_task(
+        user_id=user.id,
+        item_id=item_id,
+        media_items=items,
+        channel_message_ids=channel_message_ids,
+        mark_done=mark_done,
+        task_item=task_item,
+    )
+
+    context.user_data.pop("await_photo", None)
+
+    await cleanup_message(context, chat_id, prompt_message_id, "✅ Файлы получены")
+
+    notice = (
+        "🎉 Молодец! Задача выполнена, фото сохранены."
+        if mark_done
+        else "🎉 Молодец! Фото сохранены."
+    )
+
+    logger.info("✅ Медиа привязаны к задаче %s пользователем %s", item_id, user.id)
+
+    return await send_new_item_detail(update, context, item_id, notice)
+
+
+async def _handle_single_media(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    meta: dict,
+) -> int:
+    user = update.effective_user
+
+    if not user:
+        return MAIN_MENU
+
+    chat_id = update.effective_chat.id
+
+    if not chat_id:
+        return MAIN_MENU
+
+    item_id = meta.get("item_id")
+    mark_done = bool(meta.get("mark_done"))
+    prompt_message_id = meta.get("prompt_message_id")
+
+    logger.info(
+        "📥 Обрабатываю одиночное медиа для задачи %s. mark_done=%s",
+        item_id,
+        mark_done,
+    )
+
+    task_item = get_item_by_id(user.id, item_id)
+
+    if not task_item:
+        logger.warning("⚠️ Задача %s не найдена при обработке одиночного медиа", item_id)
+
+        context.user_data.pop("await_photo", None)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Задача не найдена.",
+        )
+
+        return MAIN_MENU
+
+    media_item = _extract_media_item(update.message)
+
+    if not media_item:
+        logger.warning("⚠️ Не удалось распознать файл от пользователя %s", user.id)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Не удалось распознать файл. Отправьте фото или видео.",
+        )
+
+        return set_state(context, AWAIT_TASK_PHOTO)
+
+    caption = build_photo_caption(user.id, task_item)
+
+    try:
+        channel_message_ids = await send_media_group_to_channel(
+            context,
+            [media_item],
+            caption,
+        )
+
+        logger.info("📨 Одиночный файл отправлен в канал. message_ids=%s", channel_message_ids)
+
+    except Exception as e:
+        logger.error("❌ Не удалось отправить одиночный файл в канал: %s", e, exc_info=True)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Не удалось загрузить файл в канал. Попробуйте ещё раз.",
+        )
+
+        return set_state(context, AWAIT_TASK_PHOTO)
+
+    attach_media_to_task(
+        user_id=user.id,
+        item_id=item_id,
+        media_items=[media_item],
+        channel_message_ids=channel_message_ids,
+        mark_done=mark_done,
+        task_item=task_item,
+    )
+
+    context.user_data.pop("await_photo", None)
+
+    await cleanup_message(context, chat_id, prompt_message_id, "✅ Файл получен")
+
+    notice = (
+        "🎉 Молодец! Задача выполнена, фото сохранены."
+        if mark_done
+        else "🎉 Молодец! Фото сохранены."
+    )
+
+    logger.info("✅ Одиночный файл привязан к задаче %s пользователем %s", item_id, user.id)
+
+    return await send_new_item_detail(update, context, item_id, notice)
 
 
 async def photo_wrong_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = update.effective_chat.id
+
+    logger.warning("⚠️ Пользователь отправил неподдерживаемый тип файла")
+
     if chat_id:
         await context.bot.send_message(
             chat_id=chat_id,
@@ -669,20 +922,24 @@ async def photo_wrong_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 "Если хотите отменить прикрепление, нажмите кнопку «Отмена»."
             ),
         )
+
     return set_state(context, AWAIT_TASK_PHOTO)
 
 
 async def photo_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+
     await answer(query)
 
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
 
     chat_id = update.effective_chat.id
 
     meta = context.user_data.get("await_photo") or {}
+
     item_id = meta.get("item_id")
     prompt_message_id = meta.get("prompt_message_id")
 
@@ -690,7 +947,8 @@ async def photo_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         prompt_message_id = query.message.message_id
 
     context.user_data.pop("await_photo", None)
-    logger.info(f"❌ Отмена прикрепления фото для задачи {item_id}")
+
+    logger.info("❌ Пользователь %s отменил прикрепление фото к задаче %s", user.id, item_id)
 
     await cleanup_message(context, chat_id, prompt_message_id, "❌ Отменено")
 
@@ -702,9 +960,19 @@ async def photo_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def photo_state_guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await answer(query, "Сначала отправьте фото/видео или нажмите «Отмена»")
+
+    await answer(
+        query,
+        "Сначала отправьте фото/видео или нажмите «Отмена»",
+        show_alert=True,
+    )
+
     return set_state(context, AWAIT_TASK_PHOTO)
 
+
+# =========================================================
+# PROGRESS
+# =========================================================
 
 async def show_progress(
     update: Update,
@@ -713,8 +981,11 @@ async def show_progress(
     notice: str | None = None,
 ) -> int:
     user = update.effective_user
+
     if not user:
         return MAIN_MENU
+
+    logger.info("📊 Пользователь %s открыл прогресс", user.id)
 
     summary = get_user_progress_summary(user.id)
 
@@ -726,7 +997,14 @@ async def show_progress(
 
     if total == 0:
         text = "📊 Прогресс\n\nНа сегодня задач нет."
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)]])
+
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("◀️ В меню", callback_data=CB_BACK_MENU)
+                ]
+            ]
+        )
     else:
         bar = progress_bar(done, total)
         pct = percent(done, total)
@@ -751,24 +1029,87 @@ async def show_progress(
             lines.append(f"Осталось: {len(undone)}")
 
         text = "\n".join(lines)
+
         kb = progress_keyboard()
 
     if notice:
         text = f"{notice}\n\n{text}"
 
     await render(update, context, text, kb, message_id)
+
     return set_state(context, PROGRESS_VIEW)
 
 
 async def progress_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+
     await answer(query)
 
-    message_id = query.message.message_id if query.message else None
+    user = update.effective_user
+
+    if user:
+        logger.info("⬅️ Пользователь %s вернулся в меню из прогресса", user.id)
+
     return MAIN_MENU
 
 
 async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+
     await answer(query)
-    return context.user_data.get("state", MAIN_MENU)
+
+    return current_state(context)
+
+
+# =========================================================
+# MEDIA SEND HELPER
+# =========================================================
+
+async def _send_media_to_chat(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    media_items: list[dict],
+    caption: str | None = None,
+) -> bool:
+    if not media_items:
+        return False
+
+    try:
+        for start in range(0, len(media_items), MEDIA_CHUNK_SIZE):
+            chunk = media_items[start:start + MEDIA_CHUNK_SIZE]
+            media_group = []
+
+            for index, media in enumerate(chunk):
+                file_id = media.get("file_id")
+
+                if not file_id:
+                    continue
+
+                media_caption = caption if start == 0 and index == 0 else None
+
+                if media.get("type") == "video":
+                    media_group.append(
+                        InputMediaVideo(
+                            media=file_id,
+                            caption=media_caption,
+                        )
+                    )
+                else:
+                    media_group.append(
+                        InputMediaPhoto(
+                            media=file_id,
+                            caption=media_caption,
+                        )
+                    )
+
+            if media_group:
+                await context.bot.send_media_group(
+                    chat_id=chat_id,
+                    media=media_group,
+                )
+
+        return True
+
+    except Exception as e:
+        logger.error("❌ Ошибка отправки медиа пользователю: %s", e, exc_info=True)
+        return False
