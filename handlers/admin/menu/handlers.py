@@ -15,11 +15,9 @@ async def show_main(update: Update, context: ContextTypes.DEFAULT_TYPE, message_
 
 
 async def show_shifts(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
-    """Показывает смены сегодня (перенаправляет в reports)"""
-    from ..reports.handlers import show_day_report
-    from utils.time_utils import today_msk_str
-    today = today_msk_str()
-    return await show_day_report(update, context, today, message_id, notice)
+    """Показывает отчёты за сегодня (главное меню отчётов)"""
+    from ..reports.handlers import show_reports_menu
+    return await show_reports_menu(update, context, message_id, notice)
 
 
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -43,7 +41,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from ..editor.handlers import show_edit_locations
         return await show_edit_locations(update, context, message_id)
 
-    if data == CB_EMPLOYEES:                     # НОВОЕ
+    if data == CB_EMPLOYEES:
         from ..employees.handlers import show_employees_list
         return await show_employees_list(update, context, message_id)
 
