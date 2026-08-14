@@ -176,13 +176,13 @@ async def show_calendar(
 
 
 async def show_day_report(
-    update,
-    context,
-    date_str,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    date_str: str,
     message_id=None,
     notice=None,
-    tab=None,
-):
+    tab: str = None,
+) -> int:
     if tab:
         _set_tab(context, tab)
 
@@ -193,108 +193,128 @@ async def show_day_report(
     context.user_data["report_date"] = date_str
     _set_calendar_to_date(context, date_str)
 
-    taxi_has_media = False
+    # Генерируем клавиатуру один раз, она одинаковая для всех сообщений этого экрана
+    kb = day_report_keyboard(
+        mode=mode,
+        show_photos=show_photos,
+        has_bar_media=False, 
+        has_kitchen_media=False,
+        current_tab=current_tab,
+        taxi_has_media=False,
+    )
 
+    # =========================================================
+    # ВКЛАДКА: ЧЕК-ЛИСТЫ (Одно сообщение)
+    # =========================================================
     if current_tab == CB_TAB_CHECKLIST:
         try:
-            text, has_bar_media, has_kitchen_media = get_report_text(
-                date_str,
-                mode,
-                show_photos,
-            )
+            text, has_bar_media, has_kitchen_media = get_report_text(date_str, mode, show_photos)
         except Exception as e:
             logger.error("Ошибка построения отчёта чек-листов: %s", e)
-            text = "Не удалось загрузить отчёт по чек-листам."
+            text = "❌ Не удалось загрузить отчёт по чек-листам."
             has_bar_media = False
             has_kitchen_media = False
 
+        if notice:
+            text = f"{notice}\n\n{text}"
+
+        await render(update, context, text, kb, message_id)
+        return _state(context, ADMIN_DAY_REPORT)
+
+    # =========================================================
+    # ВКЛАДКА: СМЕНЫ (ДВА ОТДЕЛЬНЫХ СООБЩЕНИЯ)
+    # =========================================================
     elif current_tab == CB_TAB_SHIFT_REPORTS:
         reports = get_shift_reports_for_date(date_str)
+        
+        # Удаляем старое сообщение, чтобы не плодить историю при переключении вкладок
+        if message_id:
+            try:
+                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
+            except Exception:
+                pass 
 
-        lines = [
-            f"Сменные отчёты · {format_date_ru(date_str)}",
-            "",
-        ]
+        # --- Сообщение 1: Открытие ---
+        opening_report = reports.get("opening")
+        opening_text = f"📄 <b>СМЕНА: ОТКРЫТИЕ</b>\n🗓 {format_date_ru(date_str)}\n\n"
+        if opening_report:
+            opening_text += format_shift_report_text(opening_report)
+        else:
+            opening_text += "⚠️ Отчёт об открытии ещё не сохранён."
+            
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=opening_text,
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
 
-        for rtype, label in (("opening", "Открытие"), ("closing", "Закрытие")):
-            report = reports.get(rtype)
+        # --- Сообщение 2: Закрытие ---
+        closing_report = reports.get("closing")
+        closing_text = f"📄 <b>СМЕНА: ЗАКРЫТИЕ</b>\n🗓 {format_date_ru(date_str)}\n\n"
+        if closing_report:
+            closing_text += format_shift_report_text(closing_report)
+        else:
+            closing_text += "⚠️ Отчёт о закрытии ещё не сохранён."
 
-            if report:
-                lines.append(label)
-                lines.append(format_shift_report_text(report))
-                lines.append("")
-            else:
-                lines.append(f"{label} · не сохранён")
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=closing_text,
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+        
+        # Сохраняем ID последнего сообщения как текущий активный экран
+        return _state(context, ADMIN_DAY_REPORT)
 
-        text = "\n".join(lines).strip()
-        has_bar_media = False
-        has_kitchen_media = False
-
+    # =========================================================
+    # ВКЛАДКА: ТАКСИ (Одно сообщение)
+    # =========================================================
     else:
         taxi_data = get_taxi_for_date(date_str) or []
-
-        lines = [
-            f"Такси · {format_date_ru(date_str)}",
-            "",
-        ]
-
+        taxi_has_media = False
+        
+        lines = [f"🚕 <b>ТАКСИ</b>", f"🗓 {format_date_ru(date_str)}", ""]
+        
         if not taxi_data:
-            lines.append("Нет записей.")
+            lines.append("ℹ️ За этот день нет записей по такси.")
         else:
             total_all = 0.0
-
             for user_data in taxi_data:
                 name = user_data.get("full_name") or "Сотрудник"
                 total = float(user_data.get("total") or 0.0)
                 total_all += total
-
-                lines.append(f"{name} — {total:.2f} ₽")
-
+                
+                lines.append(f"👤 <b>{name}</b>: {total:.2f} ₽")
+                
                 for exp in user_data.get("expenses", []):
                     exp_date = exp.get("date") or date_str
                     amount = float(exp.get("amount") or 0.0)
-                    lines.append(f"   {format_date_ru(exp_date)} · {amount:.2f} ₽")
-
+                    lines.append(f"   • {format_date_ru(exp_date)} — {amount:.2f} ₽")
+                    
+                    # Проверяем наличие фото
+                    raw_media = exp.get("photo_file_ids") or exp.get("photo_file_id")
+                    if raw_media:
+                        taxi_has_media = True
+                        
                 lines.append("")
+            
+            lines.append(f"💰 <b>Итого:</b> {total_all:.2f} ₽")
 
-            lines.append(f"Итого · {total_all:.2f} ₽")
+        # Обновляем клавиатуру, если есть фото такси
+        if taxi_has_media:
+            kb = day_report_keyboard(
+                mode=mode, show_photos=show_photos,
+                has_bar_media=False, has_kitchen_media=False,
+                current_tab=current_tab, taxi_has_media=True,
+            )
 
-        text = "\n".join(lines).strip()
+        text = "\n".join(lines)
+        if notice:
+            text = f"{notice}\n\n{text}"
 
-        has_bar_media = False
-        has_kitchen_media = False
-
-        for user_data in taxi_data:
-            for exp in user_data.get("expenses", []):
-                raw_media = exp.get("photo_file_ids") or exp.get("photo_file_id")
-                if raw_media:
-                    taxi_has_media = True
-                    break
-
-            if taxi_has_media:
-                break
-
-    if notice:
-        text = f"{notice}\n\n{text}"
-
-    kb = day_report_keyboard(
-        mode=mode,
-        show_photos=show_photos,
-        has_bar_media=has_bar_media,
-        has_kitchen_media=has_kitchen_media,
-        current_tab=current_tab,
-        taxi_has_media=taxi_has_media,
-    )
-
-    await render(
-        update,
-        context,
-        text,
-        kb,
-        message_id,
-    )
-
-    return _state(context, ADMIN_DAY_REPORT)
+        await render(update, context, text, kb, message_id)
+        return _state(context, ADMIN_DAY_REPORT)
 
 
 # =========================================================
