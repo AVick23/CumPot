@@ -1,7 +1,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constants import (
     CB_START_SHIFT, CB_CHECKLIST, CB_PROGRESS, CB_BACK_MENU,
-    CB_POSITION_PREFIX, CB_SHIFT_TYPE_PREFIX, CB_PROFILE, CB_TAXI
+    CB_POSITION_PREFIX, CB_SHIFT_TYPE_PREFIX, CB_PROFILE, CB_TAXI,
+    CB_REPORTS  # <-- добавлен импорт
 )
 
 
