@@ -45,6 +45,7 @@ from .constants import (
     REPORT_TYPE_LABELS,
     REPORT_SECTIONS,
     EDITOR_INLINE_LIMIT,
+    MONTHS,  # <-- ДОБАВЛЕНО
 )
 
 from .keyboards import (
@@ -627,6 +628,7 @@ async def show_editor_calendar(
     year = context.user_data.get("editor_cal_year", now.year)
     month = context.user_data.get("editor_cal_month", now.month)
 
+    # Безопасная проверка месяца
     if not (1 <= month <= 12):
         month = now.month
 
@@ -637,10 +639,13 @@ async def show_editor_calendar(
     today = now.strftime("%Y-%m-%d")
 
     type_label = REPORT_TYPE_LABELS.get(report_type, report_type)
+    
+    # Безопасное получение названия месяца
+    month_name = MONTHS[month - 1] if 1 <= month <= len(MONTHS) else ""
 
     text = (
         f"📅 Календарь: {type_label}\n\n"
-        f"{MONTHS[month - 1] if month <= 12 else ''} {year}\n\n"
+        f"{month_name} {year}\n\n"
         "📌 — отчёт сохранён\n"
         "🔹 — выбранная дата\n"
         "• — сегодня\n\n"
@@ -660,7 +665,7 @@ async def show_editor_calendar(
 
     await render(update, context, text, kb, message_id)
 
-    logger.info("📅 Открыт календарь в редакторе: %s %s, type=%s", MONTHS[month - 1], year, report_type)
+    logger.info("📅 Открыт календарь в редакторе: %s %s, type=%s", month_name, year, report_type)
 
     return _state(context, REPORT_CALENDAR)
 
