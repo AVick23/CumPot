@@ -1,4 +1,4 @@
-# Состояния профиля
+# Состояния
 PROFILE_VIEW = 20
 PROFILE_EDIT_NAME = 21
 PROFILE_EDIT_PHONE = 22
@@ -17,22 +17,46 @@ CB_PROFILE_EDIT_RESPONSIBILITIES = "prof_edit_resp"
 CB_PROFILE_EDIT_POSITION = "prof_edit_pos"
 CB_PROFILE_CANCEL = "prof_cancel"
 
-# Словарь для отображения названий полей
+# Человеческие названия полей (с иконками)
 FIELD_LABELS = {
-    "full_name": "ФИО",
-    "phone": "Телефон",
-    "birthday": "День рождения",
-    "address": "Адрес",
-    "responsibilities": "Обязанности",
-    "position": "Позиция",
+    "full_name": "👤 ФИО",
+    "phone": "📞 Телефон",
+    "birthday": "🎂 День рождения",
+    "address": "🏠 Адрес",
+    "responsibilities": "📋 Обязанности",
+    "position": "💼 Позиция",
 }
 
-# Соответствие callback -> (поле в БД, состояние, подсказка)
+# Маппинг callback → (поле БД, состояние, подсказка с текущим значением)
 EDIT_FIELD_MAP = {
-    CB_PROFILE_EDIT_NAME: ("full_name", PROFILE_EDIT_NAME, "Введите новое ФИО (фамилия и имя):"),
-    CB_PROFILE_EDIT_PHONE: ("phone", PROFILE_EDIT_PHONE, "Введите новый номер телефона:"),
-    CB_PROFILE_EDIT_BIRTHDAY: ("birthday", PROFILE_EDIT_BIRTHDAY, "Введите новую дату рождения в формате ГГГГ-ММ-ДД:"),
-    CB_PROFILE_EDIT_ADDRESS: ("address", PROFILE_EDIT_ADDRESS, "Введите новый адрес:"),
-    CB_PROFILE_EDIT_RESPONSIBILITIES: ("responsibilities", PROFILE_EDIT_RESPONSIBILITIES, "Введите новые обязанности:"),
-    CB_PROFILE_EDIT_POSITION: ("position", PROFILE_EDIT_POSITION, "Введите новую позицию (bar или kitchen):"),
+    CB_PROFILE_EDIT_NAME: (
+        "full_name",
+        PROFILE_EDIT_NAME,
+        "Введите новое ФИО (фамилия и имя):"
+    ),
+    CB_PROFILE_EDIT_PHONE: (
+        "phone",
+        PROFILE_EDIT_PHONE,
+        "Введите номер телефона в формате +7XXXXXXXXXX:"
+    ),
+    CB_PROFILE_EDIT_BIRTHDAY: (
+        "birthday",
+        PROFILE_EDIT_BIRTHDAY,
+        "Введите дату рождения в формате ГГГГ-ММ-ДД:"
+    ),
+    CB_PROFILE_EDIT_ADDRESS: (
+        "address",
+        PROFILE_EDIT_ADDRESS,
+        "Введите новый адрес:"
+    ),
+    CB_PROFILE_EDIT_RESPONSIBILITIES: (
+        "responsibilities",
+        PROFILE_EDIT_RESPONSIBILITIES,
+        "Введите новые обязанности (через запятую или список):"
+    ),
+    CB_PROFILE_EDIT_POSITION: (
+        "position",
+        PROFILE_EDIT_POSITION,
+        "Введите позицию: bar или kitchen"
+    ),
 }

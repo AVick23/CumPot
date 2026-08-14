@@ -20,13 +20,12 @@ from .constants import (
     EDIT_FIELD_MAP,
 )
 from .keyboards import profile_view_keyboard, profile_edit_keyboard
-from .utils import format_date, format_phone
+from .utils import format_date, format_phone, validate_phone, validate_date, validate_position
 
 from ..menu.utils import render, answer, set_state, get_current_state
 
 logger = logging.getLogger(__name__)
 
-# Состояние главного меню (для возврата)
 MAIN_MENU_STATE = 3
 
 
@@ -43,10 +42,10 @@ async def show_profile(
 
     user_data = get_user_profile(user.id)
     if not user_data:
-        await render(update, context, "Ошибка загрузки профиля.", None, message_id)
+        await render(update, context, "⚠️ Ошибка загрузки профиля.", None, message_id)
         return MAIN_MENU_STATE
 
-    # Форматируем данные для отображения
+    # Сбор данных с форматированием
     full_name = user_data.get("full_name") or "—"
     phone = format_phone(user_data.get("phone"))
     birthday = format_date(user_data.get("birthday"))
@@ -54,15 +53,16 @@ async def show_profile(
     responsibilities = user_data.get("responsibilities") or "—"
     position = user_data.get("position") or "—"
 
-    # Используем HTML-теги для жирного шрифта
+    # Стильный вывод с разделителями и иконками
     text = (
         "👤 <b>Мой профиль</b>\n\n"
-        f"<b>ФИО:</b> {full_name}\n"
-        f"<b>Телефон:</b> {phone}\n"
-        f"<b>День рождения:</b> {birthday}\n"
-        f"<b>Адрес:</b> {address}\n"
-        f"<b>Обязанности:</b> {responsibilities}\n"
-        f"<b>Позиция:</b> {position}\n"
+        f"<b>{FIELD_LABELS['full_name']}</b>  {full_name}\n"
+        f"<b>{FIELD_LABELS['phone']}</b>  {phone}\n"
+        f"<b>{FIELD_LABELS['birthday']}</b>  {birthday}\n"
+        f"<b>{FIELD_LABELS['address']}</b>  {address}\n"
+        f"<b>{FIELD_LABELS['responsibilities']}</b>  {responsibilities}\n"
+        f"<b>{FIELD_LABELS['position']}</b>  {position}\n"
+        "\n🔄 Нажмите на поле, чтобы изменить."
     )
     if notice:
         text = f"{notice}\n\n{text}"
@@ -82,22 +82,27 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not user:
         return MAIN_MENU_STATE
 
-    # Обработка выбора поля для редактирования
+    # Редактирование поля
     if data in EDIT_FIELD_MAP:
         field_name, state, prompt = EDIT_FIELD_MAP[data]
-
-        # Сохраняем в context, какое поле редактируем
         context.user_data["profile_edit_field"] = field_name
 
-        # Показываем сообщение с запросом ввода
-        text = f"✏️ Редактирование <b>{FIELD_LABELS.get(field_name, field_name)}</b>\n\n{prompt}"
+        # Показываем текущее значение для удобства
+        user_data = get_user_profile(user.id) or {}
+        current_value = user_data.get(field_name) or "не задано"
+
+        text = (
+            f"✏️ <b>Редактирование</b>\n\n"
+            f"<b>{FIELD_LABELS.get(field_name, field_name)}</b>\n"
+            f"Текущее значение: <i>{current_value}</i>\n\n"
+            f"{prompt}"
+        )
         kb = profile_edit_keyboard()
         await render(update, context, text, kb, message_id, parse_mode='HTML')
         await answer(query)
-
         return set_state(context, state)
 
-    # Назад в меню
+    # Назад в главное меню
     if data == CB_PROFILE_BACK:
         from ..menu.handlers import show_main_menu
         await answer(query)
@@ -105,9 +110,9 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # Отмена редактирования
     if data == CB_PROFILE_CANCEL:
-        await answer(query, "Редактирование отменено")
+        await answer(query, "Редактирование отменено", show_alert=True)
         context.user_data.pop("profile_edit_field", None)
-        return await show_profile(update, context, message_id, notice="Редактирование отменено")
+        return await show_profile(update, context, message_id, notice="✅ Редактирование отменено")
 
     # Fallback
     await answer(query)
@@ -130,25 +135,43 @@ async def profile_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("⚠️ Ошибка: не выбрано поле для редактирования. Начните заново.")
         return MAIN_MENU_STATE
 
-    # Валидация для позиции
-    if field_name == "position":
-        if text not in ("bar", "kitchen"):
-            await update.message.reply_text(
-                "⚠️ Позиция может быть только 'bar' или 'kitchen'.\n"
-                "Пожалуйста, введите корректное значение."
+    # --- Валидация в зависимости от поля ---
+    error = None
+    if field_name == "phone":
+        if not validate_phone(text):
+            error = (
+                "⚠️ Неверный формат телефона.\n"
+                "Используйте международный формат, например: +79161234567"
             )
-            return get_current_state(context)
+    elif field_name == "birthday":
+        if not validate_date(text):
+            error = (
+                "⚠️ Неверный формат даты.\n"
+                "Используйте ГГГГ-ММ-ДД, например: 1990-05-20"
+            )
+    elif field_name == "position":
+        if not validate_position(text):
+            error = (
+                "⚠️ Позиция может быть только 'bar' или 'kitchen'.\n"
+                "Введите корректное значение."
+            )
 
-    # Обновляем профиль
-    update_user_profile(user.id, **{field_name: text})
+    if error:
+        await update.message.reply_text(error)
+        return get_current_state(context)
 
-    # Очищаем контекст
-    context.user_data.pop("profile_edit_field", None)
+    # --- Обновление ---
+    try:
+        update_user_profile(user.id, **{field_name: text})
+        context.user_data.pop("profile_edit_field", None)
 
-    # Возвращаемся в просмотр профиля
-    chat_id = update.effective_chat.id
-    if chat_id:
-        await update.message.reply_text("✅ Данные обновлены!")
+        # Уведомление об успехе
+        await update.message.reply_text("✅ Данные успешно обновлены!")
 
-    # Показываем обновлённый профиль (отправляем новое сообщение, так как старое могло быть с клавиатурой)
-    return await show_profile(update, context, notice="✅ Профиль обновлён")
+        # Показываем обновлённый профиль (отправляем новое сообщение)
+        return await show_profile(update, context, notice="✅ Профиль обновлён")
+
+    except Exception as e:
+        logger.error("Ошибка обновления профиля: %s", e)
+        await update.message.reply_text("⚠️ Произошла ошибка при сохранении. Попробуйте позже.")
+        return get_current_state(context)
