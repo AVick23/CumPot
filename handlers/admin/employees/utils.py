@@ -593,3 +593,48 @@ def collect_taxi_photo_ids(user_id: int, period_days: int = 30, limit: int = 30)
                 return photo_ids
 
     return photo_ids
+
+
+# =========================================================
+# УДАЛЕНИЕ СОТРУДНИКА (НОВАЯ ФУНКЦИЯ)
+# =========================================================
+
+def delete_employee_completely(tg_id: int) -> None:
+    """
+    Полное удаление сотрудника со всей историей:
+    - смены
+    - такси
+    - отчёты
+    - прогресс чек-листов (как completed_by)
+    - ставки
+    - профиль (таблица users)
+    """
+    with get_connection() as conn:
+        # 1. Удаляем смены
+        conn.execute("DELETE FROM shifts WHERE user_id = ?", (tg_id,))
+        logger.info("Удалены смены для %s", tg_id)
+
+        # 2. Удаляем такси
+        conn.execute("DELETE FROM taxi_expenses WHERE user_id = ?", (tg_id,))
+        logger.info("Удалены такси для %s", tg_id)
+
+        # 3. Удаляем отчёты
+        conn.execute("DELETE FROM shift_reports WHERE author_id = ?", (tg_id,))
+        logger.info("Удалены отчёты для %s", tg_id)
+
+        # 4. Обнуляем completed_by в чек-листах (не удаляем сами записи, чтобы сохранить статистику по задачам)
+        conn.execute(
+            "UPDATE checklist_shared_progress SET completed_by = NULL WHERE completed_by = ?",
+            (tg_id,)
+        )
+        logger.info("Обнулены completed_by для %s", tg_id)
+
+        # 5. Удаляем ставки
+        conn.execute("DELETE FROM salary_rates WHERE user_id = ?", (tg_id,))
+        logger.info("Удалены ставки для %s", tg_id)
+
+        # 6. Удаляем самого пользователя
+        conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
+        logger.info("Удалён пользователь %s", tg_id)
+
+        conn.commit()

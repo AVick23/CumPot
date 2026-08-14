@@ -36,7 +36,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return await show_shifts(update, context, message_id)
 
     if data == CB_CALENDAR:
-        from ..reports.handlers import show_calendar
+        from ..reports.handlers import show_reports_menu as show_calendar
         return await show_calendar(update, context, message_id)
 
     if data == CB_EDIT:

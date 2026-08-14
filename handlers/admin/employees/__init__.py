@@ -20,6 +20,7 @@ from .constants import (
     EMPLOYEES_ANALYTICS,
     EMPLOYEE_AWAIT_RATE,
     EMPLOYEE_AWAIT_COMMENT,
+    EMPLOYEE_DELETE_CONFIRM,          # НОВОЕ
 )
 
 
@@ -75,5 +76,10 @@ def register_employee_states(states: dict):
 
     states[EMPLOYEE_AWAIT_COMMENT] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, employee_text_input),
+        CallbackQueryHandler(employees_callback),
+    ]
+
+    # НОВОЕ СОСТОЯНИЕ ДЛЯ ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ
+    states[EMPLOYEE_DELETE_CONFIRM] = [
         CallbackQueryHandler(employees_callback),
     ]

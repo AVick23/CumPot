@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from telegram import Update, InputMediaPhoto
 from telegram.ext import ContextTypes
 
+from db import get_connection
 from db.users import get_all_users, get_user
 from db.profile import (
     get_employee_full_info,
@@ -30,6 +31,7 @@ from .constants import (
     EMPLOYEES_ANALYTICS,
     EMPLOYEE_AWAIT_RATE,
     EMPLOYEE_AWAIT_COMMENT,
+    EMPLOYEE_DELETE_CONFIRM,
     CB_EMP_HOME,
     CB_EMP_ANALYTICS,
     CB_EMP_XLSX_ALL,
@@ -47,6 +49,8 @@ from .constants import (
     CB_EMP_SET_STATUS_PREFIX,
     CB_EMP_BACK,
     CB_EMP_CANCEL,
+    CB_EMP_DELETE,
+    CB_EMP_DELETE_CONFIRM_PREFIX,
     STATUSES,
     REPORT_PERIOD_DAYS,
 )
@@ -58,6 +62,7 @@ from .keyboards import (
     taxi_photos_keyboard,
     analytics_keyboard,
     cancel_keyboard,
+    confirm_delete_keyboard,
 )
 
 from .utils import (
@@ -69,6 +74,7 @@ from .utils import (
     get_taxi_expenses_full,
     collect_taxi_photo_ids,
     _period_range,
+    delete_employee_completely,
 )
 
 logger = logging.getLogger(__name__)
@@ -173,6 +179,9 @@ async def show_employee_detail(
     message_id: int | None = None,
     notice: str | None = None,
 ) -> int:
+    # Сохраняем ID текущего сотрудника в контексте для удаления
+    context.user_data["current_employee_id"] = tg_id
+
     user = get_user(tg_id)
 
     if not user:
@@ -434,6 +443,66 @@ async def show_analytics(
 
 
 # =========================================================
+# УДАЛЕНИЕ СОТРУДНИКА
+# =========================================================
+
+async def show_delete_confirm(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    tg_id: int,
+    message_id: int | None = None,
+) -> int:
+    user = get_user(tg_id)
+
+    if not user:
+        await _render(update, context, "⚠️ Сотрудник не найден.", None, message_id)
+        return await show_employees_list(update, context, message_id)
+
+    text = (
+        f"⚠️ <b>Удаление сотрудника</b>\n\n"
+        f"Вы уверены, что хотите удалить <b>{_short_name(user)}</b>?\n\n"
+        "Будут удалены все данные:\n"
+        "• Профиль\n"
+        "• Смены\n"
+        "• Такси\n"
+        "• Отчёты\n"
+        "• Прогресс по чек-листам\n"
+        "• Ставки\n\n"
+        "Это действие <b>НЕЛЬЗЯ</b> отменить!"
+    )
+
+    kb = confirm_delete_keyboard(tg_id)
+
+    await _render(update, context, text, kb, message_id)
+
+    return _set_state(context, EMPLOYEE_DELETE_CONFIRM)
+
+
+async def delete_employee(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    tg_id: int,
+    message_id: int | None = None,
+) -> int:
+    user = get_user(tg_id)
+
+    if not user:
+        await _render(update, context, "⚠️ Сотрудник не найден.", None, message_id)
+        return await show_employees_list(update, context, message_id)
+
+    name = _short_name(user)
+
+    try:
+        delete_employee_completely(tg_id)
+        notice = f"✅ Сотрудник <b>{name}</b> удалён."
+    except Exception as e:
+        logger.error("Ошибка удаления сотрудника %s: %s", tg_id, e)
+        notice = f"⚠️ Ошибка при удалении сотрудника {name}."
+
+    return await show_employees_list(update, context, message_id, notice)
+
+
+# =========================================================
 # CALLBACK ROUTER
 # =========================================================
 
@@ -615,6 +684,19 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             logger.error("Ошибка отправки фото такси: %s", e)
 
         return await show_employee_taxi(update, context, tg_id, message_id)
+
+    # УДАЛЕНИЕ СОТРУДНИКА
+    if data == CB_EMP_DELETE:
+        tg_id = context.user_data.get("current_employee_id")
+        if not tg_id:
+            return await show_employees_list(update, context, message_id, notice="⚠️ Ошибка: сотрудник не выбран.")
+
+        return await show_delete_confirm(update, context, tg_id, message_id)
+
+    # ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ
+    if data.startswith(CB_EMP_DELETE_CONFIRM_PREFIX):
+        tg_id = int(data.split(":")[1])
+        return await delete_employee(update, context, tg_id, message_id)
 
     return await show_employees_list(update, context, message_id)
 
