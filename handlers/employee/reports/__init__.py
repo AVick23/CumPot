@@ -13,6 +13,7 @@ from .constants import (
     REPORT_SECTION_MENU,
     REPORT_SECTION_LIST,
     REPORT_AWAIT_SECTION,
+    REPORT_CALENDAR,
 )
 
 
@@ -47,5 +48,10 @@ def register_report_states(states: dict):
     # Ввод значения конкретного пункта
     states[REPORT_AWAIT_SECTION] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, receive_report_text),
+        CallbackQueryHandler(report_callback),
+    ]
+
+    # Календарь внутри редактора
+    states[REPORT_CALENDAR] = [
         CallbackQueryHandler(report_callback),
     ]

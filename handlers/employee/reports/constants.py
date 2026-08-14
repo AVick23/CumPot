@@ -8,6 +8,7 @@ REPORT_TEXT_MODE = 52
 REPORT_SECTION_MENU = 53
 REPORT_SECTION_LIST = 54
 REPORT_AWAIT_SECTION = 55
+REPORT_CALENDAR = 56  # Новое состояние для календаря внутри редактора
 
 
 # =========================================================
@@ -27,6 +28,10 @@ CB_REPORT_SECTION_MODE = "r_section_mode"
 CB_REPORT_CANCEL = "r_cancel"
 
 CB_REPORT_BACK_EDITOR = "r_back_editor"
+CB_REPORT_CALENDAR = "r_calendar"  # Открыть календарь из редактора
+CB_REPORT_CAL_DATE_PREFIX = "r_cal_date:"  # Выбор даты в календаре редактора
+CB_REPORT_CAL_PREV_MONTH = "r_cal_prev"
+CB_REPORT_CAL_NEXT_MONTH = "r_cal_next"
 
 CB_REPORT_SECTION_MENU_CLEAR = "r_sm_clear"
 CB_REPORT_SECTION_START = "r_sm_start"
@@ -47,6 +52,13 @@ MONTHS_GEN = [
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
 ]
 
+MONTHS = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+
+WEEKDAYS_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
 REPORT_TYPE_LABELS = {
     "opening": "📋 Открытие",
     "closing": "🌙 Закрытие",
@@ -55,7 +67,6 @@ REPORT_TYPE_LABELS = {
 MSG_LIMIT = 4096
 
 # Сколько символов полного текста пытаться показать прямо в сообщении редактора.
-# Если текст длиннее — отправим его отдельными сообщениями выше.
 EDITOR_INLINE_LIMIT = 2500
 
 
@@ -94,9 +105,6 @@ REPORT_SECTIONS = {
     ],
 }
 
-# Варианты начала строки для парсинга.
-# Важно: не включаем голый "Тдс" без "-", иначе парсер будет ломаться
-# на строках вида "Тдс 76" внутри блока "На фильтре".
 REPORT_SECTION_VARIANTS = {
     "opening": {
         "Влажность в помещении": ["Влажность в помещении:", "Влажность в помещении"],
@@ -138,7 +146,6 @@ REPORT_SECTION_VARIANTS = {
     },
 }
 
-# Как разделы будут выглядеть при сборке отчёта из пунктов.
 REPORT_SECTION_OUTPUT_MARKERS = {
     "opening": {
         "Влажность в помещении": "Влажность в помещении",

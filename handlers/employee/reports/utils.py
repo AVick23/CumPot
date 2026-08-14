@@ -230,7 +230,6 @@ def get_report(date_str: str, report_type: str) -> dict | None:
 def get_previous_report_of_type(date_str: str, report_type: str) -> dict | None:
     """
     Находит последний сохранённый отчёт указанного типа СТРОГО ДО указанной даты.
-    Например, для закрытия 13.08 вернёт закрытие 12.08 (или 11.08), но НЕ открытие.
     """
     _ensure_reports_table()
 
@@ -249,6 +248,26 @@ def get_previous_report_of_type(date_str: str, report_type: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_dates_with_reports_for_type(year: int, month: int, report_type: str) -> set[str]:
+    """Возвращает даты с отчётами конкретного типа за месяц."""
+    _ensure_reports_table()
+
+    start_date = f"{year:04d}-{month:02d}-01"
+    end_date = f"{year:04d}-{month + 1:02d}-01" if month < 12 else f"{year + 1:04d}-01-01"
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT date
+            FROM shift_reports
+            WHERE date >= ? AND date < ? AND report_type = ?
+            """,
+            (start_date, end_date, report_type),
+        ).fetchall()
+
+    return {row["date"] for row in rows}
+
+
 # =========================================================
 # PARSER / GENERATOR
 # =========================================================
@@ -259,7 +278,6 @@ def _clean_marker_remainder(remainder: str) -> str:
     if not remainder:
         return ""
 
-    # Если после маркера остались только эмодзи/пунктуация — считаем, что значения нет.
     if all(not ch.isalnum() for ch in remainder):
         return ""
 
@@ -286,14 +304,7 @@ def _match_section_key(line: str, report_type: str) -> tuple[str | None, str | N
 
 
 def parse_report_sections(full_text: str, report_type: str) -> dict:
-    """
-    Разбирает отчёт на:
-    - _header: всё, что идёт до первого раздела;
-    - значения разделов.
-    """
-    values = {
-        "_header": "",
-    }
+    values = {"_header": ""}
 
     for section in REPORT_SECTIONS.get(report_type, []):
         values[section] = ""
@@ -337,9 +348,7 @@ def parse_report_sections(full_text: str, report_type: str) -> dict:
                     buffer.append(line.rstrip())
 
     if not started:
-        return {
-            "_header": (full_text or "").strip(),
-        }
+        return {"_header": (full_text or "").strip()}
 
     if current_key:
         values[current_key] = "\n".join(buffer).strip()
@@ -392,9 +401,7 @@ def auto_report_header(date_str: str, report_type: str) -> str:
 
 
 def empty_draft(date_str: str, report_type: str) -> dict:
-    values = {
-        "_header": auto_report_header(date_str, report_type),
-    }
+    values = {"_header": auto_report_header(date_str, report_type)}
 
     for section in REPORT_SECTIONS.get(report_type, []):
         values[section] = ""
@@ -411,7 +418,6 @@ def empty_draft(date_str: str, report_type: str) -> dict:
 
 def draft_from_report(report: dict, report_type: str) -> dict:
     full_text = report.get("full_text") or ""
-
     values = parse_report_sections(full_text, report_type)
 
     return {

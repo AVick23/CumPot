@@ -20,6 +20,7 @@ from .constants import (
     REPORT_SECTION_MENU,
     REPORT_SECTION_LIST,
     REPORT_AWAIT_SECTION,
+    REPORT_CALENDAR,
     CB_NOOP,
     CB_REPORT_BACK_MENU,
     CB_REPORT_OPEN_PREFIX,
@@ -30,6 +31,10 @@ from .constants import (
     CB_REPORT_SECTION_MODE,
     CB_REPORT_CANCEL,
     CB_REPORT_BACK_EDITOR,
+    CB_REPORT_CALENDAR,
+    CB_REPORT_CAL_DATE_PREFIX,
+    CB_REPORT_CAL_PREV_MONTH,
+    CB_REPORT_CAL_NEXT_MONTH,
     CB_REPORT_SECTION_MENU_CLEAR,
     CB_REPORT_SECTION_START,
     CB_REPORT_SECTION_CHOOSE,
@@ -49,6 +54,7 @@ from .keyboards import (
     section_list_keyboard,
     section_prompt_keyboard,
     text_prompt_keyboard,
+    editor_calendar_keyboard,
 )
 
 from .utils import (
@@ -56,6 +62,7 @@ from .utils import (
     send_long_message,
     get_report,
     get_previous_report_of_type,
+    get_dates_with_reports_for_type,
     save_report,
     load_draft,
     draft_from_last,
@@ -143,10 +150,6 @@ def _source_label(draft: dict) -> str:
 
 
 def _build_example_block(date_str: str, report_type: str, max_len: int = 800) -> str:
-    """
-    Строит блок с примером предыдущего отчёта того же типа.
-    Возвращает пустую строку, если примера нет.
-    """
     prev_report = get_previous_report_of_type(date_str, report_type)
 
     if not prev_report:
@@ -287,7 +290,6 @@ async def show_editor(
 
     header = "\n".join(header_lines)
 
-    # 🔹 Показываем пример из прошлого отчёта того же типа
     example_block = ""
     if draft.get("source") != "saved":
         example_block = _build_example_block(date_str, report_type, max_len=800)
@@ -381,7 +383,6 @@ async def show_text_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     date_str = draft.get("date")
     report_type = draft.get("type")
 
-    # 🔹 Полный предыдущий отчёт того же типа как образец
     prev_report = get_previous_report_of_type(date_str, report_type)
     example_block = ""
 
@@ -543,7 +544,6 @@ async def prompt_section(
     context.user_data["guided"] = guided
     context.user_data["guided_index"] = section_index
 
-    # 🔹 Ищем значение этого же раздела в предыдущем отчёте того же типа
     date_str = draft.get("date")
     prev_report = get_previous_report_of_type(date_str, report_type)
     prev_value = ""
@@ -606,6 +606,126 @@ async def _advance_guided_flow(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # =========================================================
+# CALENDAR INSIDE EDITOR
+# =========================================================
+
+async def show_editor_calendar(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+    notice=None,
+) -> int:
+    draft = _get_draft(context)
+
+    if not draft:
+        return await show_reports_menu(update, context)
+
+    report_type = draft.get("type", "opening")
+    selected_date = draft.get("date")
+
+    now = now_msk()
+    year = context.user_data.get("editor_cal_year", now.year)
+    month = context.user_data.get("editor_cal_month", now.month)
+
+    if not (1 <= month <= 12):
+        month = now.month
+
+    context.user_data["editor_cal_year"] = year
+    context.user_data["editor_cal_month"] = month
+
+    dates_with_reports = get_dates_with_reports_for_type(year, month, report_type)
+    today = now.strftime("%Y-%m-%d")
+
+    type_label = REPORT_TYPE_LABELS.get(report_type, report_type)
+
+    text = (
+        f"📅 Календарь: {type_label}\n\n"
+        f"{MONTHS[month - 1] if month <= 12 else ''} {year}\n\n"
+        "📌 — отчёт сохранён\n"
+        "🔹 — выбранная дата\n"
+        "• — сегодня\n\n"
+        "Выберите дату для загрузки."
+    )
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    kb = editor_calendar_keyboard(
+        year=year,
+        month=month,
+        dates_with_reports=dates_with_reports,
+        selected_date=selected_date,
+        today=today,
+    )
+
+    await render(update, context, text, kb, message_id)
+
+    logger.info("📅 Открыт календарь в редакторе: %s %s, type=%s", MONTHS[month - 1], year, report_type)
+
+    return _state(context, REPORT_CALENDAR)
+
+
+async def editor_calendar_navigation(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    direction: str,
+    message_id=None,
+) -> int:
+    now = now_msk()
+
+    year = context.user_data.get("editor_cal_year", now.year)
+    month = context.user_data.get("editor_cal_month", now.month)
+
+    if direction == "prev":
+        if month == 1:
+            month = 12
+            year -= 1
+        else:
+            month -= 1
+    else:
+        if month == 12:
+            month = 1
+            year += 1
+        else:
+            month += 1
+
+    context.user_data["editor_cal_year"] = year
+    context.user_data["editor_cal_month"] = month
+
+    return await show_editor_calendar(update, context, message_id)
+
+
+async def editor_calendar_date_selection(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    date_compact: str,
+    message_id=None,
+) -> int:
+    try:
+        date_obj = datetime.strptime(date_compact, "%Y%m%d")
+        date_str = date_obj.strftime("%Y-%m-%d")
+    except Exception as e:
+        logger.error("❌ Ошибка разбора даты в календаре редактора: %s", e)
+        return await show_editor_calendar(update, context, message_id)
+
+    report_type = context.user_data.get("report_type", "opening")
+
+    context.user_data["report_date"] = date_str
+
+    draft = load_draft(date_str, report_type)
+    _set_draft(context, draft)
+
+    logger.info(
+        "📅 Выбрана дата в календаре редактора: %s, type=%s, source=%s",
+        date_str,
+        report_type,
+        draft.get("source"),
+    )
+
+    return await show_editor(update, context, message_id, send_full=True)
+
+
+# =========================================================
 # TEXT INPUT
 # =========================================================
 
@@ -625,7 +745,6 @@ async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     draft = _get_draft(context)
 
-    # Пользователь просто прислал текст в редакторе — считаем, что это новый полный текст.
     if state == REPORT_EDITOR:
         if not draft:
             return await show_reports_menu(update, context)
@@ -647,7 +766,6 @@ async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE
             send_full=True,
         )
 
-    # Текстовый режим
     if state == REPORT_TEXT_MODE:
         if not draft:
             return await show_reports_menu(update, context)
@@ -669,7 +787,6 @@ async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE
             send_full=True,
         )
 
-    # Ввод значения конкретного пункта
     if state == REPORT_AWAIT_SECTION:
         if not draft:
             return await show_reports_menu(update, context)
@@ -809,12 +926,44 @@ async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if data == CB_REPORT_SECTION_MODE:
             return await show_section_menu(update, context)
 
+        if data == CB_REPORT_CALENDAR:
+            # Инициализируем календарь на месяц текущего черновика
+            draft = _get_draft(context)
+            if draft and draft.get("date"):
+                try:
+                    dt = datetime.strptime(draft["date"], "%Y-%m-%d")
+                    context.user_data["editor_cal_year"] = dt.year
+                    context.user_data["editor_cal_month"] = dt.month
+                except Exception:
+                    pass
+
+            return await show_editor_calendar(update, context, message_id)
+
         if data == CB_REPORT_CANCEL:
             _set_draft(context, None)
             _clear_guided(context)
             return await show_reports_menu(update, context, message_id, notice="Отменено.")
 
         return await show_editor(update, context, message_id)
+
+    # ----------------------------------------------------
+    # CALENDAR INSIDE EDITOR
+    # ----------------------------------------------------
+    if state == REPORT_CALENDAR:
+        if data == CB_REPORT_CAL_PREV_MONTH:
+            return await editor_calendar_navigation(update, context, "prev", message_id)
+
+        if data == CB_REPORT_CAL_NEXT_MONTH:
+            return await editor_calendar_navigation(update, context, "next", message_id)
+
+        if data.startswith(CB_REPORT_CAL_DATE_PREFIX):
+            date_compact = data[len(CB_REPORT_CAL_DATE_PREFIX):]
+            return await editor_calendar_date_selection(update, context, date_compact, message_id)
+
+        if data == CB_REPORT_BACK_EDITOR:
+            return await show_editor(update, context, message_id)
+
+        return await show_editor_calendar(update, context, message_id)
 
     # ----------------------------------------------------
     # SECTION MENU
