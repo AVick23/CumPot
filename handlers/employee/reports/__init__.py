@@ -8,9 +8,10 @@ from .handlers import (
 
 from .constants import (
     REPORT_HOME,
-    REPORT_HISTORY,
     REPORT_EDITOR,
-    REPORT_AWAIT_TEXT,
+    REPORT_TEXT_MODE,
+    REPORT_SECTION_MENU,
+    REPORT_SECTION_LIST,
     REPORT_AWAIT_SECTION,
 )
 
@@ -21,24 +22,29 @@ def register_report_states(states: dict):
         CallbackQueryHandler(report_callback),
     ]
 
-    # История
-    states[REPORT_HISTORY] = [
-        CallbackQueryHandler(report_callback),
-    ]
-
-    # Редактор черновика
+    # Редактор: сюда можно и писать текст, и нажимать кнопки
     states[REPORT_EDITOR] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, receive_report_text),
         CallbackQueryHandler(report_callback),
     ]
 
-    # Ожидание полного текста
-    states[REPORT_AWAIT_TEXT] = [
+    # Режим ввода полного текста
+    states[REPORT_TEXT_MODE] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, receive_report_text),
         CallbackQueryHandler(report_callback),
     ]
 
-    # Ожидание значения конкретного раздела
+    # Меню "По пунктам"
+    states[REPORT_SECTION_MENU] = [
+        CallbackQueryHandler(report_callback),
+    ]
+
+    # Список пунктов
+    states[REPORT_SECTION_LIST] = [
+        CallbackQueryHandler(report_callback),
+    ]
+
+    # Ввод значения конкретного пункта
     states[REPORT_AWAIT_SECTION] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, receive_report_text),
         CallbackQueryHandler(report_callback),

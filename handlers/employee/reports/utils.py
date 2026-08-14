@@ -5,21 +5,22 @@ from datetime import datetime
 from telegram.error import BadRequest
 
 try:
-    from utils.time_utils import now_msk
+    from utils.time_utils import now_msk, today_msk_str
 except Exception:
     def now_msk():
         return datetime.now()
 
+    def today_msk_str():
+        return datetime.now().strftime("%Y-%m-%d")
+
 from db import get_connection
-from db.users import get_user
 
 from .constants import (
     MSG_LIMIT,
     MONTHS_GEN,
-    REPORT_TYPES,
-    REPORT_TYPE_LABELS,
     REPORT_SECTIONS,
-    REPORT_SECTION_MARKERS,
+    REPORT_SECTION_VARIANTS,
+    REPORT_SECTION_OUTPUT_MARKERS,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def _ensure_reports_table() -> None:
 
 
 # =========================================================
-# HELPERS
+# BASIC HELPERS
 # =========================================================
 
 def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
@@ -98,56 +99,6 @@ def format_date_ru(date_str: str) -> str:
         return f"{dt.day} {MONTHS_GEN[dt.month - 1]} {dt.year}"
     except Exception:
         return date_str
-
-
-def format_datetime_ru(value: str | None) -> str:
-    if not value:
-        return ""
-
-    try:
-        dt = datetime.fromisoformat(value)
-        return dt.strftime("%d.%m %H:%M")
-    except Exception:
-        return value
-
-
-def full_name(user: dict | None) -> str:
-    if not user:
-        return "Сотрудник"
-
-    full = (user.get("full_name") or "").strip()
-
-    if full:
-        return full
-
-    first = (user.get("first_name") or "").strip()
-    last = (user.get("last_name") or "").strip()
-    username = (user.get("username") or "").strip()
-
-    name = " ".join([x for x in [first, last] if x]).strip()
-
-    if name:
-        return name
-
-    if username:
-        return f"@{username}"
-
-    return str(user.get("tg_id", "Сотрудник"))
-
-
-def safe_json(value: str | None) -> dict:
-    if not value:
-        return {}
-
-    try:
-        data = json.loads(value)
-
-        if isinstance(data, dict):
-            return data
-
-        return {}
-    except Exception:
-        return {}
 
 
 async def render(update, context, text: str, reply_markup=None, message_id=None):
@@ -177,6 +128,21 @@ async def render(update, context, text: str, reply_markup=None, message_id=None)
         return msg.message_id
 
     return None
+
+
+async def send_long_message(context, chat_id: int, text: str, limit: int = 4000) -> None:
+    text = text or ""
+
+    if not text:
+        return
+
+    for start in range(0, len(text), limit):
+        chunk = text[start:start + limit]
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=chunk,
+        )
 
 
 # =========================================================
@@ -279,269 +245,223 @@ def get_last_report_before(date_str: str, report_type: str) -> dict | None:
     return dict(row) if row else None
 
 
-def get_dates_with_reports(year: int, month: int, report_type: str | None = None) -> set[str]:
-    _ensure_reports_table()
-
-    start_date = f"{year:04d}-{month:02d}-01"
-
-    if month == 12:
-        end_date = f"{year + 1:04d}-01-01"
-    else:
-        end_date = f"{year:04d}-{month + 1:02d}-01"
-
-    with get_connection() as conn:
-        query = """
-            SELECT DISTINCT date
-            FROM shift_reports
-            WHERE date >= ? AND date < ?
-        """
-
-        params = [start_date, end_date]
-
-        if report_type:
-            query += " AND report_type = ?"
-            params.append(report_type)
-
-        rows = conn.execute(query, tuple(params)).fetchall()
-
-    return {row["date"] for row in rows}
-
-
 # =========================================================
 # PARSER / GENERATOR
 # =========================================================
 
-def _prefix_key(prefix: str) -> str:
-    return prefix.rstrip(":").strip().rstrip("-").strip()
+def _clean_marker_remainder(remainder: str) -> str:
+    remainder = (remainder or "").strip()
+
+    if not remainder:
+        return ""
+
+    # Если после маркера остались только эмодзи/пунктуация — считаем, что значения нет.
+    if all(not ch.isalnum() for ch in remainder):
+        return ""
+
+    return remainder.lstrip(":;-– ").strip()
 
 
-def _match_prefix(line: str, prefix: str) -> str | None:
-    variants = [
-        prefix,
-        prefix.rstrip(":").strip(),
-        prefix.rstrip(":").strip().rstrip("-").strip(),
-    ]
+def _match_section_key(line: str, report_type: str) -> tuple[str | None, str | None]:
+    stripped = line.strip()
 
-    line_lower = line.lower()
+    if not stripped:
+        return None, None
 
-    for variant in variants:
-        if not variant:
-            continue
+    sections = REPORT_SECTIONS.get(report_type, [])
+    variants_map = REPORT_SECTION_VARIANTS.get(report_type, {})
 
-        if line_lower.startswith(variant.lower()):
-            return variant
+    for section in sections:
+        variants = variants_map.get(section, [])
 
-    return None
+        for variant in variants:
+            if stripped.lower().startswith(variant.lower()):
+                return section, variant
+
+    return None, None
 
 
 def parse_report_sections(full_text: str, report_type: str) -> dict:
-    sections = {}
+    """
+    Разбирает отчёт на:
+    - _header: всё, что идёт до первого раздела;
+    - значения разделов.
+    """
+    values = {
+        "_header": "",
+    }
 
-    markers = REPORT_SECTION_MARKERS.get(report_type, [])
+    for section in REPORT_SECTIONS.get(report_type, []):
+        values[section] = ""
 
+    lines = (full_text or "").split("\n")
+
+    header_lines = []
     current_key = None
     buffer = []
+    started = False
 
-    for raw_line in (full_text or "").split("\n"):
-        line = raw_line.strip()
+    for line in lines:
+        if not started:
+            key, variant = _match_section_key(line, report_type)
 
-        if not line:
-            continue
-
-        matched_prefix = None
-
-        for prefix in markers:
-            matched = _match_prefix(line, prefix)
-
-            if matched:
-                matched_prefix = matched
-                key = _prefix_key(prefix)
-
-                if current_key and buffer:
-                    sections[current_key] = "\n".join(buffer).strip()
+            if key:
+                started = True
+                values["_header"] = "\n".join(header_lines).strip()
 
                 current_key = key
-                remainder = line[len(matched_prefix):].lstrip(":- ").strip()
+                remainder = line[len(variant):] if variant else ""
+                remainder = _clean_marker_remainder(remainder)
 
                 buffer = [remainder] if remainder else []
+            else:
+                header_lines.append(line.rstrip())
+        else:
+            key, variant = _match_section_key(line, report_type)
 
-                break
+            if key:
+                if current_key:
+                    values[current_key] = "\n".join(buffer).strip()
 
-        if not matched_prefix:
-            if current_key:
-                buffer.append(line)
+                current_key = key
+                remainder = line[len(variant):] if variant else ""
+                remainder = _clean_marker_remainder(remainder)
 
-    if current_key and buffer:
-        sections[current_key] = "\n".join(buffer).strip()
+                buffer = [remainder] if remainder else []
+            else:
+                if current_key:
+                    buffer.append(line.rstrip())
 
-    return sections
+    if not started:
+        return {
+            "_header": (full_text or "").strip(),
+        }
+
+    if current_key:
+        values[current_key] = "\n".join(buffer).strip()
+
+    return values
 
 
 def build_full_text(report_type: str, values: dict) -> str:
+    parts = []
+
+    header = (values.get("_header") or "").strip()
+
+    if header:
+        parts.append(header)
+
     sections = REPORT_SECTIONS.get(report_type, [])
-    markers = REPORT_SECTION_MARKERS.get(report_type, [])
+    output_markers = REPORT_SECTION_OUTPUT_MARKERS.get(report_type, {})
 
-    lines = []
-
-    for index, section in enumerate(sections):
-        prefix = markers[index] if index < len(markers) else f"{section}:"
+    for section in sections:
         value = (values.get(section) or "").strip()
 
-        if value:
-            lines.append(f"{prefix} {value}".strip())
-        else:
-            lines.append(prefix)
+        if not value:
+            continue
 
-    return "\n".join(lines)
+        marker = output_markers.get(section, section)
+
+        if "\n" in value or len(value) > 60:
+            parts.append(f"{marker}\n{value}".rstrip())
+        else:
+            parts.append(f"{marker} {value}".rstrip())
+
+    return "\n\n".join(parts)
 
 
 # =========================================================
 # DRAFT LOGIC
 # =========================================================
 
-def empty_draft(report_type: str) -> dict:
-    sections = REPORT_SECTIONS.get(report_type, [])
+def auto_report_header(date_str: str, report_type: str) -> str:
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        short_date = dt.strftime("%d.%m")
+    except Exception:
+        short_date = date_str
+
+    if report_type == "opening":
+        return f"Открытие {short_date}"
+
+    return f"Закрытие {short_date}"
+
+
+def empty_draft(date_str: str, report_type: str) -> dict:
+    values = {
+        "_header": auto_report_header(date_str, report_type),
+    }
+
+    for section in REPORT_SECTIONS.get(report_type, []):
+        values[section] = ""
 
     return {
-        "order": sections,
-        "values": {section: "" for section in sections},
+        "date": date_str,
+        "type": report_type,
+        "values": values,
         "raw": None,
         "source": "empty",
         "source_date": None,
     }
 
 
-def draft_from_report(report: dict, report_type: str, source: str = "saved") -> dict:
-    draft = empty_draft(report_type)
+def draft_from_report(report: dict, report_type: str) -> dict:
+    full_text = report.get("full_text") or ""
 
-    parsed = safe_json(report.get("parsed_data"))
+    values = parse_report_sections(full_text, report_type)
 
-    if not parsed:
-        parsed = parse_report_sections(report.get("full_text") or "", report_type)
-
-    if parsed:
-        for section in draft["order"]:
-            draft["values"][section] = parsed.get(section, "") or ""
-
-        draft["raw"] = None
-    else:
-        draft["raw"] = report.get("full_text") or ""
-
-    draft["source"] = source
-    draft["source_date"] = report.get("date")
-
-    return draft
+    return {
+        "date": report.get("date"),
+        "type": report_type,
+        "values": values,
+        "raw": full_text,
+        "source": "saved",
+        "source_date": report.get("date"),
+    }
 
 
-def draft_from_last_report(date_str: str, report_type: str) -> dict:
+def draft_from_last(date_str: str, report_type: str) -> dict:
     last_report = get_last_report_before(date_str, report_type)
 
     if not last_report:
-        return empty_draft(report_type)
+        return empty_draft(date_str, report_type)
 
-    return draft_from_report(last_report, report_type, source="prev")
+    values = parse_report_sections(last_report.get("full_text") or "", report_type)
 
+    has_sections = any(
+        (values.get(section) or "").strip()
+        for section in REPORT_SECTIONS.get(report_type, [])
+    )
 
-# =========================================================
-# TEXT BUILDERS
-# =========================================================
+    if not has_sections:
+        return empty_draft(date_str, report_type)
 
-def build_dashboard_text(today: str, opening_report: dict | None, closing_report: dict | None) -> str:
-    lines = [
-        "📋 Отчёты",
-        "",
-        f"Сегодня, {format_date_ru(today)}",
-        "",
-    ]
+    values["_header"] = auto_report_header(date_str, report_type)
 
-    for report_type, report in [
-        ("opening", opening_report),
-        ("closing", closing_report),
-    ]:
-        label = REPORT_TYPE_LABELS.get(report_type, report_type)
-
-        if not report:
-            lines.append(f"{label}: ⚪️ не заполнен")
-            continue
-
-        updated_at = format_datetime_ru(report.get("updated_at"))
-        author_name = ""
-
-        if report.get("author_id"):
-            author = get_user(report.get("author_id"))
-
-            if author:
-                author_name = full_name(author)
-
-        status = f"{label}: ✅"
-
-        if updated_at:
-            status += f" {updated_at}"
-
-        if author_name:
-            status += f" · {author_name}"
-
-        lines.append(status)
-
-    lines.append("")
-    lines.append("Нажмите, чтобы заполнить или изменить отчёт.")
-
-    return "\n".join(lines)
+    return {
+        "date": date_str,
+        "type": report_type,
+        "values": values,
+        "raw": None,
+        "source": "prev",
+        "source_date": last_report.get("date"),
+    }
 
 
-def build_editor_text(draft: dict, date_str: str, report_type: str) -> str:
-    type_label = REPORT_TYPE_LABELS.get(report_type, report_type)
+def load_draft(date_str: str, report_type: str) -> dict:
+    existing = get_report(date_str, report_type)
 
-    source = draft.get("source", "empty")
-    source_date = draft.get("source_date")
+    if existing:
+        return draft_from_report(existing, report_type)
 
-    if source == "saved":
-        source_label = "✅ Сохранённый отчёт"
-    elif source == "prev" and source_date:
-        source_label = f"📋 Черновик на основе отчёта за {format_date_ru(source_date)}"
-    elif source == "text":
-        source_label = "🧾 Текст обновлён"
-    else:
-        source_label = "🆕 Новый шаблон"
+    return draft_from_last(date_str, report_type)
 
-    lines = [
-        type_label,
-        f"🗓 {format_date_ru(date_str)}",
-        source_label,
-        "",
-    ]
 
-    raw = draft.get("raw")
+def draft_full_text(draft: dict) -> str:
+    if draft.get("raw") is not None:
+        return draft.get("raw") or ""
 
-    if raw:
-        lines.append("⚠️ Разделы не распознаны.")
-        lines.append("Можно сохранить как есть или отредактировать разделы ниже.")
-        lines.append("")
-        lines.append(truncate_text(raw, 500))
-        lines.append("")
-    else:
-        order = draft.get("order", [])
-        values = draft.get("values", {})
-
-        filled = sum(1 for section in order if (values.get(section) or "").strip())
-
-        lines.append(f"Заполнено: {filled}/{len(order)}")
-        lines.append("")
-
-        for index, section in enumerate(order, start=1):
-            value = (values.get(section) or "").strip()
-            preview = " ".join(value.split())
-
-            if len(preview) > 70:
-                preview = preview[:69] + "…"
-
-            if not preview:
-                preview = "—"
-
-            lines.append(f"{index}. {section}: {preview}")
-
-        lines.append("")
-
-    lines.append("Нажмите на раздел, чтобы изменить его.")
-
-    return "\n".join(lines)
+    return build_full_text(
+        draft.get("type", "opening"),
+        draft.get("values", {}),
+    )
