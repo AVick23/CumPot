@@ -227,7 +227,11 @@ def get_report(date_str: str, report_type: str) -> dict | None:
     return dict(row) if row else None
 
 
-def get_last_report_before(date_str: str, report_type: str) -> dict | None:
+def get_previous_report_of_type(date_str: str, report_type: str) -> dict | None:
+    """
+    Находит последний сохранённый отчёт указанного типа СТРОГО ДО указанной даты.
+    Например, для закрытия 13.08 вернёт закрытие 12.08 (или 11.08), но НЕ открытие.
+    """
     _ensure_reports_table()
 
     with get_connection() as conn:
@@ -421,7 +425,7 @@ def draft_from_report(report: dict, report_type: str) -> dict:
 
 
 def draft_from_last(date_str: str, report_type: str) -> dict:
-    last_report = get_last_report_before(date_str, report_type)
+    last_report = get_previous_report_of_type(date_str, report_type)
 
     if not last_report:
         return empty_draft(date_str, report_type)

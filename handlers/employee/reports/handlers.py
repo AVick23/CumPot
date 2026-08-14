@@ -55,6 +55,7 @@ from .utils import (
     render,
     send_long_message,
     get_report,
+    get_previous_report_of_type,
     save_report,
     load_draft,
     draft_from_last,
@@ -139,6 +140,31 @@ def _source_label(draft: dict) -> str:
         return "🧾 Текст обновлён"
 
     return "🆕 Новый черновик"
+
+
+def _build_example_block(date_str: str, report_type: str, max_len: int = 800) -> str:
+    """
+    Строит блок с примером предыдущего отчёта того же типа.
+    Возвращает пустую строку, если примера нет.
+    """
+    prev_report = get_previous_report_of_type(date_str, report_type)
+
+    if not prev_report:
+        return ""
+
+    prev_date = format_date_ru(prev_report.get("date", ""))
+    prev_text = (prev_report.get("full_text") or "").strip()
+
+    if not prev_text:
+        return ""
+
+    preview = prev_text[:max_len] + ("…" if len(prev_text) > max_len else "")
+
+    return (
+        f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"📋 Пример ({prev_date}):\n\n"
+        f"{preview}"
+    )
 
 
 # =========================================================
@@ -261,10 +287,15 @@ async def show_editor(
 
     header = "\n".join(header_lines)
 
+    # 🔹 Показываем пример из прошлого отчёта того же типа
+    example_block = ""
+    if draft.get("source") != "saved":
+        example_block = _build_example_block(date_str, report_type, max_len=800)
+
     chat_id = update.effective_chat.id
 
     if len(full_text) <= EDITOR_INLINE_LIMIT:
-        text = f"{header}\n\n{full_text}"
+        text = f"{header}\n\n{full_text}{example_block}"
 
         await render(
             update,
@@ -277,7 +308,7 @@ async def show_editor(
         if send_full and chat_id:
             await send_long_message(context, chat_id, full_text)
 
-        panel_text = f"{header}\n\n📄 Полный текст отправлен выше."
+        panel_text = f"{header}\n\n📄 Полный текст отправлен выше.{example_block}"
 
         await render(
             update,
@@ -350,11 +381,27 @@ async def show_text_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     date_str = draft.get("date")
     report_type = draft.get("type")
 
+    # 🔹 Полный предыдущий отчёт того же типа как образец
+    prev_report = get_previous_report_of_type(date_str, report_type)
+    example_block = ""
+
+    if prev_report:
+        prev_date = format_date_ru(prev_report.get("date", ""))
+        prev_text = (prev_report.get("full_text") or "").strip()
+
+        if prev_text:
+            example_block = (
+                f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+                f"📋 ПОЛНЫЙ ПРИМЕР ({prev_date}):\n\n"
+                f"{prev_text}"
+            )
+
     text = (
         "🧾 Отправка текстом\n\n"
         f"{REPORT_TYPE_LABELS.get(report_type)} · {format_date_ru(date_str)}\n\n"
         "Отправьте отчёт одним сообщением.\n"
         "Я распознаю разделы, если они есть."
+        f"{example_block}"
     )
 
     await render(update, context, text, text_prompt_keyboard())
@@ -496,6 +543,20 @@ async def prompt_section(
     context.user_data["guided"] = guided
     context.user_data["guided_index"] = section_index
 
+    # 🔹 Ищем значение этого же раздела в предыдущем отчёте того же типа
+    date_str = draft.get("date")
+    prev_report = get_previous_report_of_type(date_str, report_type)
+    prev_value = ""
+
+    if prev_report:
+        prev_parsed = parse_report_sections(prev_report.get("full_text") or "", report_type)
+        prev_value = prev_parsed.get(section, "")
+
+    prev_block = ""
+    if prev_value:
+        prev_preview = prev_value[:300] + ("…" if len(prev_value) > 300 else "")
+        prev_block = f"\n\n━━━━━━━━━━━━━━━━━━━━\n📋 Из прошлого отчёта:\n{prev_preview}"
+
     if guided:
         header = f"🚀 Шаг {section_index + 1}/{len(sections)}"
     else:
@@ -504,7 +565,8 @@ async def prompt_section(
     text = (
         f"{header}\n\n"
         f"📌 {section}\n\n"
-        f"Текущее значение:\n{value or '—'}\n\n"
+        f"Текущее значение:\n{value or '—'}"
+        f"{prev_block}\n\n"
         "Отправьте новое значение.\n"
         "Можно несколько строк."
     )
@@ -663,19 +725,21 @@ async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if state == REPORT_AWAIT_SECTION:
         if data == CB_REPORT_SECTION_SKIP:
             await _answer(query)
-            
+
             draft = _get_draft(context)
             section = context.user_data.get("awaiting_section")
-            
+
             if draft and section:
                 draft.setdefault("values", {})[section] = ""
                 draft["raw"] = None
                 draft["source"] = "sections"
                 _set_draft(context, draft)
-                
+
             guided = bool(context.user_data.get("guided"))
+
             if guided:
                 return await _advance_guided_flow(update, context)
+
             return await show_section_list(update, context, notice="🗑 Пункт очищен.")
 
         if data in (CB_REPORT_SECTION_EXIT, CB_REPORT_BACK_EDITOR, CB_REPORT_CANCEL):
@@ -716,6 +780,7 @@ async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if state == REPORT_HOME:
         if data.startswith(CB_REPORT_OPEN_PREFIX):
             report_type = data.split(":", 1)[1]
+
             return await open_report_editor(
                 update,
                 context,
@@ -760,12 +825,13 @@ async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         if data == CB_REPORT_SECTION_START:
             draft = _get_draft(context)
+
             if not draft:
                 return await show_reports_menu(update, context)
-            
+
             new_draft = empty_draft(draft.get("date"), draft.get("type"))
             _set_draft(context, new_draft)
-            
+
             return await prompt_section(update, context, 0, guided=True)
 
         if data == CB_REPORT_SECTION_CHOOSE:
