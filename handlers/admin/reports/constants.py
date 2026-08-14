@@ -9,6 +9,10 @@ ADMIN_PHOTO_OVERVIEW = 130
 ADMIN_PHOTO_LOCATION = 131
 ADMIN_PHOTO_CATEGORY = 132
 
+# Состояния для фотоотчёта по такси
+ADMIN_TAXI_PHOTO_OVERVIEW = 140
+ADMIN_TAXI_PHOTO_USER = 141
+
 
 # =========================================================
 # CALLBACK DATA
@@ -31,22 +35,19 @@ CB_REPORT_FULL = "rep_full"
 CB_REPORT_PHOTOS_ON = "rep_photos_on"
 CB_REPORT_PHOTOS_OFF = "rep_photos_off"
 
-# Новый фотоотчёт
+# Новый фотоотчёт (чеклисты)
 CB_PHOTO_REPORT = "photo_report"
 
 # Legacy-кнопки, на случай старых callback
 CB_SHOW_MEDIA_PREFIX = "media"
 
-# Навигация по фотоотчёту
+# Навигация по фотоотчёту чеклистов
 CB_PHOTO_LOC_PREFIX = "ploc"
 CB_PHOTO_CAT_PREFIX = "pcat"
-
 CB_PHOTO_ALL_LOC = "pallloc"
 CB_PHOTO_ALL_CAT = "pallcat"
-
 CB_PHOTO_TASK_PREFIX = "ptask"
 CB_PHOTO_PAGE_PREFIX = "ppg"
-
 CB_PHOTO_BACK_DAY = "pback_day"
 CB_PHOTO_BACK_OVERVIEW = "pback_overview"
 CB_PHOTO_BACK_LOC = "pback_loc"
@@ -55,6 +56,12 @@ CB_PHOTO_BACK_LOC = "pback_loc"
 CB_TAB_CHECKLIST = "tab_checklist"
 CB_TAB_SHIFT_REPORTS = "tab_shift_reports"
 CB_TAB_TAXI = "tab_taxi"
+
+# Фотоотчёт по такси
+CB_TAXI_PHOTO_REPORT = "taxi_photo_report"
+CB_TAXI_PHOTO_USER_PREFIX = "taxi_photo_user:"
+CB_TAXI_PHOTO_ALL = "taxi_photo_all"
+CB_TAXI_PHOTO_BACK = "taxi_photo_back"
 
 
 # =========================================================

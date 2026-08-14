@@ -236,7 +236,7 @@ def _parse_media(raw) -> list[dict]:
 
 
 # =========================================================
-# DAY REPORT DATA (CHECKLIST)
+# DAY REPORT DATA (ЧЕК-ЛИСТЫ)
 # =========================================================
 
 def get_day_report(date_str: str) -> dict:
@@ -342,7 +342,7 @@ def get_day_report(date_str: str) -> dict:
 
 
 # =========================================================
-# REPORT TEXT (CHECKLIST)
+# REPORT TEXT (ЧЕК-ЛИСТЫ)
 # =========================================================
 
 def build_report_text(
@@ -474,7 +474,7 @@ def get_report_text(
 
 
 # =========================================================
-# PHOTO REPORT DATA (для чек-листов)
+# PHOTO REPORT DATA (ЧЕК-ЛИСТЫ)
 # =========================================================
 
 def get_photo_overview(date_str: str) -> dict:
@@ -643,7 +643,7 @@ def format_shift_report_text(report: dict | None) -> str:
 
 
 # =========================================================
-# TAXI (ТАКСИ)
+# TAXI (ТАКСИ) – данные и фото
 # =========================================================
 
 def get_taxi_for_date(date_str: str) -> list[dict]:
@@ -651,7 +651,6 @@ def get_taxi_for_date(date_str: str) -> list[dict]:
     Возвращает список всех записей такси за указанную дату,
     сгруппированных по пользователям.
     """
-    # Получаем всех пользователей, у которых есть такси за эту дату
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -677,3 +676,32 @@ def get_taxi_for_date(date_str: str) -> list[dict]:
             "total": total,
         })
     return result
+
+
+def get_taxi_photo_overview(date_str: str) -> dict:
+    """
+    Возвращает структуру для фотоотчёта по такси:
+    - список пользователей с их медиа (photo_file_ids из taxi_expenses)
+    """
+    taxi_data = get_taxi_for_date(date_str)
+    users = []
+    total_media = 0
+    for user_data in taxi_data:
+        media_items = []
+        for exp in user_data["expenses"]:
+            if exp.get("photo_file_ids"):
+                # photo_file_ids хранится как JSON-список строк
+                media_items.extend(_parse_media(exp["photo_file_ids"]))
+        if media_items:
+            users.append({
+                "user_id": user_data["user_id"],
+                "full_name": user_data["full_name"],
+                "media_items": media_items,
+                "media_count": len(media_items),
+            })
+            total_media += len(media_items)
+    return {
+        "date": date_str,
+        "users": users,
+        "total_media": total_media,
+    }

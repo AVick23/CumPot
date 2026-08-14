@@ -27,6 +27,10 @@ from .constants import (
     CB_TAB_CHECKLIST,
     CB_TAB_SHIFT_REPORTS,
     CB_TAB_TAXI,
+    CB_TAXI_PHOTO_REPORT,
+    CB_TAXI_PHOTO_USER_PREFIX,
+    CB_TAXI_PHOTO_ALL,
+    CB_TAXI_PHOTO_BACK,
     REPORT_MODE_SHORT,
     REPORT_MODE_FULL,
     MONTHS,
@@ -130,12 +134,22 @@ def day_report_tabs_keyboard(current_tab: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([buttons])
 
 
+def taxi_photo_keyboard(has_media: bool, date_str: str) -> InlineKeyboardMarkup:
+    """Клавиатура для раздела такси (добавляет кнопку фотоотчёта)."""
+    if has_media:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("📸 Фотоотчёт по такси", callback_data=CB_TAXI_PHOTO_REPORT)]
+        ])
+    return None
+
+
 def day_report_keyboard(
     mode: str,
     show_photos: bool,
     has_bar_media: bool,
     has_kitchen_media: bool,
     current_tab: str,
+    taxi_has_media: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = []
 
@@ -180,6 +194,18 @@ def day_report_keyboard(
                 ]
             )
 
+    # Если текущая вкладка - такси, показываем кнопку фотоотчёта
+    elif current_tab == CB_TAB_TAXI:
+        if taxi_has_media:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "📸 Фотоотчёт по такси",
+                        callback_data=CB_TAXI_PHOTO_REPORT,
+                    )
+                ]
+            )
+
     # Навигация
     rows.append(
         [
@@ -191,156 +217,25 @@ def day_report_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def photo_overview_keyboard(
-    bar_media_count: int,
-    kitchen_media_count: int,
-) -> InlineKeyboardMarkup:
+# =========================================================
+# Фотоотчёт по такси – клавиатуры
+# =========================================================
+
+def taxi_photo_overview_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
     rows = []
-
-    if bar_media_count > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"🍸 Бар · {bar_media_count}",
-                    callback_data=f"{CB_PHOTO_LOC_PREFIX}:bar",
-                )
-            ]
-        )
-
-    if kitchen_media_count > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"🍳 Кухня · {kitchen_media_count}",
-                    callback_data=f"{CB_PHOTO_LOC_PREFIX}:kitchen",
-                )
-            ]
-        )
-
-    rows.append(
-        [
-            InlineKeyboardButton("◀️ Отчёт", callback_data=CB_PHOTO_BACK_DAY),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ]
-    )
-
+    for user in users:
+        label = f"{user['full_name']} · 🖼{user['media_count']}"
+        rows.append([
+            InlineKeyboardButton(label, callback_data=f"{CB_TAXI_PHOTO_USER_PREFIX}{user['user_id']}")
+        ])
+    rows.append([
+        InlineKeyboardButton("📤 Отправить все фото", callback_data=CB_TAXI_PHOTO_ALL),
+        InlineKeyboardButton("◀️ Назад", callback_data=CB_TAXI_PHOTO_BACK),
+    ])
     return InlineKeyboardMarkup(rows)
 
 
-def photo_location_keyboard(location_menu: dict) -> InlineKeyboardMarkup:
-    rows = []
-
-    total_media = location_menu.get("total_media", 0)
-
-    if total_media > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"📤 Отправить всё · {total_media}",
-                    callback_data=CB_PHOTO_ALL_LOC,
-                )
-            ]
-        )
-
-    categories = location_menu.get("categories", {})
-
-    for category in CATEGORY_ORDER:
-        if category not in categories:
-            continue
-
-        cat_data = categories[category]
-        media_count = cat_data.get("media_count", 0)
-
-        if media_count <= 0:
-            continue
-
-        label = f"{CATEGORY_LABELS.get(category, category)} · {media_count}"
-
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    label,
-                    callback_data=f"{CB_PHOTO_CAT_PREFIX}:{category}",
-                )
-            ]
-        )
-
-    rows.append(
-        [
-            InlineKeyboardButton("◀️ Локации", callback_data=CB_PHOTO_BACK_OVERVIEW),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
-
-
-def photo_category_keyboard(
-    location: str,
-    category: str,
-    page_items: list[dict],
-    page: int,
-    total_pages: int,
-) -> InlineKeyboardMarkup:
-    rows = []
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                "📤 Отправить всю категорию",
-                callback_data=CB_PHOTO_ALL_CAT,
-            )
-        ]
-    )
-
-    for item in page_items:
-        media_count = item.get("media_count", 0)
-        text = _clip(item.get("text"), 30)
-
-        label = f"{text} · 🖼{media_count}"
-
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    label,
-                    callback_data=f"{CB_PHOTO_TASK_PREFIX}:{item.get('id')}",
-                )
-            ]
-        )
-
-    if total_pages > 1:
-        nav_row = []
-
-        if page > 1:
-            nav_row.append(
-                InlineKeyboardButton(
-                    "←",
-                    callback_data=f"{CB_PHOTO_PAGE_PREFIX}:{page - 1}",
-                )
-            )
-
-        nav_row.append(
-            InlineKeyboardButton(
-                f"{page}/{total_pages}",
-                callback_data=CB_NOOP,
-            )
-        )
-
-        if page < total_pages:
-            nav_row.append(
-                InlineKeyboardButton(
-                    "→",
-                    callback_data=f"{CB_PHOTO_PAGE_PREFIX}:{page + 1}",
-                )
-            )
-
-        rows.append(nav_row)
-
-    rows.append(
-        [
-            InlineKeyboardButton("◀️ Категории", callback_data=CB_PHOTO_BACK_LOC),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
+def taxi_photo_back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_TAXI_PHOTO_BACK)]
+    ])
