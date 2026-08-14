@@ -215,3 +215,20 @@ def get_shifts_for_month(user_id: int, year: int, month: int) -> set[str]:
             (user_id, start_date, end_date)
         ).fetchall()
         return {row["date"] for row in rows}
+    
+def get_shifts_for_date(date_str: str) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.id, s.user_id, s.shift_type_id, s.start_time, s.active,
+                   st.name AS shift_name, st.location,
+                   u.full_name AS user_name
+            FROM shifts s
+            LEFT JOIN shift_types st ON s.shift_type_id = st.id
+            LEFT JOIN users u ON s.user_id = u.tg_id
+            WHERE s.date = ?
+            ORDER BY s.start_time
+            """,
+            (date_str,)
+        ).fetchall()
+    return [dict(row) for row in rows]
