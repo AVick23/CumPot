@@ -21,8 +21,8 @@ from .constants import (
     CB_REPORT_SAVE,
     REPORT_TYPE_LABELS,
     MSG_LIMIT,
-    MONTHS,           # добавлен импорт
-    WEEKDAYS_SHORT,   # добавлен на всякий случай
+    MONTHS,
+    WEEKDAYS_SHORT,
 )
 from .keyboards import (
     report_type_keyboard,
@@ -41,7 +41,7 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
-MAIN_MENU = 3  # из menu/constants.py
+MAIN_MENU = 3
 
 
 # =========================================================
@@ -92,7 +92,6 @@ async def answer(query, text=None, show_alert=False):
 # =========================================================
 
 async def show_reports_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
-    """Показывает меню выбора типа отчёта."""
     logger.info("📋 Открыто меню выбора типа отчёта")
     text = "📋 Отчёты\n\nВыберите тип отчёта:"
     if notice:
@@ -225,8 +224,12 @@ async def show_report_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     if report:
         full_text = report["full_text"]
-        preview = format_report_preview(full_text, 1000)
-        text = f"📄 Отчёт за {date_str} ({REPORT_TYPE_LABELS[report_type]}):\n\n{preview}\n\n"
+        # Увеличиваем лимит предпросмотра до 3500 символов
+        preview = format_report_preview(full_text, 3500)
+        text = f"📄 Отчёт за {date_str} ({REPORT_TYPE_LABELS[report_type]}):\n\n{preview}"
+        if len(full_text) > 3500:
+            text += "\n\n… (полный текст по кнопке «Просмотреть»)"
+        text += "\n"
         kb = report_action_keyboard(date_str, report_type, has_report=True)
     else:
         yesterday = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -315,6 +318,7 @@ async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("✅ Отчёт сохранён!")
 
     logger.info("✅ Отчёт сохранён успешно")
+    # После сохранения показываем детали с предпросмотром
     return await show_report_detail(update, context, message_id=None, report=None)
 
 

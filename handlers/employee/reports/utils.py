@@ -200,7 +200,7 @@ def parse_report_sections(full_text: str, report_type: str) -> dict:
 # HELPERS FOR UI
 # =========================================================
 
-def format_report_preview(full_text: str, max_len: int = 500) -> str:
+def format_report_preview(full_text: str, max_len: int = 3500) -> str:
     if len(full_text) <= max_len:
         return full_text
     return full_text[:max_len] + "…"
