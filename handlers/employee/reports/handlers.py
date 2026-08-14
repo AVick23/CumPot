@@ -637,3 +637,161 @@ async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
     return state
+
+
+# =========================================================
+# MAIN CALLBACK ROUTER
+# =========================================================
+
+async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+
+    if not query:
+        return _current_state(context)
+
+    data = query.data or ""
+    state = _current_state(context)
+    message_id = query.message.message_id if query.message else None
+
+    if data == CB_NOOP:
+        await _answer(query)
+        return state
+
+    # ----------------------------------------------------
+    # GUARD: ожидание значения раздела
+    # ----------------------------------------------------
+    if state == REPORT_AWAIT_SECTION:
+        if data == CB_REPORT_SECTION_SKIP:
+            await _answer(query)
+            
+            draft = _get_draft(context)
+            section = context.user_data.get("awaiting_section")
+            
+            if draft and section:
+                draft.setdefault("values", {})[section] = ""
+                draft["raw"] = None
+                draft["source"] = "sections"
+                _set_draft(context, draft)
+                
+            guided = bool(context.user_data.get("guided"))
+            if guided:
+                return await _advance_guided_flow(update, context)
+            return await show_section_list(update, context, notice="🗑 Пункт очищен.")
+
+        if data in (CB_REPORT_SECTION_EXIT, CB_REPORT_BACK_EDITOR, CB_REPORT_CANCEL):
+            await _answer(query)
+            _clear_guided(context)
+            return await show_editor(update, context, message_id)
+
+        await _answer(query, "Сначала отправьте новое значение раздела.", True)
+        return state
+
+    # ----------------------------------------------------
+    # GUARD: ожидание полного текста
+    # ----------------------------------------------------
+    if state == REPORT_TEXT_MODE:
+        if data in (CB_REPORT_BACK_EDITOR, CB_REPORT_CANCEL):
+            await _answer(query)
+            return await show_editor(update, context, message_id)
+
+        if data == CB_REPORT_BACK_MENU:
+            await _answer(query)
+            return await _go_main_menu(update, context, message_id)
+
+        await _answer(query, "Сначала отправьте текст отчёта.", True)
+        return state
+
+    await _answer(query)
+
+    # ----------------------------------------------------
+    # GENERAL NAVIGATION
+    # ----------------------------------------------------
+
+    if data == CB_REPORT_BACK_MENU:
+        return await _go_main_menu(update, context, message_id)
+
+    # ----------------------------------------------------
+    # HOME SCREEN
+    # ----------------------------------------------------
+    if state == REPORT_HOME:
+        if data.startswith(CB_REPORT_OPEN_PREFIX):
+            report_type = data.split(":", 1)[1]
+            return await open_report_editor(
+                update,
+                context,
+                report_type=report_type,
+                message_id=message_id,
+            )
+
+        return await show_reports_menu(update, context, message_id)
+
+    # ----------------------------------------------------
+    # EDITOR SCREEN
+    # ----------------------------------------------------
+    if state == REPORT_EDITOR:
+        if data == CB_REPORT_SAVE:
+            return await save_report_action(update, context)
+
+        if data == CB_REPORT_TEXT_MODE:
+            return await show_text_mode(update, context)
+
+        if data == CB_REPORT_LOAD_LAST:
+            return await load_last_action(update, context)
+
+        if data == CB_REPORT_CLEAR:
+            return await clear_report_action(update, context)
+
+        if data == CB_REPORT_SECTION_MODE:
+            return await show_section_menu(update, context)
+
+        if data == CB_REPORT_CANCEL:
+            _set_draft(context, None)
+            _clear_guided(context)
+            return await show_reports_menu(update, context, message_id, notice="Отменено.")
+
+        return await show_editor(update, context, message_id)
+
+    # ----------------------------------------------------
+    # SECTION MENU
+    # ----------------------------------------------------
+    if state == REPORT_SECTION_MENU:
+        if data == CB_REPORT_SECTION_MENU_CLEAR:
+            return await clear_report_action(update, context)
+
+        if data == CB_REPORT_SECTION_START:
+            draft = _get_draft(context)
+            if not draft:
+                return await show_reports_menu(update, context)
+            
+            new_draft = empty_draft(draft.get("date"), draft.get("type"))
+            _set_draft(context, new_draft)
+            
+            return await prompt_section(update, context, 0, guided=True)
+
+        if data == CB_REPORT_SECTION_CHOOSE:
+            return await show_section_list(update, context, message_id)
+
+        if data == CB_REPORT_BACK_EDITOR:
+            return await show_editor(update, context, message_id)
+
+        return await show_section_menu(update, context)
+
+    # ----------------------------------------------------
+    # SECTION LIST
+    # ----------------------------------------------------
+    if state == REPORT_SECTION_LIST:
+        if data.startswith(CB_REPORT_SECTION_PREFIX):
+            try:
+                section_index = int(data.split(":", 1)[1])
+            except (TypeError, ValueError):
+                return await show_section_list(update, context, message_id)
+
+            return await prompt_section(update, context, section_index, guided=False)
+
+        if data in (CB_REPORT_SECTION_DONE, CB_REPORT_BACK_EDITOR):
+            return await show_editor(update, context, message_id, send_full=True)
+
+        return await show_section_list(update, context, message_id)
+
+    # Fallback
+    return await show_reports_menu(update, context, message_id)
