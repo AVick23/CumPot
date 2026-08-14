@@ -19,6 +19,8 @@ from .constants import (
     CB_REPORT_VIEW,
     CB_REPORT_CANCEL,
     CB_REPORT_SAVE,
+    CB_REPORT_PREV_OPENING,
+    CB_REPORT_PREV_CLOSING,
     REPORT_TYPE_LABELS,
     MSG_LIMIT,
     MONTHS,
@@ -35,6 +37,7 @@ from .utils import (
     get_report,
     get_last_report,
     get_dates_with_reports,
+    get_previous_day_reports,
     format_report_preview,
     truncate_text,
 )
@@ -220,30 +223,44 @@ async def show_report_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
     if report is None:
         report = get_report(date_str, report_type)
 
+    # Получаем отчёты за предыдущий день
+    prev_reports = get_previous_day_reports(date_str)
+    prev_date = prev_reports.get("date")
+    prev_opening = prev_reports.get("opening")
+    prev_closing = prev_reports.get("closing")
+
     logger.info(f"📄 Показ деталей отчёта за {date_str}, тип {report_type}, exists={report is not None}")
+
+    text_parts = []
 
     if report:
         full_text = report["full_text"]
-        preview = format_report_preview(full_text)  # теперь использует 3500 по умолчанию
-        text = f"📄 Отчёт за {date_str} ({REPORT_TYPE_LABELS[report_type]}):\n\n{preview}"
+        preview = format_report_preview(full_text, 3500)
+        text_parts.append(f"📄 Отчёт за {date_str} ({REPORT_TYPE_LABELS[report_type]}):\n\n{preview}")
         if len(full_text) > 3500:
-            text += "\n\n… (полный текст по кнопке «Просмотреть»)"
-        text += "\n"
-        kb = report_action_keyboard(date_str, report_type, has_report=True)
+            text_parts.append("\n… (полный текст по кнопке «Просмотреть»)")
+        has_report = True
     else:
-        yesterday = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-        example_report = get_last_report(report_type, before_date=yesterday)
-        if example_report:
-            example_text = example_report["full_text"]
-            preview = format_report_preview(example_text)  # тоже 3500
-            text = f"📄 Отчёт за {date_str} ещё не создан.\n\nПример за {example_report['date']}:\n{preview}\n\nВы можете создать новый отчёт, отредактировав текст."
-            logger.info(f"📄 Показан пример отчёта за {example_report['date']}")
-        else:
-            text = f"📄 Отчёт за {date_str} ещё не создан.\n\nВы можете создать его сейчас."
-            logger.info(f"📄 Нет примеров для отчёта за {date_str}")
-        kb = report_action_keyboard(date_str, report_type, has_report=False)
+        text_parts.append(f"📄 Отчёт за {date_str} ещё не создан.\n")
+        has_report = False
 
-    await render(update, context, text, kb, message_id)
+    # Добавляем информацию о предыдущем дне
+    if prev_opening or prev_closing:
+        text_parts.append(f"\n\n📅 Предыдущий день ({prev_date}):")
+        if prev_opening:
+            preview_opening = format_report_preview(prev_opening["full_text"], 300)
+            text_parts.append(f"\n📋 Открытие:\n{preview_opening}")
+        if prev_closing:
+            preview_closing = format_report_preview(prev_closing["full_text"], 300)
+            text_parts.append(f"\n🌙 Закрытие:\n{preview_closing}")
+    else:
+        text_parts.append(f"\n\n📅 За {prev_date} отчётов нет.")
+
+    full_text_display = "".join(text_parts)
+
+    kb = report_action_keyboard(date_str, report_type, has_report, prev_reports)
+
+    await render(update, context, full_text_display, kb, message_id)
     return set_state(context, REPORT_VIEW_DETAIL)
 
 
@@ -261,16 +278,24 @@ async def create_report_action(update: Update, context: ContextTypes.DEFAULT_TYP
     if not date_str:
         return await show_report_calendar(update, context, query.message.message_id)
 
-    yesterday = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-    example_report = get_last_report(report_type, before_date=yesterday)
-    if example_report:
-        example_text = example_report["full_text"]
-        preview = format_report_preview(example_text)  # 3500
-        prompt = f"📝 Создание отчёта за {date_str} ({REPORT_TYPE_LABELS[report_type]}).\n\nОтправьте текст отчёта. Вы можете использовать пример из {example_report['date']} как шаблон:\n\n{preview}\n\nПросто скопируйте и отредактируйте."
-        logger.info(f"📝 Предложен пример из {example_report['date']}")
+    # Получаем примеры из предыдущего дня
+    prev_reports = get_previous_day_reports(date_str)
+    prev_date = prev_reports.get("date")
+    prev_opening = prev_reports.get("opening")
+    prev_closing = prev_reports.get("closing")
+
+    prompt_parts = [f"📝 Создание отчёта за {date_str} ({REPORT_TYPE_LABELS[report_type]}).\n\nОтправьте текст отчёта."]
+
+    if prev_opening or prev_closing:
+        prompt_parts.append(f"\n\n📅 Примеры из {prev_date}:")
+        if prev_opening:
+            prompt_parts.append(f"\n📋 Открытие:\n{prev_opening['full_text']}")
+        if prev_closing:
+            prompt_parts.append(f"\n🌙 Закрытие:\n{prev_closing['full_text']}")
     else:
-        prompt = f"📝 Создание отчёта за {date_str} ({REPORT_TYPE_LABELS[report_type]}).\n\nОтправьте текст отчёта."
-        logger.info(f"📝 Нет примера для {date_str}")
+        prompt_parts.append(f"\n\n📅 За {prev_date} отчётов нет.")
+
+    prompt = "".join(prompt_parts)
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL)]
@@ -348,6 +373,36 @@ async def view_report_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 # =========================================================
+# VIEW PREVIOUS DAY REPORTS
+# =========================================================
+
+async def view_previous_report(update: Update, context: ContextTypes.DEFAULT_TYPE, report_type: str) -> int:
+    query = update.callback_query
+    await answer(query)
+    logger.info(f"👁️ Просмотр отчёта за предыдущий день: {report_type}")
+
+    date_str = context.user_data.get("report_date")
+    if not date_str:
+        return await show_report_calendar(update, context, query.message.message_id)
+
+    prev_date = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    report = get_report(prev_date, report_type)
+    if not report:
+        await answer(query, "Отчёт за предыдущий день не найден", show_alert=True)
+        return await show_report_detail(update, context, query.message.message_id)
+
+    # Отправляем полный текст
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"📄 Отчёт за {prev_date} ({REPORT_TYPE_LABELS[report_type]}):\n\n{report['full_text']}"
+    )
+    logger.info(f"📨 Отправлен отчёт за предыдущий день {prev_date} ({report_type})")
+
+    return await show_report_detail(update, context, query.message.message_id)
+
+
+# =========================================================
 # MAIN CALLBACK ROUTER
 # =========================================================
 
@@ -380,6 +435,12 @@ async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data == CB_REPORT_SAVE:
         logger.warning("⚠️ Кнопка 'Сохранить' нажата, но сохранение происходит при отправке текста")
         return current_state(context)
+
+    if data == CB_REPORT_PREV_OPENING:
+        return await view_previous_report(update, context, "opening")
+
+    if data == CB_REPORT_PREV_CLOSING:
+        return await view_previous_report(update, context, "closing")
 
     logger.warning(f"⚠️ Неизвестный callback: {data}")
     return await show_reports_menu(update, context, query.message.message_id)

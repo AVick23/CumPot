@@ -12,8 +12,11 @@ from .constants import (
     CB_REPORT_VIEW,
     CB_REPORT_CANCEL,
     CB_REPORT_SAVE,
+    CB_REPORT_PREV_OPENING,
+    CB_REPORT_PREV_CLOSING,
     MONTHS,
     WEEKDAYS_SHORT,
+    REPORT_TYPE_LABELS,
 )
 
 
@@ -64,13 +67,22 @@ def calendar_keyboard(year: int, month: int, dates_with_reports: set[str]) -> In
     return InlineKeyboardMarkup(rows)
 
 
-def report_action_keyboard(date_str: str, report_type: str, has_report: bool) -> InlineKeyboardMarkup:
+def report_action_keyboard(date_str: str, report_type: str, has_report: bool, prev_reports: dict) -> InlineKeyboardMarkup:
     rows = []
     if has_report:
-        rows.append([InlineKeyboardButton("👁️ Просмотреть", callback_data=CB_REPORT_VIEW)])
+        rows.append([InlineKeyboardButton("👁️ Просмотреть текущий", callback_data=CB_REPORT_VIEW)])
         rows.append([InlineKeyboardButton("✏️ Создать новый (перезаписать)", callback_data=CB_REPORT_CREATE)])
     else:
         rows.append([InlineKeyboardButton("➕ Создать отчёт", callback_data=CB_REPORT_CREATE)])
+    
+    # Кнопки для просмотра отчётов за предыдущий день
+    if prev_reports.get("opening"):
+        prev_date = prev_reports.get("date", "")
+        rows.append([InlineKeyboardButton(f"📋 Открытие {prev_date}", callback_data=CB_REPORT_PREV_OPENING)])
+    if prev_reports.get("closing"):
+        prev_date = prev_reports.get("date", "")
+        rows.append([InlineKeyboardButton(f"🌙 Закрытие {prev_date}", callback_data=CB_REPORT_PREV_CLOSING)])
+    
     rows.append([InlineKeyboardButton("◀️ Выбрать дату", callback_data=CB_REPORT_BACK_MENU)])
     return InlineKeyboardMarkup(rows)
 

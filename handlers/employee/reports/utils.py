@@ -12,10 +12,6 @@ logger = logging.getLogger(__name__)
 # =========================================================
 
 def save_report(date_str: str, report_type: str, author_id: int, full_text: str) -> int:
-    """
-    Сохраняет отчёт в БД, предварительно парсит разделы и сохраняет JSON.
-    Возвращает id записи.
-    """
     parsed = parse_report_sections(full_text, report_type)
     parsed_json = json.dumps(parsed, ensure_ascii=False)
     now = datetime.now().isoformat()
@@ -50,7 +46,6 @@ def save_report(date_str: str, report_type: str, author_id: int, full_text: str)
 
 
 def get_report(date_str: str, report_type: str) -> dict | None:
-    """Возвращает отчёт за указанную дату и тип, либо None."""
     with get_connection() as conn:
         row = conn.execute(
             """
@@ -64,10 +59,6 @@ def get_report(date_str: str, report_type: str) -> dict | None:
 
 
 def get_last_report(report_type: str, before_date: str = None) -> dict | None:
-    """
-    Возвращает последний отчёт указанного типа до указанной даты (включительно).
-    Если before_date не указан, берёт самый свежий.
-    """
     with get_connection() as conn:
         query = """
             SELECT id, date, report_type, author_id, full_text, parsed_data, created_at, updated_at
@@ -84,7 +75,6 @@ def get_last_report(report_type: str, before_date: str = None) -> dict | None:
 
 
 def get_dates_with_reports(year: int, month: int, report_type: str = None) -> set[str]:
-    """Возвращает множество дат (YYYY-MM-DD) за месяц, для которых есть отчёты указанного типа."""
     start_date = f"{year:04d}-{month:02d}-01"
     end_date = f"{year:04d}-{month+1:02d}-01" if month < 12 else f"{year+1:04d}-01-01"
     with get_connection() as conn:
@@ -101,15 +91,24 @@ def get_dates_with_reports(year: int, month: int, report_type: str = None) -> se
     return {row["date"] for row in rows}
 
 
+def get_previous_day_reports(date_str: str) -> dict:
+    """
+    Возвращает отчёты за предыдущий день (открытие и закрытие).
+    """
+    prev_date = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    result = {
+        "opening": get_report(prev_date, "opening"),
+        "closing": get_report(prev_date, "closing"),
+        "date": prev_date
+    }
+    return result
+
+
 # =========================================================
 # PARSING
 # =========================================================
 
 def parse_report_sections(full_text: str, report_type: str) -> dict:
-    """
-    Парсит текст отчёта по разделам, характерным для открытия или закрытия.
-    Возвращает словарь с разделами.
-    """
     sections = {}
     if report_type == "opening":
         markers = [
