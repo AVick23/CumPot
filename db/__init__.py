@@ -82,7 +82,7 @@ def init_db():
             )
         """)
 
-        # Таблица общего прогресса – добавляем поля для списка файлов
+        # Таблица общего прогресса
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_shared_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,10 +92,10 @@ def init_db():
                 completed BOOLEAN DEFAULT 0,
                 completed_at TEXT,
                 completed_by INTEGER,
-                photo_file_id TEXT,                 -- оставлено для обратной совместимости
-                photo_channel_message_id INTEGER,   -- оставлено для обратной совместимости
-                photo_file_ids TEXT,                -- JSON-массив file_id с типами
-                photo_channel_message_ids TEXT,     -- JSON-массив message_id канала
+                photo_file_id TEXT,
+                photo_channel_message_id INTEGER,
+                photo_file_ids TEXT,
+                photo_channel_message_ids TEXT,
                 FOREIGN KEY (item_id) REFERENCES checklist_items(id)
             )
         """)
@@ -104,7 +104,7 @@ def init_db():
             ON checklist_shared_progress(location, date, item_id)
         """)
 
-        # Таблица для отслеживания отправленных уведомлений
+        # Таблица уведомлений
         conn.execute("""
             CREATE TABLE IF NOT EXISTS checklist_notifications_sent (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,15 +116,15 @@ def init_db():
             )
         """)
         
-        # внутри init_db(), после создания остальных таблиц:
+        # Таблица отчётов по сменам
         conn.execute("""
             CREATE TABLE IF NOT EXISTS shift_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
-                report_type TEXT NOT NULL,  -- 'opening' или 'closing'
+                report_type TEXT NOT NULL,
                 author_id INTEGER,
                 full_text TEXT NOT NULL,
-                parsed_data TEXT,           -- JSON с разделами
+                parsed_data TEXT,
                 created_at TEXT,
                 updated_at TEXT,
                 FOREIGN KEY (author_id) REFERENCES users(tg_id)
@@ -134,6 +134,64 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_reports_date_type
             ON shift_reports (date, report_type)
         """)
+
+        # ------------------------------------------------------------
+        # НОВЫЕ ТАБЛИЦЫ (личные данные, ставки, такси)
+        # ------------------------------------------------------------
+
+        # Таблица ставок
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS salary_rates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                rate REAL NOT NULL,
+                date_from TEXT NOT NULL,
+                date_to TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(tg_id)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_salary_rates_user_date
+            ON salary_rates (user_id, date_from)
+        """)
+
+        # Таблица расходов на такси
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS taxi_expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                photo_file_ids TEXT,
+                photo_channel_message_ids TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(tg_id)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_taxi_user_date
+            ON taxi_expenses (user_id, date)
+        """)
+
+        # ------------------------------------------------------------
+        # МИГРАЦИИ ДЛЯ СУЩЕСТВУЮЩИХ ТАБЛИЦ
+        # ------------------------------------------------------------
+
+        # Добавляем поля в users
+        user_columns = _get_columns(conn, "users")
+        new_user_fields = {
+            "phone": "TEXT",
+            "birthday": "TEXT",
+            "address": "TEXT",
+            "responsibilities": "TEXT",
+        }
+        for field, col_type in new_user_fields.items():
+            if field not in user_columns:
+                logger.info(f"Добавляем колонку {field} в users")
+                conn.execute(f"ALTER TABLE users ADD COLUMN {field} {col_type}")
 
         # Миграции для checklist_items
         item_columns = _get_columns(conn, "checklist_items")
@@ -155,10 +213,9 @@ def init_db():
         if "days_of_week" not in item_columns:
             logger.info("Добавляем колонку days_of_week в checklist_items")
             conn.execute("ALTER TABLE checklist_items ADD COLUMN days_of_week TEXT")
-            # Переносим данные из day_of_week в days_of_week
             conn.execute("UPDATE checklist_items SET days_of_week = CAST(day_of_week AS TEXT) WHERE day_of_week IS NOT NULL")
 
-        # Миграции для checklist_shared_progress – добавляем новые поля
+        # Миграции для checklist_shared_progress
         progress_columns = _get_columns(conn, "checklist_shared_progress")
         if "photo_file_ids" not in progress_columns:
             logger.info("Добавляем колонку photo_file_ids в checklist_shared_progress")
@@ -178,4 +235,5 @@ def init_db():
     logger.info("Инициализация базы данных завершена.")
 
 
+# Инициализация при первом импорте (по-прежнему вызывается)
 init_db()

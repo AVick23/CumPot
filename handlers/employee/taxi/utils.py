@@ -1,44 +1,9 @@
-from .constants import LOCATIONS, MSG_LIMIT, MAIN_MENU
+from .constants import MSG_LIMIT
 from telegram.error import BadRequest
 import logging
+import json
 
 logger = logging.getLogger(__name__)
-
-
-def get_position_label(position: str | None) -> str:
-    return LOCATIONS.get(position, position or "—")
-
-
-def main_menu_text(user_db: dict, shift: dict | None) -> str:
-    full_name = user_db.get("full_name") or "Сотрудник"
-
-    if shift:
-        shift_location_label = get_position_label(shift.get("location"))
-        shift_name = shift.get("shift_name", "")
-        shift_start = shift.get("shift_start_time") or shift.get("start_time") or "—"
-        if shift_name:
-            return (
-                "🟢 Смена открыта\n"
-                f"📍 {shift_location_label} · {shift_name} (с {shift_start})\n\n"
-                "Смена закроется автоматически после 00:00 по МСК.\n"
-                "Выберите действие."
-            )
-        else:
-            return (
-                "🟢 Смена открыта\n"
-                f"📍 {shift_location_label} · с {shift_start}\n\n"
-                "Смена закроется автоматически после 00:00 по МСК.\n"
-                "Выберите действие."
-            )
-
-    position_label = get_position_label(user_db.get("position"))
-
-    return (
-        f"👋 {full_name}\n"
-        f"Ваша позиция: {position_label}\n\n"
-        "Сейчас вы не на смене.\n"
-        "Когда будете готовы, начните смену."
-    )
 
 
 def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
@@ -49,7 +14,6 @@ def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
 
 
 async def render(update, context, text, reply_markup=None, message_id=None):
-    """Отправляет или редактирует сообщение."""
     text = truncate_text(text, MSG_LIMIT)
     chat_id = update.effective_chat.id if update.effective_chat else None
 
@@ -109,4 +73,8 @@ def set_state(context, state: int) -> int:
 
 
 def get_current_state(context) -> int:
-    return context.user_data.get("state", MAIN_MENU)
+    return context.user_data.get("state", 30)  # TAXI_MENU
+
+
+def format_amount(amount: float) -> str:
+    return f"{amount:.2f} ₽"

@@ -40,6 +40,10 @@ def get_all_users() -> list[dict]:
 
 
 def update_user_profile(tg_id: int, full_name: str | None = None, position: str | None = None):
+    """
+    Обновляет только ФИО и позицию (устаревшая функция, лучше использовать profile.update_user_profile).
+    Оставлена для обратной совместимости.
+    """
     updates = []
     params = []
     if full_name is not None:

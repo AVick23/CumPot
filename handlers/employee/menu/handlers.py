@@ -20,7 +20,9 @@ from .constants import (
     CB_BACK_MENU,
     CB_POSITION_PREFIX,
     CB_SHIFT_TYPE_PREFIX,
-    CB_REPORTS,          # добавлено
+    CB_REPORTS,
+    CB_PROFILE,
+    CB_TAXI,               # <-- НОВОЕ
     LOCATIONS,
     FULL_NAME_LIMIT,
 )
@@ -191,9 +193,17 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from ..checklists.handlers import show_progress
         return await show_progress(update, context, message_id)
 
-    if data == CB_REPORTS:   # добавлено
+    if data == CB_REPORTS:
         from ..reports.handlers import show_reports_menu
         return await show_reports_menu(update, context, message_id)
+
+    if data == CB_PROFILE:
+        from ..profile.handlers import show_profile
+        return await show_profile(update, context, message_id)
+
+    if data == CB_TAXI:                     # <-- НОВОЕ
+        from ..taxi.handlers import show_taxi_menu
+        return await show_taxi_menu(update, context, message_id)
 
     if data == CB_BACK_MENU:
         return await show_main_menu(update, context, message_id)

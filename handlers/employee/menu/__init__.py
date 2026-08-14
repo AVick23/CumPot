@@ -20,6 +20,9 @@ from .constants import (
     CB_BACK_MENU,
     CB_POSITION_PREFIX,
     CB_SHIFT_TYPE_PREFIX,
+    CB_REPORTS,
+    CB_PROFILE,
+    CB_TAXI,          # <-- НОВОЕ
 )
 
 
@@ -35,7 +38,7 @@ def register_menu_states(states: dict):
         CallbackQueryHandler(onboarding_position_guard),
     ]
     states[MAIN_MENU] = [
-        CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$"),
+        CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$|^{CB_REPORTS}$|^{CB_PROFILE}$|^{CB_TAXI}$"),
         CallbackQueryHandler(lambda *_: None, pattern="^noop$"),
     ]
     # Новое состояние для выбора смены

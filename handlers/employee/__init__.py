@@ -22,8 +22,10 @@ from .checklists.handlers import (
     noop,
 )
 
-# Импорт для отчётов
+# Импорт для отчётов, профиля и такси
 from .reports import register_report_states
+from .profile import register_profile_states        # <-- НОВОЕ
+from .taxi import register_taxi_states              # <-- НОВОЕ
 
 from .menu.constants import (
     ONBOARD_NAME,
@@ -36,7 +38,9 @@ from .menu.constants import (
     CB_POSITION_PREFIX,
     CB_BACK_MENU,
     CB_SHIFT_TYPE_PREFIX,
-    CB_REPORTS,  # добавлено
+    CB_REPORTS,
+    CB_PROFILE,           # <-- НОВОЕ
+    CB_TAXI,              # <-- НОВОЕ
 )
 
 from .checklists.constants import (
@@ -79,9 +83,15 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(onboarding_position_guard),
     ]
 
-    # Главное меню
+    # Главное меню – добавили CB_PROFILE и CB_TAXI
     states[MAIN_MENU] = [
-        CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$|^{CB_REPORTS}$"),
+        CallbackQueryHandler(
+            main_menu_callback,
+            pattern=(
+                f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|"
+                f"^{CB_BACK_MENU}$|^{CB_REPORTS}$|^{CB_PROFILE}$|^{CB_TAXI}$"
+            )
+        ),
         CallbackQueryHandler(noop, pattern="^noop$"),
     ]
 
@@ -133,5 +143,7 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(photo_state_guard),
     ]
 
-    # Регистрируем состояния для отчётов
+    # Регистрируем состояния для отчётов, профиля и такси
     register_report_states(states)
+    register_profile_states(states)   # <-- НОВОЕ
+    register_taxi_states(states)      # <-- НОВОЕ
