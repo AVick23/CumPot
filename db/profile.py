@@ -35,7 +35,7 @@ def get_user_profile(tg_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
             "SELECT tg_id, username, first_name, last_name, full_name, position, "
-            "phone, birthday, address, responsibilities, is_admin "
+            "phone, birthday, address, responsibilities, is_admin, status, admin_comment "
             "FROM users WHERE tg_id = ?",
             (tg_id,)
         ).fetchone()
@@ -192,3 +192,29 @@ def get_taxi_summary(user_id: int, date_from: str, date_to: str) -> dict:
             (user_id, date_from, date_to)
         ).fetchone()
         return dict(row)
+
+
+# =========================================================
+# УПРАВЛЕНИЕ СОТРУДНИКАМИ (НОВЫЕ ФУНКЦИИ)
+# =========================================================
+
+def update_employee_status(tg_id: int, status: str) -> None:
+    """Обновляет статус сотрудника (стажёр/сотрудник)."""
+    with get_connection() as conn:
+        conn.execute("UPDATE users SET status = ? WHERE tg_id = ?", (status, tg_id))
+        conn.commit()
+
+
+def update_employee_comment(tg_id: int, comment: str | None) -> None:
+    """Обновляет комментарий администратора по сотруднику."""
+    with get_connection() as conn:
+        conn.execute("UPDATE users SET admin_comment = ? WHERE tg_id = ?", (comment, tg_id))
+        conn.commit()
+
+
+def get_employee_full_info(tg_id: int) -> dict | None:
+    """Возвращает полную информацию о сотруднике с текущей ставкой."""
+    user = get_user_profile(tg_id)
+    if user:
+        user["current_rate"] = get_current_salary_rate(tg_id) or 0.0
+    return user

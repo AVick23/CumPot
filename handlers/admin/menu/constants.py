@@ -7,6 +7,7 @@ CB_HOME = "home"
 CB_SHIFTS = "shifts"
 CB_CALENDAR = "calendar"
 CB_EDIT = "edit"
+CB_EMPLOYEES = "employees"   # НОВОЕ
 
 # UI
 MSG_LIMIT = 3800

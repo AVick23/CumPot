@@ -1,0 +1,19 @@
+# Состояния
+EMPLOYEES_LIST = 200
+EMPLOYEE_DETAIL = 201
+EMPLOYEE_EDIT_STATUS = 202
+EMPLOYEE_EDIT_COMMENT = 203
+EMPLOYEE_EDIT_RATE = 204
+
+# Callback data
+CB_EMPLOYEES_BACK = "emp_back"
+CB_EMPLOYEES_REPORT_ALL = "emp_report_all"
+CB_EMPLOYEE_DETAIL_PREFIX = "emp_detail:"
+CB_EMPLOYEE_EDIT_STATUS_PREFIX = "emp_edit_status:"
+CB_EMPLOYEE_EDIT_COMMENT_PREFIX = "emp_edit_comment:"
+CB_EMPLOYEE_EDIT_RATE_PREFIX = "emp_edit_rate:"
+CB_EMPLOYEE_REPORT_PREFIX = "emp_report:"
+CB_EMPLOYEE_CANCEL = "emp_cancel"
+
+# Список статусов
+STATUSES = ["Стажёр", "Сотрудник"]

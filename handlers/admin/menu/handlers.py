@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from .constants import ADMIN_MAIN, ADMIN_SHIFTS, CB_HOME, CB_SHIFTS, CB_CALENDAR, CB_EDIT
+from .constants import ADMIN_MAIN, ADMIN_SHIFTS, CB_HOME, CB_SHIFTS, CB_CALENDAR, CB_EDIT, CB_EMPLOYEES
 from .keyboards import main_menu_keyboard, shifts_keyboard
 from .utils import render
 
@@ -42,5 +42,9 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data == CB_EDIT:
         from ..editor.handlers import show_edit_locations
         return await show_edit_locations(update, context, message_id)
+
+    if data == CB_EMPLOYEES:                     # НОВОЕ
+        from ..employees.handlers import show_employees_list
+        return await show_employees_list(update, context, message_id)
 
     return await show_main(update, context, message_id)

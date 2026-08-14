@@ -12,7 +12,8 @@ def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
     return text[:limit - 1].rstrip() + "…"
 
 
-async def render(update, context, text, reply_markup=None, message_id=None):
+async def render(update, context, text, reply_markup=None, message_id=None, parse_mode=None):
+    """Отправляет или редактирует сообщение с поддержкой parse_mode."""
     text = truncate_text(text, MSG_LIMIT)
     chat_id = update.effective_chat.id if update.effective_chat else None
 
@@ -23,6 +24,7 @@ async def render(update, context, text, reply_markup=None, message_id=None):
                 message_id=message_id,
                 text=text,
                 reply_markup=reply_markup,
+                parse_mode=parse_mode,
             )
             return message_id
         except BadRequest as e:
@@ -35,6 +37,7 @@ async def render(update, context, text, reply_markup=None, message_id=None):
             chat_id=chat_id,
             text=text,
             reply_markup=reply_markup,
+            parse_mode=parse_mode,
         )
         return msg.message_id
     return None
