@@ -51,6 +51,11 @@ CB_PHOTO_BACK_DAY = "pback_day"
 CB_PHOTO_BACK_OVERVIEW = "pback_overview"
 CB_PHOTO_BACK_LOC = "pback_loc"
 
+# Вкладки в дневном отчёте
+CB_TAB_CHECKLIST = "tab_checklist"
+CB_TAB_SHIFT_REPORTS = "tab_shift_reports"
+CB_TAB_TAXI = "tab_taxi"
+
 
 # =========================================================
 # REPORT MODES

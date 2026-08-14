@@ -24,6 +24,9 @@ from .constants import (
     CB_PHOTO_BACK_DAY,
     CB_PHOTO_BACK_OVERVIEW,
     CB_PHOTO_BACK_LOC,
+    CB_TAB_CHECKLIST,
+    CB_TAB_SHIFT_REPORTS,
+    CB_TAB_TAXI,
     REPORT_MODE_SHORT,
     REPORT_MODE_FULL,
     MONTHS,
@@ -112,50 +115,72 @@ def calendar_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def day_report_tabs_keyboard(current_tab: str) -> InlineKeyboardMarkup:
+    """Клавиатура с вкладками для переключения между чек-листами, сменными отчётами и такси."""
+    tabs = [
+        (CB_TAB_CHECKLIST, "📋 Чек-листы"),
+        (CB_TAB_SHIFT_REPORTS, "📄 Сменные отчёты"),
+        (CB_TAB_TAXI, "🚕 Такси"),
+    ]
+    buttons = []
+    for tab, label in tabs:
+        if tab == current_tab:
+            label = f"✅ {label}"
+        buttons.append(InlineKeyboardButton(label, callback_data=tab))
+    return InlineKeyboardMarkup([buttons])
+
+
 def day_report_keyboard(
     mode: str,
     show_photos: bool,
     has_bar_media: bool,
     has_kitchen_media: bool,
+    current_tab: str,
 ) -> InlineKeyboardMarkup:
     rows = []
 
-    rows.append(
-        [
-            InlineKeyboardButton(
-                f"{'✅ ' if mode == REPORT_MODE_SHORT else ''}Кратко",
-                callback_data=CB_REPORT_SHORT,
-            ),
-            InlineKeyboardButton(
-                f"{'✅ ' if mode == REPORT_MODE_FULL else ''}Полный",
-                callback_data=CB_REPORT_FULL,
-            ),
-        ]
-    )
+    # Вкладки
+    rows.append(day_report_tabs_keyboard(current_tab).inline_keyboard[0])
 
-    rows.append(
-        [
-            InlineKeyboardButton(
-                f"{'✅ ' if show_photos else ''}С фото",
-                callback_data=CB_REPORT_PHOTOS_ON,
-            ),
-            InlineKeyboardButton(
-                f"{'✅ ' if not show_photos else ''}Без фото",
-                callback_data=CB_REPORT_PHOTOS_OFF,
-            ),
-        ]
-    )
-
-    if show_photos and (has_bar_media or has_kitchen_media):
+    # Если текущая вкладка - чек-листы, показываем настройки
+    if current_tab == CB_TAB_CHECKLIST:
         rows.append(
             [
                 InlineKeyboardButton(
-                    "📸 Фотоотчёт",
-                    callback_data=CB_PHOTO_REPORT,
-                )
+                    f"{'✅ ' if mode == REPORT_MODE_SHORT else ''}Кратко",
+                    callback_data=CB_REPORT_SHORT,
+                ),
+                InlineKeyboardButton(
+                    f"{'✅ ' if mode == REPORT_MODE_FULL else ''}Полный",
+                    callback_data=CB_REPORT_FULL,
+                ),
             ]
         )
 
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{'✅ ' if show_photos else ''}С фото",
+                    callback_data=CB_REPORT_PHOTOS_ON,
+                ),
+                InlineKeyboardButton(
+                    f"{'✅ ' if not show_photos else ''}Без фото",
+                    callback_data=CB_REPORT_PHOTOS_OFF,
+                ),
+            ]
+        )
+
+        if show_photos and (has_bar_media or has_kitchen_media):
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "📸 Фотоотчёт",
+                        callback_data=CB_PHOTO_REPORT,
+                    )
+                ]
+            )
+
+    # Навигация
     rows.append(
         [
             InlineKeyboardButton("◀️ Календарь", callback_data=CB_TO_CALENDAR),

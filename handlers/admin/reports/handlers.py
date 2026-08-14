@@ -39,6 +39,9 @@ from .constants import (
     CB_PHOTO_BACK_DAY,
     CB_PHOTO_BACK_OVERVIEW,
     CB_PHOTO_BACK_LOC,
+    CB_TAB_CHECKLIST,
+    CB_TAB_SHIFT_REPORTS,
+    CB_TAB_TAXI,
     REPORT_MODE_SHORT,
     REPORT_MODE_FULL,
     MONTHS,
@@ -68,6 +71,9 @@ from .utils import (
     get_category_photo_tasks,
     get_task_by_id_from_report,
     build_task_media_caption,
+    get_shift_reports_for_date,
+    format_shift_report_text,
+    get_taxi_for_date,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,6 +98,14 @@ def _get_mode(context: ContextTypes.DEFAULT_TYPE) -> str:
 
 def _get_show_photos(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return bool(context.user_data.get("report_photos", True))
+
+
+def _get_tab(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("report_tab", CB_TAB_CHECKLIST)
+
+
+def _set_tab(context: ContextTypes.DEFAULT_TYPE, tab: str) -> None:
+    context.user_data["report_tab"] = tab
 
 
 def _set_calendar_to_date(context: ContextTypes.DEFAULT_TYPE, date_str: str) -> None:
@@ -162,38 +176,83 @@ async def show_day_report(
     date_str: str,
     message_id=None,
     notice=None,
+    tab: str = None,
 ) -> int:
+    # Устанавливаем вкладку, если передана
+    if tab:
+        _set_tab(context, tab)
+    current_tab = _get_tab(context)
+
     mode = _get_mode(context)
     show_photos = _get_show_photos(context)
 
     context.user_data["report_date"] = date_str
     _set_calendar_to_date(context, date_str)
 
-    try:
-        text, has_bar_media, has_kitchen_media = get_report_text(
-            date_str,
-            mode,
-            show_photos,
-        )
-    except Exception as e:
-        logger.error("Ошибка построения отчёта: %s", e)
-        text = "Не удалось загрузить отчёт."
+    # Строим тело отчёта в зависимости от вкладки
+    if current_tab == CB_TAB_CHECKLIST:
+        try:
+            text, has_bar_media, has_kitchen_media = get_report_text(
+                date_str,
+                mode,
+                show_photos,
+            )
+        except Exception as e:
+            logger.error("Ошибка построения отчёта чек-листов: %s", e)
+            text = "Не удалось загрузить отчёт по чек-листам."
+            has_bar_media = False
+            has_kitchen_media = False
+    elif current_tab == CB_TAB_SHIFT_REPORTS:
+        reports = get_shift_reports_for_date(date_str)
+        lines = [f"📄 Сменные отчёты за {format_date_ru(date_str)}", ""]
+        for rtype in ["opening", "closing"]:
+            label = "Открытие" if rtype == "opening" else "Закрытие"
+            report = reports.get(rtype)
+            if report:
+                lines.append(f"✅ {label}:")
+                lines.append(format_shift_report_text(report))
+                lines.append("")
+            else:
+                lines.append(f"❌ {label} не сохранён")
+        text = "\n".join(lines)
+        has_bar_media = False
+        has_kitchen_media = False
+    else:  # TAXI
+        taxi_data = get_taxi_for_date(date_str)
+        lines = [f"🚕 Такси за {format_date_ru(date_str)}", ""]
+        if not taxi_data:
+            lines.append("Нет записей.")
+        else:
+            total_all = 0
+            for user_data in taxi_data:
+                name = user_data["full_name"]
+                total = user_data["total"]
+                total_all += total
+                lines.append(f"👤 {name}: {total:.2f} ₽")
+                for exp in user_data["expenses"]:
+                    lines.append(f"   🗓 {exp['date']} – {exp['amount']:.2f} ₽")
+                lines.append("")
+            lines.append(f"Итого: {total_all:.2f} ₽")
+        text = "\n".join(lines)
         has_bar_media = False
         has_kitchen_media = False
 
     if notice:
         text = f"{notice}\n\n{text}"
 
+    kb = day_report_keyboard(
+        mode=mode,
+        show_photos=show_photos,
+        has_bar_media=has_bar_media,
+        has_kitchen_media=has_kitchen_media,
+        current_tab=current_tab,
+    )
+
     await render(
         update,
         context,
         text,
-        day_report_keyboard(
-            mode=mode,
-            show_photos=show_photos,
-            has_bar_media=has_bar_media,
-            has_kitchen_media=has_kitchen_media,
-        ),
+        kb,
         message_id,
     )
 
@@ -201,7 +260,7 @@ async def show_day_report(
 
 
 # =========================================================
-# PHOTO REPORT SCREENS
+# PHOTO REPORT SCREENS (без изменений)
 # =========================================================
 
 async def show_photo_overview(
@@ -733,42 +792,41 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 notice="Не удалось прочитать дату.",
             )
 
-    # Режимы отчёта
+    # Переключение вкладок
+    if data in (CB_TAB_CHECKLIST, CB_TAB_SHIFT_REPORTS, CB_TAB_TAXI):
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id, tab=data)
+
+    # Режимы отчёта (только для чек-листов)
     if data == CB_REPORT_SHORT:
         context.user_data["report_mode"] = REPORT_MODE_SHORT
         date_str = context.user_data.get("report_date")
-
         if not date_str:
             return await show_calendar(update, context, message_id)
-
         return await show_day_report(update, context, date_str, message_id)
 
     if data == CB_REPORT_FULL:
         context.user_data["report_mode"] = REPORT_MODE_FULL
         date_str = context.user_data.get("report_date")
-
         if not date_str:
             return await show_calendar(update, context, message_id)
-
         return await show_day_report(update, context, date_str, message_id)
 
     # Фото вкл/выкл
     if data == CB_REPORT_PHOTOS_ON:
         context.user_data["report_photos"] = True
         date_str = context.user_data.get("report_date")
-
         if not date_str:
             return await show_calendar(update, context, message_id)
-
         return await show_day_report(update, context, date_str, message_id)
 
     if data == CB_REPORT_PHOTOS_OFF:
         context.user_data["report_photos"] = False
         date_str = context.user_data.get("report_date")
-
         if not date_str:
             return await show_calendar(update, context, message_id)
-
         return await show_day_report(update, context, date_str, message_id)
 
     # Фотоотчёт
@@ -777,10 +835,8 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if data == CB_PHOTO_BACK_DAY:
         date_str = context.user_data.get("report_date")
-
         if not date_str:
             return await show_calendar(update, context, message_id)
-
         return await show_day_report(update, context, date_str, message_id)
 
     if data == CB_PHOTO_BACK_OVERVIEW:
@@ -788,10 +844,8 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if data == CB_PHOTO_BACK_LOC:
         location = context.user_data.get("photo_location")
-
         if location:
             return await show_photo_location_menu(update, context, location, message_id)
-
         return await show_photo_overview(update, context, message_id)
 
     # Локация
@@ -801,29 +855,23 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Категория
     if prefix == CB_PHOTO_CAT_PREFIX:
         location = context.user_data.get("photo_location")
-
         if not location:
             return await show_photo_overview(update, context, message_id)
-
         return await show_photo_category_menu(update, context, location, value, 1, message_id)
 
     # Отправить всю локацию
     if data == CB_PHOTO_ALL_LOC:
         location = context.user_data.get("photo_location")
-
         if not location:
             return await show_photo_overview(update, context, message_id)
-
         return await send_all_location_photos(update, context, location, message_id)
 
     # Отправить всю категорию
     if data == CB_PHOTO_ALL_CAT:
         location = context.user_data.get("photo_location")
         category = context.user_data.get("photo_category")
-
         if not location or not category:
             return await show_photo_overview(update, context, message_id)
-
         return await send_all_category_photos(update, context, location, category, message_id)
 
     # Отправить конкретную задачу
@@ -832,29 +880,24 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             item_id = int(value)
         except (TypeError, ValueError):
             return await show_photo_overview(update, context, message_id)
-
         return await send_task_photos(update, context, item_id, message_id)
 
     # Пагинация задач
     if prefix == CB_PHOTO_PAGE_PREFIX:
         location = context.user_data.get("photo_location")
         category = context.user_data.get("photo_category")
-
         if not location or not category:
             return await show_photo_overview(update, context, message_id)
-
         try:
             page = int(value)
         except (TypeError, ValueError):
             page = 1
-
         return await show_photo_category_menu(update, context, location, category, page, message_id)
 
     # Legacy: media:bar / media:kitchen
     if prefix == CB_SHOW_MEDIA_PREFIX:
         if value in LOCATIONS:
             return await show_photo_location_menu(update, context, value, message_id)
-
         return await show_photo_overview(update, context, message_id)
 
     # Fallback

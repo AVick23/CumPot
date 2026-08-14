@@ -16,7 +16,7 @@ from db.checklist import (
     get_shared_progress,
 )
 from db.shifts import get_shifts_for_date
-
+from db.profile import get_taxi_expenses
 from .constants import (
     CATEGORY_ORDER,
     CATEGORY_LABELS,
@@ -236,7 +236,7 @@ def _parse_media(raw) -> list[dict]:
 
 
 # =========================================================
-# DAY REPORT DATA
+# DAY REPORT DATA (CHECKLIST)
 # =========================================================
 
 def get_day_report(date_str: str) -> dict:
@@ -342,7 +342,7 @@ def get_day_report(date_str: str) -> dict:
 
 
 # =========================================================
-# REPORT TEXT
+# REPORT TEXT (CHECKLIST)
 # =========================================================
 
 def build_report_text(
@@ -474,7 +474,7 @@ def get_report_text(
 
 
 # =========================================================
-# PHOTO REPORT DATA
+# PHOTO REPORT DATA (для чек-листов)
 # =========================================================
 
 def get_photo_overview(date_str: str) -> dict:
@@ -607,3 +607,73 @@ def build_task_media_caption(item: dict, location: str, date_str: str) -> str:
         caption = caption[:1023] + "…"
 
     return caption
+
+
+# =========================================================
+# SHIFT REPORTS (СМЕННЫЕ ОТЧЁТЫ)
+# =========================================================
+
+def get_shift_reports_for_date(date_str: str) -> dict:
+    """Возвращает словарь с отчётами opening и closing за дату."""
+    result = {"opening": None, "closing": None}
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, date, report_type, author_id, full_text, parsed_data, created_at, updated_at
+            FROM shift_reports
+            WHERE date = ?
+            """,
+            (date_str,)
+        ).fetchall()
+        for row in rows:
+            report = dict(row)
+            if report["report_type"] in result:
+                result[report["report_type"]] = report
+    return result
+
+
+def format_shift_report_text(report: dict | None) -> str:
+    """Форматирует текст сменного отчёта для отображения."""
+    if not report:
+        return "❌ Отчёт не сохранён"
+    text = report.get("full_text", "")
+    if not text.strip():
+        return "⚠️ Отчёт пуст"
+    return text
+
+
+# =========================================================
+# TAXI (ТАКСИ)
+# =========================================================
+
+def get_taxi_for_date(date_str: str) -> list[dict]:
+    """
+    Возвращает список всех записей такси за указанную дату,
+    сгруппированных по пользователям.
+    """
+    # Получаем всех пользователей, у которых есть такси за эту дату
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT tg_id, full_name
+            FROM users
+            WHERE tg_id IN (
+                SELECT DISTINCT user_id FROM taxi_expenses WHERE date = ?
+            )
+            ORDER BY full_name
+            """,
+            (date_str,)
+        ).fetchall()
+        users = [dict(row) for row in rows]
+
+    result = []
+    for user in users:
+        expenses = get_taxi_expenses(user["tg_id"], date_str, date_str)
+        total = sum(e["amount"] for e in expenses)
+        result.append({
+            "user_id": user["tg_id"],
+            "full_name": user.get("full_name") or "Сотрудник",
+            "expenses": expenses,
+            "total": total,
+        })
+    return result
