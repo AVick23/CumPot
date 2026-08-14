@@ -1,11 +1,11 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from .constants import ADMIN_MAIN, ADMIN_SHIFTS, CB_HOME, CB_SHIFTS, CB_CALENDAR, CB_EDIT, CB_EMPLOYEES
-from .keyboards import main_menu_keyboard, shifts_keyboard
+from .keyboards import main_menu_keyboard
 from .utils import render, answer
 from utils.time_utils import today_msk_str
 from db.shifts import get_shifts_for_date
-from ..reports.handlers import show_calendar
+from ..reports.handlers import show_calendar, show_day_report   # добавлен show_day_report
 
 
 async def show_main(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
@@ -18,26 +18,12 @@ async def show_main(update: Update, context: ContextTypes.DEFAULT_TYPE, message_
 
 
 async def show_shifts(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
-    """Показывает смены на сегодня"""
+    """
+    Открывает отчёт за сегодня (аналогично выбору даты в календаре).
+    """
     today = today_msk_str()
-    shifts = get_shifts_for_date(today)
-
-    if not shifts:
-        text = "📆 Сегодня смен нет."
-    else:
-        lines = ["📆 Смены на сегодня:"]
-        for s in shifts:
-            lines.append(
-                f"• {s.get('user_name', '—')} – {s.get('location', '—')} – "
-                f"{s.get('shift_name', '—')} (с {s.get('start_time', '—')})"
-            )
-        text = "\n".join(lines)
-
-    if notice:
-        text = f"{notice}\n\n{text}"
-
-    await render(update, context, text, shifts_keyboard(), message_id)
-    return ADMIN_SHIFTS
+    # Передаём управление в reports.handlers.show_day_report
+    return await show_day_report(update, context, today, message_id, notice)
 
 
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
