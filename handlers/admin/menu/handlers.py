@@ -5,8 +5,7 @@ from .keyboards import main_menu_keyboard, shifts_keyboard
 from .utils import render, answer
 from utils.time_utils import today_msk_str
 from db.shifts import get_shifts_for_date
-from ..reports.handlers import show_editor_calendar
-from ..reports.utils import load_draft
+from ..reports.handlers import show_calendar
 
 
 async def show_main(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
@@ -41,18 +40,6 @@ async def show_shifts(update: Update, context: ContextTypes.DEFAULT_TYPE, messag
     return ADMIN_SHIFTS
 
 
-async def show_report_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
-    """Открывает календарь для выбора даты и просмотра отчётов за неё"""
-    today = today_msk_str()
-    # Создаём черновик для сегодня, чтобы использовать существующий календарь
-    draft = load_draft(today, "opening")
-    context.user_data["report_draft"] = draft
-    context.user_data["report_type"] = "opening"
-    context.user_data["report_date"] = today
-    # Вызываем календарь из reports
-    return await show_editor_calendar(update, context, message_id, notice)
-
-
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await answer(query)
@@ -66,7 +53,8 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return await show_shifts(update, context, message_id)
 
     if data == CB_CALENDAR:
-        return await show_report_calendar(update, context, message_id)
+        # Открываем календарь для выбора даты и просмотра отчётов
+        return await show_calendar(update, context, message_id)
 
     if data == CB_EDIT:
         from ..editor.handlers import show_edit_locations
