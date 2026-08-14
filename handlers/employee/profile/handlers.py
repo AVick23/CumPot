@@ -54,20 +54,21 @@ async def show_profile(
     responsibilities = user_data.get("responsibilities") or "—"
     position = user_data.get("position") or "—"
 
+    # Используем HTML-теги для жирного шрифта
     text = (
-        "👤 **Мой профиль**\n\n"
-        f"**ФИО:** {full_name}\n"
-        f"**Телефон:** {phone}\n"
-        f"**День рождения:** {birthday}\n"
-        f"**Адрес:** {address}\n"
-        f"**Обязанности:** {responsibilities}\n"
-        f"**Позиция:** {position}\n"
+        "👤 <b>Мой профиль</b>\n\n"
+        f"<b>ФИО:</b> {full_name}\n"
+        f"<b>Телефон:</b> {phone}\n"
+        f"<b>День рождения:</b> {birthday}\n"
+        f"<b>Адрес:</b> {address}\n"
+        f"<b>Обязанности:</b> {responsibilities}\n"
+        f"<b>Позиция:</b> {position}\n"
     )
     if notice:
         text = f"{notice}\n\n{text}"
 
     kb = profile_view_keyboard(user_data)
-    await render(update, context, text, kb, message_id)
+    await render(update, context, text, kb, message_id, parse_mode='HTML')
     return set_state(context, PROFILE_VIEW)
 
 
@@ -89,16 +90,15 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         context.user_data["profile_edit_field"] = field_name
 
         # Показываем сообщение с запросом ввода
-        text = f"✏️ Редактирование **{FIELD_LABELS.get(field_name, field_name)}**\n\n{prompt}"
+        text = f"✏️ Редактирование <b>{FIELD_LABELS.get(field_name, field_name)}</b>\n\n{prompt}"
         kb = profile_edit_keyboard()
-        await render(update, context, text, kb, message_id)
+        await render(update, context, text, kb, message_id, parse_mode='HTML')
         await answer(query)
 
         return set_state(context, state)
 
     # Назад в меню
     if data == CB_PROFILE_BACK:
-        # Возвращаемся в главное меню
         from ..menu.handlers import show_main_menu
         await answer(query)
         return await show_main_menu(update, context, message_id)
