@@ -21,13 +21,11 @@ def save_report(date_str: str, report_type: str, author_id: int, full_text: str)
     now = datetime.now().isoformat()
 
     with get_connection() as conn:
-        # Проверяем, существует ли уже отчёт за эту дату и тип
         existing = conn.execute(
             "SELECT id FROM shift_reports WHERE date = ? AND report_type = ?",
             (date_str, report_type)
         ).fetchone()
         if existing:
-            # Обновляем
             conn.execute(
                 """
                 UPDATE shift_reports
@@ -38,7 +36,6 @@ def save_report(date_str: str, report_type: str, author_id: int, full_text: str)
             )
             report_id = existing["id"]
         else:
-            # Вставляем
             cur = conn.execute(
                 """
                 INSERT INTO shift_reports (date, report_type, author_id, full_text, parsed_data, created_at, updated_at)
@@ -115,9 +112,6 @@ def parse_report_sections(full_text: str, report_type: str) -> dict:
     """
     sections = {}
     if report_type == "opening":
-        # Разделы открытия (по примерам)
-        # Маркеры: "Влажность в помещении", "В эспрессо", "Тдс", "Температура групп", "Помол", "Давление", "Рецепт", "В основе", "В молоке", "На фильтре", "Стоп-лист"
-        # Парсим по ключевым словам, ищем строки после маркеров до следующего маркера или конца.
         markers = [
             "Влажность в помещении",
             "В эспрессо",
@@ -131,7 +125,6 @@ def parse_report_sections(full_text: str, report_type: str) -> dict:
             "На фильтре:",
             "Стоп-лист"
         ]
-        # Простой парсинг: разбиваем по строкам, ищем маркеры.
         lines = full_text.split("\n")
         current_section = None
         buffer = []
@@ -142,7 +135,6 @@ def parse_report_sections(full_text: str, report_type: str) -> dict:
             found = False
             for marker in markers:
                 if line.startswith(marker):
-                    # Сохраняем предыдущий раздел
                     if current_section and buffer:
                         sections[current_section] = "\n".join(buffer).strip()
                     current_section = marker
@@ -152,11 +144,9 @@ def parse_report_sections(full_text: str, report_type: str) -> dict:
             if not found:
                 if current_section:
                     buffer.append(line)
-        # Последний раздел
         if current_section and buffer:
             sections[current_section] = "\n".join(buffer).strip()
     else:
-        # Закрытие
         markers = [
             "Влажность в помещении",
             "Стопы",

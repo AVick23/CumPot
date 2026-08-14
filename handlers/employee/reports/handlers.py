@@ -224,8 +224,7 @@ async def show_report_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     if report:
         full_text = report["full_text"]
-        # Увеличиваем лимит предпросмотра до 3500 символов
-        preview = format_report_preview(full_text, 3500)
+        preview = format_report_preview(full_text)  # теперь использует 3500 по умолчанию
         text = f"📄 Отчёт за {date_str} ({REPORT_TYPE_LABELS[report_type]}):\n\n{preview}"
         if len(full_text) > 3500:
             text += "\n\n… (полный текст по кнопке «Просмотреть»)"
@@ -236,7 +235,7 @@ async def show_report_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
         example_report = get_last_report(report_type, before_date=yesterday)
         if example_report:
             example_text = example_report["full_text"]
-            preview = format_report_preview(example_text, 500)
+            preview = format_report_preview(example_text)  # тоже 3500
             text = f"📄 Отчёт за {date_str} ещё не создан.\n\nПример за {example_report['date']}:\n{preview}\n\nВы можете создать новый отчёт, отредактировав текст."
             logger.info(f"📄 Показан пример отчёта за {example_report['date']}")
         else:
@@ -266,7 +265,8 @@ async def create_report_action(update: Update, context: ContextTypes.DEFAULT_TYP
     example_report = get_last_report(report_type, before_date=yesterday)
     if example_report:
         example_text = example_report["full_text"]
-        prompt = f"📝 Создание отчёта за {date_str} ({REPORT_TYPE_LABELS[report_type]}).\n\nОтправьте текст отчёта. Вы можете использовать пример из {example_report['date']} как шаблон:\n\n{example_text}\n\nПросто скопируйте и отредактируйте."
+        preview = format_report_preview(example_text)  # 3500
+        prompt = f"📝 Создание отчёта за {date_str} ({REPORT_TYPE_LABELS[report_type]}).\n\nОтправьте текст отчёта. Вы можете использовать пример из {example_report['date']} как шаблон:\n\n{preview}\n\nПросто скопируйте и отредактируйте."
         logger.info(f"📝 Предложен пример из {example_report['date']}")
     else:
         prompt = f"📝 Создание отчёта за {date_str} ({REPORT_TYPE_LABELS[report_type]}).\n\nОтправьте текст отчёта."
@@ -318,7 +318,6 @@ async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("✅ Отчёт сохранён!")
 
     logger.info("✅ Отчёт сохранён успешно")
-    # После сохранения показываем детали с предпросмотром
     return await show_report_detail(update, context, message_id=None, report=None)
 
 
