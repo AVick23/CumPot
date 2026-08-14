@@ -6,27 +6,65 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constants import (
     CB_NOOP,
     CB_REPORT_BACK_MENU,
-    CB_REPORT_TO_CALENDAR,
+    CB_REPORT_HOME,
+    CB_REPORT_HISTORY,
+    CB_REPORT_OPEN_PREFIX,
     CB_REPORT_TYPE_PREFIX,
     CB_REPORT_DATE_PREFIX,
     CB_REPORT_PREV_MONTH,
     CB_REPORT_NEXT_MONTH,
-    CB_REPORT_CREATE,
-    CB_REPORT_EDIT,
-    CB_REPORT_VIEW,
-    CB_REPORT_TEMPLATE,
     CB_REPORT_SAVE,
-    CB_REPORT_REENTER,
+    CB_REPORT_TEXT_MODE,
+    CB_REPORT_LOAD_PREV,
+    CB_REPORT_CLEAR,
+    CB_REPORT_SECTION_PREFIX,
+    CB_REPORT_BACK_EDITOR,
     CB_REPORT_CANCEL,
-    CB_REPORT_PREV_REPORT,
     MONTHS,
     WEEKDAYS_SHORT,
-    REPORT_TYPES,
     REPORT_TYPE_LABELS,
 )
 
 
-def reports_calendar_keyboard(
+def _clip(text: str | None, limit: int = 35) -> str:
+    text = " ".join((text or "").split())
+
+    if len(text) <= limit:
+        return text
+
+    return text[: limit - 1].rstrip() + "…"
+
+
+def today_dashboard_keyboard(
+    opening_exists: bool,
+    closing_exists: bool,
+) -> InlineKeyboardMarkup:
+    opening_label = f"{'✅' if opening_exists else '⚪️'} 📋 Открытие"
+    closing_label = f"{'✅' if closing_exists else '⚪️'} 🌙 Закрытие"
+
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    opening_label,
+                    callback_data=f"{CB_REPORT_OPEN_PREFIX}opening",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    closing_label,
+                    callback_data=f"{CB_REPORT_OPEN_PREFIX}closing",
+                )
+            ],
+            [
+                InlineKeyboardButton("🗓 История", callback_data=CB_REPORT_HISTORY),
+                InlineKeyboardButton("🏠 Меню", callback_data=CB_REPORT_BACK_MENU),
+            ],
+        ]
+    )
+
+
+def history_calendar_keyboard(
     report_type: str,
     year: int,
     month: int,
@@ -35,10 +73,10 @@ def reports_calendar_keyboard(
 ) -> InlineKeyboardMarkup:
     rows = []
 
-    # Тип отчёта
+    # Переключение типа отчёта
     type_row = []
 
-    for rep_type in REPORT_TYPES:
+    for rep_type in ["opening", "closing"]:
         label = REPORT_TYPE_LABELS.get(rep_type, rep_type)
 
         if rep_type == report_type:
@@ -53,7 +91,7 @@ def reports_calendar_keyboard(
 
     rows.append(type_row)
 
-    # Навигация по месяцам
+    # Месяц
     rows.append(
         [
             InlineKeyboardButton("◀️", callback_data=CB_REPORT_PREV_MONTH),
@@ -107,40 +145,7 @@ def reports_calendar_keyboard(
 
     rows.append(
         [
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_REPORT_BACK_MENU)
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
-
-
-def report_day_keyboard(has_report: bool, prev_exists: bool) -> InlineKeyboardMarkup:
-    rows = []
-
-    if has_report:
-        rows.append(
-            [
-                InlineKeyboardButton("👁 Полный текст", callback_data=CB_REPORT_VIEW),
-                InlineKeyboardButton("✏️ Изменить", callback_data=CB_REPORT_EDIT),
-            ]
-        )
-    else:
-        rows.append(
-            [
-                InlineKeyboardButton("➕ Создать отчёт", callback_data=CB_REPORT_CREATE)
-            ]
-        )
-
-    if prev_exists:
-        rows.append(
-            [
-                InlineKeyboardButton("📄 Предыдущий", callback_data=CB_REPORT_PREV_REPORT)
-            ]
-        )
-
-    rows.append(
-        [
-            InlineKeyboardButton("📅 Календарь", callback_data=CB_REPORT_TO_CALENDAR),
+            InlineKeyboardButton("◀️ Сегодня", callback_data=CB_REPORT_HOME),
             InlineKeyboardButton("🏠 Меню", callback_data=CB_REPORT_BACK_MENU),
         ]
     )
@@ -148,28 +153,67 @@ def report_day_keyboard(has_report: bool, prev_exists: bool) -> InlineKeyboardMa
     return InlineKeyboardMarkup(rows)
 
 
-def report_create_keyboard() -> InlineKeyboardMarkup:
+def report_editor_keyboard(draft: dict) -> InlineKeyboardMarkup:
+    rows = []
+
+    # Основные действия
+    rows.append(
+        [
+            InlineKeyboardButton("✅ Сохранить", callback_data=CB_REPORT_SAVE)
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton("🧾 Текстом", callback_data=CB_REPORT_TEXT_MODE),
+            InlineKeyboardButton("📋 Последний", callback_data=CB_REPORT_LOAD_PREV),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton("🗑 Очистить", callback_data=CB_REPORT_CLEAR),
+            InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL),
+        ]
+    )
+
+    # Разделы
+    order = draft.get("order", [])
+    values = draft.get("values", {})
+
+    for index, section in enumerate(order):
+        value = (values.get(section) or "").strip()
+        icon = "✅" if value else "⚪️"
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{icon} {section}",
+                    callback_data=f"{CB_REPORT_SECTION_PREFIX}{index}",
+                )
+            ]
+        )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def section_prompt_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("🧾 Шаблон", callback_data=CB_REPORT_TEMPLATE)
-            ],
-            [
-                InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL)
-            ],
+                InlineKeyboardButton("◀️ Назад", callback_data=CB_REPORT_BACK_EDITOR),
+                InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL),
+            ]
         ]
     )
 
 
-def report_confirm_keyboard() -> InlineKeyboardMarkup:
+def text_prompt_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✅ Сохранить", callback_data=CB_REPORT_SAVE),
-                InlineKeyboardButton("✏️ Заново", callback_data=CB_REPORT_REENTER),
-            ],
-            [
-                InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL)
-            ],
+                InlineKeyboardButton("◀️ Назад", callback_data=CB_REPORT_BACK_EDITOR),
+                InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL),
+            ]
         ]
     )

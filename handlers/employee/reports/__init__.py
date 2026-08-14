@@ -7,41 +7,39 @@ from .handlers import (
 )
 
 from .constants import (
-    REPORT_SELECT_TYPE,
-    REPORT_VIEW_DATE,
-    REPORT_VIEW_DETAIL,
+    REPORT_HOME,
+    REPORT_HISTORY,
+    REPORT_EDITOR,
     REPORT_AWAIT_TEXT,
-    REPORT_CONFIRM_SAVE,
+    REPORT_AWAIT_SECTION,
 )
 
 
 def register_report_states(states: dict):
-    """
-    Регистрация состояний модуля отчётов сотрудника.
-    """
-
-    # Экраны с кнопками
-    states[REPORT_SELECT_TYPE] = [
+    # Главный экран
+    states[REPORT_HOME] = [
         CallbackQueryHandler(report_callback),
     ]
 
-    states[REPORT_VIEW_DATE] = [
+    # История
+    states[REPORT_HISTORY] = [
         CallbackQueryHandler(report_callback),
     ]
 
-    states[REPORT_VIEW_DETAIL] = [
+    # Редактор черновика
+    states[REPORT_EDITOR] = [
+        MessageHandler(filters.TEXT & ~filters.COMMAND, receive_report_text),
         CallbackQueryHandler(report_callback),
     ]
 
-    # Ввод текста отчёта
+    # Ожидание полного текста
     states[REPORT_AWAIT_TEXT] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, receive_report_text),
         CallbackQueryHandler(report_callback),
     ]
 
-    # Подтверждение сохранения.
-    # Если пользователь вдруг отправит текст здесь — обновим черновик.
-    states[REPORT_CONFIRM_SAVE] = [
+    # Ожидание значения конкретного раздела
+    states[REPORT_AWAIT_SECTION] = [
         MessageHandler(filters.TEXT & ~filters.COMMAND, receive_report_text),
         CallbackQueryHandler(report_callback),
     ]

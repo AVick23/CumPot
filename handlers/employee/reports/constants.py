@@ -2,11 +2,11 @@
 # STATES
 # =========================================================
 
-REPORT_SELECT_TYPE = 50
-REPORT_VIEW_DATE = 51
-REPORT_VIEW_DETAIL = 52
+REPORT_HOME = 50
+REPORT_HISTORY = 51
+REPORT_EDITOR = 52
 REPORT_AWAIT_TEXT = 53
-REPORT_CONFIRM_SAVE = 54
+REPORT_AWAIT_SECTION = 54
 
 
 # =========================================================
@@ -15,26 +15,25 @@ REPORT_CONFIRM_SAVE = 54
 
 CB_NOOP = "noop"
 
-CB_REPORT_BACK_MENU = "rep_back_menu"
-CB_REPORT_TO_CALENDAR = "rep_to_calendar"
+CB_REPORT_BACK_MENU = "r_back_menu"
+CB_REPORT_HOME = "r_home"
+CB_REPORT_HISTORY = "r_history"
 
-CB_REPORT_TYPE_PREFIX = "rep_type:"
-CB_REPORT_DATE_PREFIX = "rep_date:"
+CB_REPORT_OPEN_PREFIX = "r_open:"
+CB_REPORT_TYPE_PREFIX = "r_type:"
+CB_REPORT_DATE_PREFIX = "r_date:"
 
-CB_REPORT_PREV_MONTH = "rep_prev_month"
-CB_REPORT_NEXT_MONTH = "rep_next_month"
+CB_REPORT_PREV_MONTH = "r_prev_month"
+CB_REPORT_NEXT_MONTH = "r_next_month"
 
-CB_REPORT_CREATE = "rep_create"
-CB_REPORT_EDIT = "rep_edit"
-CB_REPORT_VIEW = "rep_view"
+CB_REPORT_SAVE = "r_save"
+CB_REPORT_TEXT_MODE = "r_text_mode"
+CB_REPORT_LOAD_PREV = "r_load_prev"
+CB_REPORT_CLEAR = "r_clear"
 
-CB_REPORT_TEMPLATE = "rep_template"
-
-CB_REPORT_SAVE = "rep_save"
-CB_REPORT_REENTER = "rep_reenter"
-CB_REPORT_CANCEL = "rep_cancel"
-
-CB_REPORT_PREV_REPORT = "rep_prev_report"
+CB_REPORT_SECTION_PREFIX = "r_sec:"
+CB_REPORT_BACK_EDITOR = "r_back_editor"
+CB_REPORT_CANCEL = "r_cancel"
 
 
 # =========================================================
@@ -85,37 +84,69 @@ REPORT_PREVIEW_LIMIT = 700
 
 
 # =========================================================
-# REPORT TEMPLATES
+# REPORT STRUCTURE
 # =========================================================
 
-REPORT_TEMPLATES = {
-    "opening": (
-        "Влажность в помещении: \n"
-        "В эспрессо: \n"
-        "Тдс - \n"
-        "Температура групп - \n"
-        "Помол - \n"
-        "Давление - \n"
-        "Рецепт: \n"
-        "В основе: \n"
-        "В молоке: \n"
-        "На фильтре: \n"
-        "Стоп-лист: "
-    ),
+REPORT_SECTIONS = {
+    "opening": [
+        "Влажность в помещении",
+        "В эспрессо",
+        "Тдс",
+        "Температура групп",
+        "Помол",
+        "Давление",
+        "Рецепт",
+        "В основе",
+        "В молоке",
+        "На фильтре",
+        "Стоп-лист",
+    ],
 
-    "closing": (
-        "Влажность в помещении: \n"
-        "Стопы: \n"
-        "Эспрессо, вода и заготовки по бару: \n"
-        "Рецепт по завершении: \n"
-        "Заготовки бар: \n"
-        "Рекомендации по фильтру: \n"
-        "Еда: \n"
-        "Заготовки для еды: \n"
-        "Блюда: \n"
-        "Go-list: \n"
-        "График уборки / полив цветов: \n"
-        "Полы мылись: \n"
-        "Примечания: "
-    ),
+    "closing": [
+        "Влажность в помещении",
+        "Стопы",
+        "Эспрессо, вода и заготовки по бару",
+        "Рецепт по завершении",
+        "Заготовки бар",
+        "Рекомендации по фильтру",
+        "Еда",
+        "Заготовки для еды",
+        "Блюда",
+        "Go-list",
+        "График уборки / полив цветов",
+        "Полы мылись",
+        "Примечания",
+    ],
+}
+
+REPORT_SECTION_MARKERS = {
+    "opening": [
+        "Влажность в помещении:",
+        "В эспрессо:",
+        "Тдс -",
+        "Температура групп -",
+        "Помол -",
+        "Давление -",
+        "Рецепт:",
+        "В основе:",
+        "В молоке:",
+        "На фильтре:",
+        "Стоп-лист:",
+    ],
+
+    "closing": [
+        "Влажность в помещении:",
+        "Стопы:",
+        "Эспрессо, вода и заготовки по бару:",
+        "Рецепт по завершении:",
+        "Заготовки бар:",
+        "Рекомендации по фильтру:",
+        "Еда:",
+        "Заготовки для еды:",
+        "Блюда:",
+        "Go-list:",
+        "График уборки / полив цветов:",
+        "Полы мылись:",
+        "Примечания:",
+    ],
 }
