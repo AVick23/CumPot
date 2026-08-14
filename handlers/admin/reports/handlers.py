@@ -682,10 +682,13 @@ async def send_task_photos(
 async def show_taxi_photo_overview(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    message_id=None,
-    notice=None,
+    message_id: int | None = None,
+    notice: str | None = None,
+    date_str: str | None = None,          # новый параметр
 ) -> int:
-    date_str = context.user_data.get("report_date")
+    # если дата не передана, берём из контекста
+    if date_str is None:
+        date_str = context.user_data.get("report_date")
     if not date_str:
         return await show_calendar(
             update,
@@ -711,7 +714,6 @@ async def show_taxi_photo_overview(
         f"Всего вложений: {overview['total_media']}\n\n"
         "Выберите сотрудника."
     )
-
     if notice:
         text = f"{notice}\n\n{text}"
 
@@ -725,8 +727,9 @@ async def send_taxi_user_photos(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
-    message_id=None,
+    message_id: int | None = None,
 ) -> int:
+    # получаем дату явно из контекста
     date_str = context.user_data.get("report_date")
     if not date_str:
         return await show_calendar(update, context, message_id)
@@ -740,12 +743,13 @@ async def send_taxi_user_photos(
             context,
             message_id,
             notice="У этого сотрудника нет фото.",
+            date_str=date_str,          # передаём явно
         )
 
     media_items = user_data["media_items"]
     chat_id = update.effective_chat.id
     if not chat_id:
-        return await show_taxi_photo_overview(update, context, message_id)
+        return await show_taxi_photo_overview(update, context, message_id, date_str=date_str)
 
     try:
         for start in range(0, len(media_items), MEDIA_CHUNK_SIZE):
@@ -770,6 +774,7 @@ async def send_taxi_user_photos(
             context,
             message_id,
             notice="⚠️ Ошибка при отправке фото.",
+            date_str=date_str,
         )
 
     return await show_taxi_photo_overview(
@@ -777,13 +782,14 @@ async def send_taxi_user_photos(
         context,
         message_id,
         notice=f"✅ Отправлено {len(media_items)} файлов сотрудника {user_data['full_name']}.",
+        date_str=date_str,
     )
 
 
 async def send_all_taxi_photos(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    message_id=None,
+    message_id: int | None = None,
 ) -> int:
     date_str = context.user_data.get("report_date")
     if not date_str:
@@ -796,11 +802,12 @@ async def send_all_taxi_photos(
             context,
             message_id,
             notice="Нет фото для отправки.",
+            date_str=date_str,
         )
 
     chat_id = update.effective_chat.id
     if not chat_id:
-        return await show_taxi_photo_overview(update, context, message_id)
+        return await show_taxi_photo_overview(update, context, message_id, date_str=date_str)
 
     total_sent = 0
     for user_data in overview["users"]:
@@ -833,6 +840,7 @@ async def send_all_taxi_photos(
         context,
         message_id,
         notice=f"✅ Отправлено {total_sent} файлов.",
+        date_str=date_str,
     )
 
 
@@ -964,7 +972,10 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Фотоотчёт по такси
     if data == CB_TAXI_PHOTO_REPORT:
-        return await show_taxi_photo_overview(update, context, message_id)
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id, notice="Сначала выберите день.")
+        return await show_taxi_photo_overview(update, context, message_id, date_str=date_str)
 
     if data == CB_TAXI_PHOTO_BACK:
         date_str = context.user_data.get("report_date")
