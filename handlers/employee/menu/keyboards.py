@@ -17,6 +17,7 @@ def main_menu_keyboard(has_shift: bool) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("📋 Чек-лист", callback_data=CB_CHECKLIST)],
             [InlineKeyboardButton("📊 Прогресс", callback_data=CB_PROGRESS)],
+            [InlineKeyboardButton("📋 Отчёты", callback_data="reports")],   # новая кнопка
         ])
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🚀 Начать смену", callback_data=CB_START_SHIFT)],

@@ -115,6 +115,25 @@ def init_db():
                 UNIQUE(item_id, date)
             )
         """)
+        
+        # внутри init_db(), после создания остальных таблиц:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS shift_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                report_type TEXT NOT NULL,  -- 'opening' или 'closing'
+                author_id INTEGER,
+                full_text TEXT NOT NULL,
+                parsed_data TEXT,           -- JSON с разделами
+                created_at TEXT,
+                updated_at TEXT,
+                FOREIGN KEY (author_id) REFERENCES users(tg_id)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reports_date_type
+            ON shift_reports (date, report_type)
+        """)
 
         # Миграции для checklist_items
         item_columns = _get_columns(conn, "checklist_items")

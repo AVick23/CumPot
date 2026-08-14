@@ -20,6 +20,7 @@ from .constants import (
     CB_BACK_MENU,
     CB_POSITION_PREFIX,
     CB_SHIFT_TYPE_PREFIX,
+    CB_REPORTS,          # добавлено
     LOCATIONS,
     FULL_NAME_LIMIT,
 )
@@ -189,6 +190,10 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data == CB_PROGRESS:
         from ..checklists.handlers import show_progress
         return await show_progress(update, context, message_id)
+
+    if data == CB_REPORTS:   # добавлено
+        from ..reports.handlers import show_reports_menu
+        return await show_reports_menu(update, context, message_id)
 
     if data == CB_BACK_MENU:
         return await show_main_menu(update, context, message_id)

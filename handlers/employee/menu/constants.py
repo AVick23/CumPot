@@ -11,6 +11,7 @@ CB_PROGRESS = "progress"
 CB_BACK_MENU = "back_menu"
 CB_POSITION_PREFIX = "pos:"
 CB_SHIFT_TYPE_PREFIX = "shift_type:"
+CB_REPORTS = "reports"
 
 # UI
 LOCATIONS = {

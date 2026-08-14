@@ -22,6 +22,9 @@ from .checklists.handlers import (
     noop,
 )
 
+# Импорт для отчётов
+from .reports import register_report_states
+
 from .menu.constants import (
     ONBOARD_NAME,
     ONBOARD_POSITION,
@@ -33,6 +36,7 @@ from .menu.constants import (
     CB_POSITION_PREFIX,
     CB_BACK_MENU,
     CB_SHIFT_TYPE_PREFIX,
+    CB_REPORTS,  # добавлено
 )
 
 from .checklists.constants import (
@@ -77,7 +81,7 @@ def register_employee_states(states: dict):
 
     # Главное меню
     states[MAIN_MENU] = [
-        CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$"),
+        CallbackQueryHandler(main_menu_callback, pattern=f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|^{CB_BACK_MENU}$|^{CB_REPORTS}$"),
         CallbackQueryHandler(noop, pattern="^noop$"),
     ]
 
@@ -128,3 +132,6 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(photo_cancel, pattern=f"^{CB_PHOTO_CANCEL}$"),
         CallbackQueryHandler(photo_state_guard),
     ]
+
+    # Регистрируем состояния для отчётов
+    register_report_states(states)
