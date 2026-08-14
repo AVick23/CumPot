@@ -1,7 +1,6 @@
 from telegram.ext import CallbackQueryHandler
 
 from .handlers import calendar_callback
-
 from .constants import (
     ADMIN_CALENDAR,
     ADMIN_DAY_REPORT,
@@ -16,7 +15,6 @@ from .constants import (
 def register_report_states(states: dict):
     """
     Регистрируем состояния админ-отчётов.
-
     Один CallbackQueryHandler на состояние, чтобы не плодить
     хрупкие regex-паттерны и нормально поддерживать новый фотоотчёт.
     """
@@ -41,7 +39,6 @@ def register_report_states(states: dict):
         CallbackQueryHandler(calendar_callback),
     ]
 
-    # Состояния для фотоотчёта по такси
     states[ADMIN_TAXI_PHOTO_OVERVIEW] = [
         CallbackQueryHandler(calendar_callback),
     ]
