@@ -1,82 +1,89 @@
 import logging
+import asyncio
+
 from datetime import datetime
 
-from telegram import Update
+from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import ContextTypes
 
 try:
-    from utils.time_utils import now_msk, today_msk_str
+    from utils.time_utils import now_msk
 except Exception:
     def now_msk():
         return datetime.now()
 
-    def today_msk_str():
-        return datetime.now().strftime("%Y-%m-%d")
-
 from .constants import (
-    REPORT_HOME,
-    REPORT_EDITOR,
-    REPORT_TEXT_MODE,
-    REPORT_SECTION_MENU,
-    REPORT_SECTION_LIST,
-    REPORT_AWAIT_SECTION,
-    REPORT_CALENDAR,
-    REPORT_EXAMPLE,
+    ADMIN_CALENDAR,
+    ADMIN_DAY_REPORT,
+    ADMIN_PHOTO_OVERVIEW,
+    ADMIN_PHOTO_LOCATION,
+    ADMIN_PHOTO_CATEGORY,
+    ADMIN_TAXI_PHOTO_OVERVIEW,
+    ADMIN_TAXI_PHOTO_USER,
+    CB_HOME,
+    CB_TO_CALENDAR,
+    CB_PREV_MONTH,
+    CB_NEXT_MONTH,
+    CB_DAY_PREFIX,
     CB_NOOP,
-    CB_REPORT_BACK_MENU,
-    CB_REPORT_OPEN_PREFIX,
-    CB_REPORT_SAVE,
-    CB_REPORT_TEXT_MODE,
-    CB_REPORT_LOAD_LAST,
-    CB_REPORT_SHOW_EXAMPLE,
-    CB_REPORT_CLEAR,
-    CB_REPORT_SECTION_MODE,
-    CB_REPORT_CANCEL,
-    CB_REPORT_BACK_EDITOR,
-    CB_REPORT_CALENDAR,
-    CB_REPORT_CAL_DATE_PREFIX,
-    CB_REPORT_CAL_PREV_MONTH,
-    CB_REPORT_CAL_NEXT_MONTH,
-    CB_REPORT_SECTION_MENU_CLEAR,
-    CB_REPORT_SECTION_START,
-    CB_REPORT_SECTION_CHOOSE,
-    CB_REPORT_SECTION_PREFIX,
-    CB_REPORT_SECTION_DONE,
-    CB_REPORT_SECTION_SKIP,
-    CB_REPORT_SECTION_EXIT,
-    REPORT_TYPE_LABELS,
-    REPORT_SECTIONS,
-    EDITOR_INLINE_LIMIT,
-    EXAMPLE_INLINE_LIMIT,
+    CB_REPORT_SHORT,
+    CB_REPORT_FULL,
+    CB_REPORT_PHOTOS_ON,
+    CB_REPORT_PHOTOS_OFF,
+    CB_PHOTO_REPORT,
+    CB_SHOW_MEDIA_PREFIX,
+    CB_PHOTO_LOC_PREFIX,
+    CB_PHOTO_CAT_PREFIX,
+    CB_PHOTO_ALL_LOC,
+    CB_PHOTO_ALL_CAT,
+    CB_PHOTO_TASK_PREFIX,
+    CB_PHOTO_PAGE_PREFIX,
+    CB_PHOTO_BACK_DAY,
+    CB_PHOTO_BACK_OVERVIEW,
+    CB_PHOTO_BACK_LOC,
+    CB_TAB_CHECKLIST,
+    CB_TAB_SHIFT_REPORTS,
+    CB_TAB_TAXI,
+    CB_TAXI_PHOTO_REPORT,
+    CB_TAXI_PHOTO_USER_PREFIX,
+    CB_TAXI_PHOTO_ALL,
+    CB_TAXI_PHOTO_BACK,
+    REPORT_MODE_SHORT,
+    REPORT_MODE_FULL,
     MONTHS,
+    LOCATIONS,
+    CATEGORY_LABELS,
+    MEDIA_CHUNK_SIZE,
+    TASK_SEND_DELAY,
 )
 
 from .keyboards import (
-    report_home_keyboard,
-    report_editor_keyboard,
-    section_mode_keyboard,
-    section_list_keyboard,
-    section_prompt_keyboard,
-    text_prompt_keyboard,
-    editor_calendar_keyboard,
+    calendar_keyboard,
+    day_report_keyboard,
+    photo_overview_keyboard,
+    photo_location_keyboard,
+    photo_category_keyboard,
+    taxi_photo_overview_keyboard,
+    taxi_photo_back_keyboard,
 )
 
 from .utils import (
-    render,
-    send_long_message,
-    get_report,
-    get_previous_report_of_type,
-    get_dates_with_reports_for_type,
-    save_report,
-    load_draft,
-    draft_from_last,
-    empty_draft,
-    draft_full_text,
-    parse_report_sections,
+    get_shift_days_for_month,
+    get_day_report,
+    get_report_text,
     format_date_ru,
+    render,
+    paginate_list,
+    get_photo_overview,
+    get_location_photo_menu,
+    get_category_photo_tasks,
+    get_task_by_id_from_report,
+    build_task_media_caption,
+    get_shift_reports_for_date,
+    format_shift_report_text,
+    get_taxi_for_date,
+    get_taxi_photo_overview,
 )
-
-MAIN_MENU = 3
 
 logger = logging.getLogger(__name__)
 
@@ -86,912 +93,973 @@ logger = logging.getLogger(__name__)
 # =========================================================
 
 def _state(context: ContextTypes.DEFAULT_TYPE, state: int) -> int:
-    context.user_data["state"] = state
+    context.user_data["ui_state"] = state
     return state
 
 
 def _current_state(context: ContextTypes.DEFAULT_TYPE) -> int:
-    return context.user_data.get("state", MAIN_MENU)
+    return context.user_data.get("ui_state", ADMIN_CALENDAR)
 
 
-async def _answer(query, text: str | None = None, show_alert: bool = False):
+def _get_mode(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("report_mode", REPORT_MODE_SHORT)
+
+
+def _get_show_photos(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return bool(context.user_data.get("report_photos", True))
+
+
+def _get_tab(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("report_tab", CB_TAB_CHECKLIST)
+
+
+def _set_tab(context: ContextTypes.DEFAULT_TYPE, tab: str) -> None:
+    context.user_data["report_tab"] = tab
+
+
+def _set_calendar_to_date(context: ContextTypes.DEFAULT_TYPE, date_str: str) -> None:
     try:
-        await query.answer(text or "", show_alert=show_alert)
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        context.user_data["calendar_year"] = dt.year
+        context.user_data["calendar_month"] = dt.month
     except Exception:
         pass
 
 
-def _get_draft(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
-    return context.user_data.get("report_draft")
-
-
-def _set_draft(context: ContextTypes.DEFAULT_TYPE, draft: dict | None) -> None:
-    if draft is None:
-        context.user_data.pop("report_draft", None)
-    else:
-        context.user_data["report_draft"] = draft
-
-
-def _clear_guided(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.user_data.pop("guided", None)
-    context.user_data.pop("guided_index", None)
-    context.user_data.pop("awaiting_section", None)
-
-
-async def _go_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None):
-    _set_draft(context, None)
-    _clear_guided(context)
-
-    try:
-        from ..menu.handlers import show_main_menu
-        return await show_main_menu(update, context, message_id)
-    except Exception:
-        pass
-
-    try:
-        from ..menu.handlers import show_main
-        return await show_main(update, context, message_id)
-    except Exception:
-        pass
-
-    return await show_reports_menu(update, context, message_id)
-
-
-def _source_label(draft: dict) -> str:
-    source = draft.get("source", "empty")
-    source_date = draft.get("source_date")
-
-    if source == "saved":
-        return "✅ Сохранённый отчёт"
-
-    if source == "prev" and source_date:
-        return f"📋 На основе отчёта за {format_date_ru(source_date)}"
-
-    if source == "text":
-        return "🧾 Текст обновлён"
-
-    return "🆕 Новый черновик"
-
-
 # =========================================================
-# HOME SCREEN
+# BASE SCREENS
 # =========================================================
 
-async def show_reports_menu(
+async def show_calendar(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     message_id=None,
     notice=None,
 ) -> int:
-    user = update.effective_user
-
-    if user:
-        logger.info("📋 Пользователь %s открыл отчёты", user.id)
-
-    today = today_msk_str()
-
-    opening_report = get_report(today, "opening")
-    closing_report = get_report(today, "closing")
-
-    lines = [
-        "📋 Отчёты",
-        "",
-        f"Сегодня, {format_date_ru(today)}",
-        "",
-    ]
-
-    for report_type, report in [
-        ("opening", opening_report),
-        ("closing", closing_report),
-    ]:
-        label = REPORT_TYPE_LABELS.get(report_type, report_type)
-
-        if report:
-            lines.append(f"{label}: ✅ сохранён")
-        else:
-            lines.append(f"{label}: ⚪️ не заполнен")
-
-    lines.append("")
-    lines.append("Нажмите, чтобы открыть или заполнить.")
-
-    text = "\n".join(lines)
-
-    if notice:
-        text = f"{notice}\n\n{text}"
-
-    kb = report_home_keyboard(
-        opening_exists=bool(opening_report),
-        closing_exists=bool(closing_report),
-    )
-
-    await render(update, context, text, kb, message_id)
-
-    return _state(context, REPORT_HOME)
-
-
-# =========================================================
-# EDITOR SCREEN
-# =========================================================
-
-async def open_report_editor(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    report_type: str,
-    message_id=None,
-) -> int:
-    user = update.effective_user
-
-    if not user:
-        return MAIN_MENU
-
-    date_str = today_msk_str()
-
-    context.user_data["report_date"] = date_str
-    context.user_data["report_type"] = report_type
-
-    draft = load_draft(date_str, report_type)
-    _set_draft(context, draft)
-
-    logger.info(
-        "📝 Пользователь %s открыл редактор: date=%s type=%s source=%s",
-        user.id, date_str, report_type, draft.get("source"),
-    )
-
-    return await show_editor(update, context, message_id, send_full=True)
-
-
-async def show_editor(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    message_id=None,
-    notice=None,
-    send_full: bool = False,
-) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context, message_id)
-
-    date_str = draft.get("date")
-    report_type = draft.get("type")
-
-    full_text = draft_full_text(draft)
-    type_label = REPORT_TYPE_LABELS.get(report_type, report_type)
-
-    header_lines = [
-        type_label,
-        f"🗓 {format_date_ru(date_str)}",
-        _source_label(draft),
-    ]
-
-    if notice:
-        header_lines.insert(0, notice)
-
-    header = "\n".join(header_lines)
-    chat_id = update.effective_chat.id
-
-    if len(full_text) <= EDITOR_INLINE_LIMIT:
-        text = f"{header}\n\n{full_text}"
-
-        await render(update, context, text, report_editor_keyboard(), message_id)
-    else:
-        if send_full and chat_id:
-            await send_long_message(context, chat_id, full_text)
-            panel_text = f"{header}\n\n📄 Полный текст отправлен выше."
-        else:
-            preview = full_text[:EDITOR_INLINE_LIMIT] + "…"
-            panel_text = f"{header}\n\n{preview}\n\n… (полный текст по кнопке «Текстом»)"
-
-        await render(update, context, panel_text, report_editor_keyboard(), message_id)
-
-    return _state(context, REPORT_EDITOR)
-
-
-# =========================================================
-# EDITOR ACTIONS
-# =========================================================
-
-async def save_report_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user
-
-    if not user:
-        return MAIN_MENU
-
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    date_str = draft.get("date")
-    report_type = draft.get("type")
-
-    full_text = draft_full_text(draft)
-
-    if not full_text.strip():
-        return await show_editor(update, context, notice="⚠️ Отчёт пуст.", send_full=False)
-
-    parsed = parse_report_sections(full_text, report_type)
-
-    save_report(
-        date_str=date_str,
-        report_type=report_type,
-        author_id=user.id,
-        full_text=full_text,
-        parsed=parsed,
-    )
-
-    logger.info("✅ Пользователь %s сохранил отчёт: date=%s type=%s", user.id, date_str, report_type)
-
-    _set_draft(context, None)
-    _clear_guided(context)
-
-    return await show_reports_menu(update, context, notice="✅ Отчёт сохранён.")
-
-
-async def show_text_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    date_str = draft.get("date")
-    report_type = draft.get("type")
-
-    prev_report = get_previous_report_of_type(date_str, report_type)
-    chat_id = update.effective_chat.id
-
-    if prev_report and chat_id:
-        prev_date = format_date_ru(prev_report.get("date", ""))
-        prev_text = (prev_report.get("full_text") or "").strip()
-
-        if prev_text:
-            await send_long_message(
-                context,
-                chat_id,
-                f"📋 ПОЛНЫЙ ПРИМЕР ({prev_date}):\n\n{prev_text}",
-            )
-
-    text = (
-        "🧾 Отправка текстом\n\n"
-        f"{REPORT_TYPE_LABELS.get(report_type)} · {format_date_ru(date_str)}\n\n"
-        "Отправьте отчёт одним сообщением.\n"
-        "Я распознаю разделы, если они есть.\n\n"
-        "Полный пример отправлен выше."
-    )
-
-    await render(update, context, text, text_prompt_keyboard())
-
-    logger.info("🧾 Пользователь перешёл в текстовый режим")
-
-    return _state(context, REPORT_TEXT_MODE)
-
-
-async def load_last_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    date_str = draft.get("date")
-    report_type = draft.get("type")
-
-    new_draft = draft_from_last(date_str, report_type)
-
-    if new_draft.get("source") == "prev":
-        notice = "📋 Загружен последний отчёт."
-    else:
-        notice = "⚠️ Предыдущих отчётов нет."
-
-    _set_draft(context, new_draft)
-
-    logger.info("📋 Загружен последний отчёт: type=%s", report_type)
-
-    return await show_editor(update, context, notice=notice, send_full=True)
-
-
-async def show_example_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    date_str = draft.get("date")
-    report_type = draft.get("type")
-
-    prev_report = get_previous_report_of_type(date_str, report_type)
-
-    if not prev_report:
-        return await show_editor(
-            update, context,
-            notice="⚠️ Предыдущих отчётов нет.",
-            send_full=False,
-        )
-
-    prev_date = format_date_ru(prev_report.get("date", ""))
-    prev_text = (prev_report.get("full_text") or "").strip()
-
-    if not prev_text:
-        return await show_editor(
-            update, context,
-            notice="⚠️ Предыдущий отчёт пуст.",
-            send_full=False,
-        )
-
-    chat_id = update.effective_chat.id
-
-    if chat_id:
-        await send_long_message(
-            context, chat_id,
-            f"📋 Пример отчёта за {prev_date}:\n\n{prev_text}",
-        )
-
-    return await show_editor(
-        update, context,
-        notice="📋 Пример отправлен выше.",
-        send_full=False,
-    )
-
-
-async def clear_report_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    date_str = draft.get("date")
-    report_type = draft.get("type")
-
-    new_draft = empty_draft(date_str, report_type)
-    _set_draft(context, new_draft)
-
-    logger.info("🗑 Отчёт очищен")
-
-    return await show_editor(update, context, notice="🗑 Отчёт очищен.", send_full=True)
-
-
-# =========================================================
-# SECTION MODE
-# =========================================================
-
-async def show_section_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    text = (
-        "🧩 По пунктам\n\n"
-        "Выберите действие:\n"
-        "• очистить весь отчёт\n"
-        "• заполнить с нуля по шагам\n"
-        "• выбрать пункт вручную"
-    )
-
-    await render(update, context, text, section_mode_keyboard())
-
-    logger.info("🧩 Открыто меню работы по пунктам")
-
-    return _state(context, REPORT_SECTION_MENU)
-
-
-async def show_section_list(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    message_id=None,
-    notice=None,
-) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    report_type = draft.get("type")
-    values = draft.get("values", {})
-    sections = REPORT_SECTIONS.get(report_type, [])
-
-    filled = sum(1 for s in sections if (values.get(s) or "").strip())
-
-    text = (
-        "🧩 Пункты отчёта\n\n"
-        f"Заполнено: {filled}/{len(sections)}\n\n"
-        "Нажмите на пункт, чтобы изменить его."
-    )
-
-    if notice:
-        text = f"{notice}\n\n{text}"
-
-    kb = section_list_keyboard(values, sections)
-
-    await render(update, context, text, kb, message_id)
-
-    return _state(context, REPORT_SECTION_LIST)
-
-
-async def prompt_section(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    section_index: int,
-    guided: bool,
-) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    report_type = draft.get("type")
-    sections = REPORT_SECTIONS.get(report_type, [])
-
-    if section_index < 0 or section_index >= len(sections):
-        return await show_editor(update, context)
-
-    section = sections[section_index]
-    value = draft.get("values", {}).get(section, "")
-
-    context.user_data["awaiting_section"] = section
-    context.user_data["guided"] = guided
-    context.user_data["guided_index"] = section_index
-
-    date_str = draft.get("date")
-    prev_report = get_previous_report_of_type(date_str, report_type)
-    prev_value = ""
-
-    if prev_report:
-        prev_parsed = parse_report_sections(
-            prev_report.get("full_text") or "", report_type
-        )
-        prev_value = prev_parsed.get(section, "")
-
-    prev_block = ""
-
-    if prev_value:
-        prev_preview = prev_value[:300] + ("…" if len(prev_value) > 300 else "")
-        prev_block = f"\n\n📋 Из прошлого отчёта:\n{prev_preview}"
-
-    if guided:
-        header = f"🚀 Шаг {section_index + 1}/{len(sections)}"
-    else:
-        header = "✏️ Редактирование пункта"
-
-    text = (
-        f"{header}\n\n"
-        f"📌 {section}\n\n"
-        f"Текущее значение:\n{value or '—'}"
-        f"{prev_block}\n\n"
-        "Отправьте новое значение.\n"
-        "Можно несколько строк."
-    )
-
-    kb = section_prompt_keyboard(guided)
-
-    await render(update, context, text, kb)
-
-    logger.info("✏️ Редактируется раздел: %s", section)
-
-    return _state(context, REPORT_AWAIT_SECTION)
-
-
-async def _advance_guided_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    report_type = draft.get("type")
-    sections = REPORT_SECTIONS.get(report_type, [])
-
-    index = context.user_data.get("guided_index", 0)
-    index += 1
-
-    if index < len(sections):
-        return await prompt_section(update, context, index, guided=True)
-
-    _clear_guided(context)
-
-    return await show_editor(
-        update, context,
-        notice="✅ Все пункты заполнены.",
-        send_full=True,
-    )
-
-
-# =========================================================
-# CALENDAR INSIDE EDITOR
-# =========================================================
-
-async def show_editor_calendar(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    message_id=None,
-    notice=None,
-) -> int:
-    draft = _get_draft(context)
-
-    if not draft:
-        return await show_reports_menu(update, context)
-
-    report_type = draft.get("type", "opening")
-    selected_date = draft.get("date")
-
     now = now_msk()
 
-    if selected_date:
-        try:
-            dt = datetime.strptime(selected_date, "%Y-%m-%d")
-            year = dt.year
-            month = dt.month
-        except Exception:
-            year = now.year
-            month = now.month
-    else:
-        year = context.user_data.get("editor_cal_year", now.year)
-        month = context.user_data.get("editor_cal_month", now.month)
+    year = context.user_data.get("calendar_year", now.year)
+    month = context.user_data.get("calendar_month", now.month)
 
     if not (1 <= month <= 12):
         month = now.month
 
-    context.user_data["editor_cal_year"] = year
-    context.user_data["editor_cal_month"] = month
+    context.user_data["calendar_year"] = year
+    context.user_data["calendar_month"] = month
 
-    dates_with_reports = get_dates_with_reports_for_type(year, month, report_type)
+    shift_days = get_shift_days_for_month(year, month)
+
+    selected_date = context.user_data.get("report_date")
     today = now.strftime("%Y-%m-%d")
 
-    type_label = REPORT_TYPE_LABELS.get(report_type, report_type)
-    month_name = MONTHS[month - 1] if 1 <= month <= len(MONTHS) else ""
-
     text = (
-        f"📅 Календарь: {type_label}\n\n"
-        f"{month_name} {year}\n\n"
-        "📌 — отчёт сохранён\n"
-        "🔹 — выбранная дата\n"
-        "• — сегодня\n\n"
-        "Выберите дату для загрузки."
+        f"Отчёты\n\n"
+        f"{MONTHS[month - 1]} {year}\n\n"
+        "✅ — день со сменами\n"
+        "Выберите день."
     )
 
     if notice:
         text = f"{notice}\n\n{text}"
 
-    kb = editor_calendar_keyboard(
-        year=year,
-        month=month,
-        dates_with_reports=dates_with_reports,
-        selected_date=selected_date,
-        today=today,
+    await render(
+        update,
+        context,
+        text,
+        calendar_keyboard(
+            year,
+            month,
+            shift_days,
+            selected_date=selected_date,
+            today=today,
+        ),
+        message_id,
     )
 
-    await render(update, context, text, kb, message_id)
-
-    logger.info("📅 Открыт календарь: %s %s, type=%s", month_name, year, report_type)
-
-    return _state(context, REPORT_CALENDAR)
+    return _state(context, ADMIN_CALENDAR)
 
 
-async def editor_calendar_navigation(
+async def show_day_report(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    direction: str,
+    date_str: str,
     message_id=None,
+    notice=None,
+    tab: str = None,
 ) -> int:
-    year = context.user_data.get("editor_cal_year", now_msk().year)
-    month = context.user_data.get("editor_cal_month", now_msk().month)
+    if tab:
+        _set_tab(context, tab)
+    current_tab = _get_tab(context)
 
-    if direction == "prev":
-        if month == 1:
-            month = 12
-            year -= 1
-        else:
-            month -= 1
-    else:
-        if month == 12:
-            month = 1
-            year += 1
-        else:
-            month += 1
-
-    context.user_data["editor_cal_year"] = year
-    context.user_data["editor_cal_month"] = month
-
-    return await show_editor_calendar(update, context, message_id)
-
-
-async def editor_calendar_date_selection(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    date_compact: str,
-    message_id=None,
-) -> int:
-    try:
-        date_obj = datetime.strptime(date_compact, "%Y%m%d")
-        date_str = date_obj.strftime("%Y-%m-%d")
-    except Exception as e:
-        logger.error("❌ Ошибка разбора даты: %s", e)
-        return await show_editor_calendar(update, context, message_id)
-
-    report_type = context.user_data.get("report_type", "opening")
+    mode = _get_mode(context)
+    show_photos = _get_show_photos(context)
 
     context.user_data["report_date"] = date_str
-    context.user_data["report_type"] = report_type
+    _set_calendar_to_date(context, date_str)
 
-    draft = load_draft(date_str, report_type)
-    _set_draft(context, draft)
+    taxi_has_media = False
+    if current_tab == CB_TAB_CHECKLIST:
+        try:
+            text, has_bar_media, has_kitchen_media = get_report_text(
+                date_str,
+                mode,
+                show_photos,
+            )
+        except Exception as e:
+            logger.error("Ошибка построения отчёта чек-листов: %s", e)
+            text = "Не удалось загрузить отчёт по чек-листам."
+            has_bar_media = False
+            has_kitchen_media = False
+    elif current_tab == CB_TAB_SHIFT_REPORTS:
+        reports = get_shift_reports_for_date(date_str)
+        lines = [f"📄 Сменные отчёты за {format_date_ru(date_str)}", ""]
+        for rtype in ["opening", "closing"]:
+            label = "Открытие" if rtype == "opening" else "Закрытие"
+            report = reports.get(rtype)
+            if report:
+                lines.append(f"✅ {label}:")
+                lines.append(format_shift_report_text(report))
+                lines.append("")
+            else:
+                lines.append(f"❌ {label} не сохранён")
+        text = "\n".join(lines)
+        has_bar_media = False
+        has_kitchen_media = False
+    else:  # TAXI
+        taxi_data = get_taxi_for_date(date_str)
+        lines = [f"🚕 Такси за {format_date_ru(date_str)}", ""]
+        if not taxi_data:
+            lines.append("Нет записей.")
+        else:
+            total_all = 0
+            for user_data in taxi_data:
+                name = user_data["full_name"]
+                total = user_data["total"]
+                total_all += total
+                lines.append(f"👤 {name}: {total:.2f} ₽")
+                for exp in user_data["expenses"]:
+                    lines.append(f"   🗓 {exp['date']} – {exp['amount']:.2f} ₽")
+                lines.append("")
+            lines.append(f"Итого: {total_all:.2f} ₽")
+        text = "\n".join(lines)
+        has_bar_media = False
+        has_kitchen_media = False
+        for user_data in taxi_data:
+            for exp in user_data["expenses"]:
+                if exp.get("photo_file_ids"):
+                    taxi_has_media = True
+                    break
+            if taxi_has_media:
+                break
 
-    logger.info(
-        "📅 Выбрана дата: %s, type=%s, source=%s",
-        date_str, report_type, draft.get("source"),
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    kb = day_report_keyboard(
+        mode=mode,
+        show_photos=show_photos,
+        has_bar_media=has_bar_media,
+        has_kitchen_media=has_kitchen_media,
+        current_tab=current_tab,
+        taxi_has_media=taxi_has_media,
     )
 
-    return await show_editor(update, context, message_id, send_full=True)
+    await render(
+        update,
+        context,
+        text,
+        kb,
+        message_id,
+    )
+
+    return _state(context, ADMIN_DAY_REPORT)
 
 
 # =========================================================
-# TEXT INPUT
+# PHOTO REPORT FOR CHECKLISTS (полный код)
 # =========================================================
 
-async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user
+async def show_photo_overview(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+    notice=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
 
-    if not user:
-        return MAIN_MENU
+    if not date_str:
+        return await show_calendar(
+            update,
+            context,
+            message_id,
+            notice="Сначала выберите день.",
+        )
 
-    state = _current_state(context)
+    overview = get_photo_overview(date_str)
 
-    text = (update.message.text or "").strip() if update.message else ""
+    if overview.get("total", 0) <= 0:
+        return await show_day_report(
+            update,
+            context,
+            date_str,
+            message_id,
+            notice="За этот день нет вложений.",
+        )
 
-    if not text:
-        await update.message.reply_text("⚠️ Пустой текст. Попробуйте ещё раз.")
-        return state
+    context.user_data.pop("photo_location", None)
+    context.user_data.pop("photo_category", None)
+    context.user_data.pop("photo_page", None)
 
-    draft = _get_draft(context)
+    text = (
+        f"📸 Фотоотчёт\n\n"
+        f"{format_date_ru(date_str)}\n\n"
+        f"Всего вложений: {overview['total']}\n\n"
+        "Выберите локацию."
+    )
 
-    if state == REPORT_EDITOR:
-        if not draft:
-            return await show_reports_menu(update, context)
+    if notice:
+        text = f"{notice}\n\n{text}"
 
-        report_type = draft.get("type", "opening")
+    await render(
+        update,
+        context,
+        text,
+        photo_overview_keyboard(
+            bar_media_count=overview.get("bar", 0),
+            kitchen_media_count=overview.get("kitchen", 0),
+        ),
+        message_id,
+    )
 
-        draft["raw"] = text
-        draft["values"] = parse_report_sections(text, report_type)
-        draft["source"] = "text"
+    return _state(context, ADMIN_PHOTO_OVERVIEW)
 
-        _set_draft(context, draft)
 
-        logger.info("🧾 Пользователь прислал текст в редакторе")
+async def show_photo_location_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    location: str,
+    message_id=None,
+    notice=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
 
-        return await show_editor(update, context, notice="✅ Текст обновлён.", send_full=True)
+    if not date_str:
+        return await show_calendar(
+            update,
+            context,
+            message_id,
+            notice="Сначала выберите день.",
+        )
 
-    if state == REPORT_TEXT_MODE:
-        if not draft:
-            return await show_reports_menu(update, context)
+    if location not in LOCATIONS:
+        return await show_photo_overview(update, context, message_id)
 
-        report_type = draft.get("type", "opening")
+    menu = get_location_photo_menu(date_str, location)
 
-        draft["raw"] = text
-        draft["values"] = parse_report_sections(text, report_type)
-        draft["source"] = "text"
+    if menu.get("total_media", 0) <= 0:
+        return await show_photo_overview(
+            update,
+            context,
+            message_id,
+            notice="В этой локации нет вложений.",
+        )
 
-        _set_draft(context, draft)
+    context.user_data["photo_location"] = location
+    context.user_data.pop("photo_category", None)
+    context.user_data.pop("photo_page", None)
 
-        logger.info("🧾 Получен текст в текстовом режиме")
+    location_label = LOCATIONS.get(location, location)
 
-        return await show_editor(update, context, notice="✅ Текст обновлён.", send_full=True)
+    text = (
+        f"📸 {location_label}\n"
+        f"{format_date_ru(date_str)}\n\n"
+        f"Вложений: {menu['total_media']}\n"
+        f"Задач с фото: {menu['task_count']}\n\n"
+        "Выберите категорию или отправьте всё."
+    )
 
-    if state == REPORT_AWAIT_SECTION:
-        if not draft:
-            return await show_reports_menu(update, context)
+    if notice:
+        text = f"{notice}\n\n{text}"
 
-        section = context.user_data.get("awaiting_section")
+    await render(
+        update,
+        context,
+        text,
+        photo_location_keyboard(menu),
+        message_id,
+    )
 
-        if not section:
-            return await show_editor(update, context)
+    return _state(context, ADMIN_PHOTO_LOCATION)
 
-        draft.setdefault("values", {})[section] = text
-        draft["raw"] = None
-        draft["source"] = "sections"
 
-        _set_draft(context, draft)
+async def show_photo_category_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    location: str,
+    category: str,
+    page: int = 1,
+    message_id=None,
+    notice=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
 
-        guided = bool(context.user_data.get("guided"))
+    if not date_str:
+        return await show_calendar(
+            update,
+            context,
+            message_id,
+            notice="Сначала выберите день.",
+        )
 
-        logger.info("✅ Раздел обновлён: %s", section)
+    if location not in LOCATIONS:
+        return await show_photo_overview(update, context, message_id)
 
-        if guided:
-            return await _advance_guided_flow(update, context)
+    data = get_category_photo_tasks(date_str, location, category)
 
-        return await show_section_list(update, context, notice="✅ Пункт обновлён.")
+    if data.get("task_count", 0) <= 0:
+        return await show_photo_location_menu(
+            update,
+            context,
+            location,
+            message_id,
+            notice="В этой категории нет вложений.",
+        )
 
-    return state
+    tasks = data.get("tasks", [])
+
+    page_items, total_pages, page = paginate_list(tasks, page)
+
+    context.user_data["photo_location"] = location
+    context.user_data["photo_category"] = category
+    context.user_data["photo_page"] = page
+
+    location_label = LOCATIONS.get(location, location)
+    category_label = CATEGORY_LABELS.get(category, category)
+
+    text = (
+        f"📸 {location_label}\n"
+        f"{category_label}\n\n"
+        f"Вложений: {data['media_count']}\n"
+        f"Задач: {data['task_count']}\n\n"
+        "Нажмите на задачу, чтобы отправить её фото."
+    )
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    await render(
+        update,
+        context,
+        text,
+        photo_category_keyboard(
+            location=location,
+            category=category,
+            page_items=page_items,
+            page=page,
+            total_pages=total_pages,
+        ),
+        message_id,
+    )
+
+    return _state(context, ADMIN_PHOTO_CATEGORY)
+
+
+async def _send_task_media(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    item: dict,
+    location: str,
+    date_str: str,
+) -> int:
+    chat_id = update.effective_chat.id
+    if not chat_id:
+        return 0
+
+    media_items = item.get("media_items", [])
+    if not media_items:
+        return 0
+
+    caption = build_task_media_caption(item, location, date_str)
+    sent_count = 0
+
+    for start in range(0, len(media_items), MEDIA_CHUNK_SIZE):
+        chunk = media_items[start:start + MEDIA_CHUNK_SIZE]
+        media_group = []
+        for index, media in enumerate(chunk):
+            file_id = media.get("file_id")
+            if not file_id:
+                continue
+            media_caption = caption if start == 0 and index == 0 else None
+            if media.get("type") == "video":
+                media_group.append(InputMediaVideo(media=file_id, caption=media_caption))
+            else:
+                media_group.append(InputMediaPhoto(media=file_id, caption=media_caption))
+        if media_group:
+            await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+            sent_count += len(media_group)
+
+    return sent_count
+
+
+async def _send_tasks_media(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    tasks: list[dict],
+    location: str,
+    date_str: str,
+) -> tuple[int, int, bool]:
+    task_sent = 0
+    media_sent = 0
+    success = True
+
+    for item in tasks:
+        try:
+            sent = await _send_task_media(update, context, item, location, date_str)
+            if sent > 0:
+                task_sent += 1
+                media_sent += sent
+            await asyncio.sleep(TASK_SEND_DELAY)
+        except Exception as e:
+            logger.error("Ошибка отправки медиа задачи %s: %s", item.get("id"), e, exc_info=True)
+            success = False
+            break
+
+    return task_sent, media_sent, success
+
+
+async def send_all_location_photos(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    location: str,
+    message_id=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
+    if not date_str:
+        return await show_calendar(update, context, message_id)
+
+    menu = get_location_photo_menu(date_str, location)
+    tasks = menu.get("items", [])
+    if not tasks:
+        return await show_photo_location_menu(
+            update,
+            context,
+            location,
+            message_id,
+            notice="Нет вложений для отправки.",
+        )
+
+    logger.info("📤 Админ запросил отправку всех фото локации %s за %s", location, date_str)
+
+    task_count, media_count, success = await _send_tasks_media(
+        update,
+        context,
+        tasks,
+        location,
+        date_str,
+    )
+
+    if success:
+        notice = f"✅ Отправлено {media_count} файлов из {task_count} задач."
+    else:
+        notice = f"⚠️ Отправлено частично: {media_count} файлов из {task_count} задач."
+
+    return await show_photo_location_menu(
+        update,
+        context,
+        location,
+        message_id,
+        notice=notice,
+    )
+
+
+async def send_all_category_photos(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    location: str,
+    category: str,
+    message_id=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
+    if not date_str:
+        return await show_calendar(update, context, message_id)
+
+    data = get_category_photo_tasks(date_str, location, category)
+    tasks = data.get("tasks", [])
+    if not tasks:
+        return await show_photo_category_menu(
+            update,
+            context,
+            location,
+            category,
+            1,
+            message_id,
+            notice="Нет вложений для отправки.",
+        )
+
+    logger.info("📤 Админ запросил отправку всех фото категории %s / %s за %s", location, category, date_str)
+
+    task_count, media_count, success = await _send_tasks_media(
+        update,
+        context,
+        tasks,
+        location,
+        date_str,
+    )
+
+    if success:
+        notice = f"✅ Отправлено {media_count} файлов из {task_count} задач."
+    else:
+        notice = f"⚠️ Отправлено частично: {media_count} файлов из {task_count} задач."
+
+    page = context.user_data.get("photo_page", 1)
+    return await show_photo_category_menu(
+        update,
+        context,
+        location,
+        category,
+        page,
+        message_id,
+        notice=notice,
+    )
+
+
+async def send_task_photos(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    item_id: int,
+    message_id=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
+    if not date_str:
+        return await show_calendar(update, context, message_id)
+
+    item, location = get_task_by_id_from_report(date_str, item_id)
+    if not item or not location:
+        return await show_photo_overview(
+            update,
+            context,
+            message_id,
+            notice="Задача не найдена.",
+        )
+
+    logger.info("📤 Админ запросил фото конкретной задачи %s за %s", item_id, date_str)
+
+    sent = await _send_task_media(update, context, item, location, date_str)
+
+    if sent <= 0:
+        notice = "⚠️ У этой задачи нет вложений."
+    else:
+        notice = f"✅ Отправлено {sent} файлов."
+
+    current_location = context.user_data.get("photo_location")
+    current_category = context.user_data.get("photo_category")
+
+    if current_location == location and current_category == item.get("category"):
+        page = context.user_data.get("photo_page", 1)
+        return await show_photo_category_menu(
+            update,
+            context,
+            location,
+            current_category,
+            page,
+            message_id,
+            notice=notice,
+        )
+
+    return await show_photo_location_menu(
+        update,
+        context,
+        location,
+        message_id,
+        notice=notice,
+    )
 
 
 # =========================================================
-# MAIN CALLBACK ROUTER
+# PHOTO REPORT FOR TAXI
 # =========================================================
 
-async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def show_taxi_photo_overview(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+    notice=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
+    if not date_str:
+        return await show_calendar(
+            update,
+            context,
+            message_id,
+            notice="Сначала выберите день.",
+        )
+
+    overview = get_taxi_photo_overview(date_str)
+    if overview.get("total_media", 0) <= 0:
+        return await show_day_report(
+            update,
+            context,
+            date_str,
+            message_id,
+            notice="За этот день нет фото по такси.",
+            tab=CB_TAB_TAXI,
+        )
+
+    text = (
+        f"📸 Фотоотчёт по такси\n\n"
+        f"{format_date_ru(date_str)}\n\n"
+        f"Всего вложений: {overview['total_media']}\n\n"
+        "Выберите сотрудника."
+    )
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    kb = taxi_photo_overview_keyboard(overview["users"])
+    await render(update, context, text, kb, message_id)
+
+    return _state(context, ADMIN_TAXI_PHOTO_OVERVIEW)
+
+
+async def send_taxi_user_photos(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    message_id=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
+    if not date_str:
+        return await show_calendar(update, context, message_id)
+
+    overview = get_taxi_photo_overview(date_str)
+    user_data = next((u for u in overview["users"] if u["user_id"] == user_id), None)
+
+    if not user_data or not user_data["media_items"]:
+        return await show_taxi_photo_overview(
+            update,
+            context,
+            message_id,
+            notice="У этого сотрудника нет фото.",
+        )
+
+    media_items = user_data["media_items"]
+    chat_id = update.effective_chat.id
+    if not chat_id:
+        return await show_taxi_photo_overview(update, context, message_id)
+
+    try:
+        for start in range(0, len(media_items), MEDIA_CHUNK_SIZE):
+            chunk = media_items[start:start + MEDIA_CHUNK_SIZE]
+            media_group = []
+            for index, media in enumerate(chunk):
+                file_id = media.get("file_id")
+                if not file_id:
+                    continue
+                media_caption = f"🚕 Такси: {user_data['full_name']} за {format_date_ru(date_str)}" if start == 0 and index == 0 else None
+                if media.get("type") == "video":
+                    media_group.append(InputMediaVideo(media=file_id, caption=media_caption))
+                else:
+                    media_group.append(InputMediaPhoto(media=file_id, caption=media_caption))
+            if media_group:
+                await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+                await asyncio.sleep(TASK_SEND_DELAY)
+    except Exception as e:
+        logger.error("Ошибка отправки фото такси: %s", e)
+        return await show_taxi_photo_overview(
+            update,
+            context,
+            message_id,
+            notice="⚠️ Ошибка при отправке фото.",
+        )
+
+    return await show_taxi_photo_overview(
+        update,
+        context,
+        message_id,
+        notice=f"✅ Отправлено {len(media_items)} файлов сотрудника {user_data['full_name']}.",
+    )
+
+
+async def send_all_taxi_photos(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
+    if not date_str:
+        return await show_calendar(update, context, message_id)
+
+    overview = get_taxi_photo_overview(date_str)
+    if overview.get("total_media", 0) <= 0:
+        return await show_taxi_photo_overview(
+            update,
+            context,
+            message_id,
+            notice="Нет фото для отправки.",
+        )
+
+    chat_id = update.effective_chat.id
+    if not chat_id:
+        return await show_taxi_photo_overview(update, context, message_id)
+
+    total_sent = 0
+    for user_data in overview["users"]:
+        media_items = user_data["media_items"]
+        if not media_items:
+            continue
+        try:
+            for start in range(0, len(media_items), MEDIA_CHUNK_SIZE):
+                chunk = media_items[start:start + MEDIA_CHUNK_SIZE]
+                media_group = []
+                for index, media in enumerate(chunk):
+                    file_id = media.get("file_id")
+                    if not file_id:
+                        continue
+                    media_caption = f"🚕 Такси: {user_data['full_name']} за {format_date_ru(date_str)}" if start == 0 and index == 0 else None
+                    if media.get("type") == "video":
+                        media_group.append(InputMediaVideo(media=file_id, caption=media_caption))
+                    else:
+                        media_group.append(InputMediaPhoto(media=file_id, caption=media_caption))
+                if media_group:
+                    await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+                    await asyncio.sleep(TASK_SEND_DELAY)
+                    total_sent += len(media_group)
+        except Exception as e:
+            logger.error("Ошибка отправки фото такси: %s", e)
+            continue
+
+    return await show_taxi_photo_overview(
+        update,
+        context,
+        message_id,
+        notice=f"✅ Отправлено {total_sent} файлов.",
+    )
+
+
+# =========================================================
+# CALLBACK ROUTER
+# =========================================================
+
+async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-
     if not query:
         return _current_state(context)
 
     data = query.data or ""
-    state = _current_state(context)
     message_id = query.message.message_id if query.message else None
 
     if data == CB_NOOP:
-        await _answer(query)
-        return state
+        await query.answer()
+        return _current_state(context)
 
-    # ----------------------------------------------------
-    # GUARD: ожидание значения раздела
-    # ----------------------------------------------------
-    if state == REPORT_AWAIT_SECTION:
-        if data == CB_REPORT_SECTION_SKIP:
-            await _answer(query)
+    send_actions = {
+        CB_PHOTO_ALL_LOC,
+        CB_PHOTO_ALL_CAT,
+        CB_TAXI_PHOTO_ALL,
+    }
 
-            draft = _get_draft(context)
-            section = context.user_data.get("awaiting_section")
+    if data in send_actions or data.startswith(f"{CB_PHOTO_TASK_PREFIX}:") or data.startswith(f"{CB_TAXI_PHOTO_USER_PREFIX}"):
+        await query.answer("Отправляю...")
+    else:
+        await query.answer()
 
-            if draft and section:
-                draft.setdefault("values", {})[section] = ""
-                draft["raw"] = None
-                draft["source"] = "sections"
-                _set_draft(context, draft)
+    if ":" in data:
+        prefix, value = data.split(":", 1)
+    else:
+        prefix, value = data, None
 
-            guided = bool(context.user_data.get("guided"))
+    # Домой
+    if data == CB_HOME:
+        try:
+            from ..menu.handlers import show_main
+            return await show_main(update, context, message_id)
+        except Exception:
+            return await show_calendar(update, context, message_id)
 
-            if guided:
-                return await _advance_guided_flow(update, context)
+    # Назад к календарю
+    if data == CB_TO_CALENDAR:
+        return await show_calendar(update, context, message_id)
 
-            return await show_section_list(update, context, notice="🗑 Пункт очищен.")
+    # Навигация по месяцам
+    if data in (CB_PREV_MONTH, CB_NEXT_MONTH):
+        now = now_msk()
+        year = context.user_data.get("calendar_year", now.year)
+        month = context.user_data.get("calendar_month", now.month)
 
-        if data in (CB_REPORT_SECTION_EXIT, CB_REPORT_BACK_EDITOR, CB_REPORT_CANCEL):
-            await _answer(query)
-            _clear_guided(context)
-            return await show_editor(update, context, message_id)
+        if data == CB_PREV_MONTH:
+            if month == 1:
+                month = 12
+                year -= 1
+            else:
+                month -= 1
+        else:
+            if month == 12:
+                month = 1
+                year += 1
+            else:
+                month += 1
 
-        await _answer(query, "Сначала отправьте новое значение раздела.", True)
-        return state
+        context.user_data["calendar_year"] = year
+        context.user_data["calendar_month"] = month
+        return await show_calendar(update, context, message_id)
 
-    # ----------------------------------------------------
-    # GUARD: ожидание полного текста
-    # ----------------------------------------------------
-    if state == REPORT_TEXT_MODE:
-        if data in (CB_REPORT_BACK_EDITOR, CB_REPORT_CANCEL):
-            await _answer(query)
-            return await show_editor(update, context, message_id)
-
-        if data == CB_REPORT_BACK_MENU:
-            await _answer(query)
-            return await _go_main_menu(update, context, message_id)
-
-        await _answer(query, "Сначала отправьте текст отчёта.", True)
-        return state
-
-    await _answer(query)
-
-    # ----------------------------------------------------
-    # GENERAL NAVIGATION
-    # ----------------------------------------------------
-
-    if data == CB_REPORT_BACK_MENU:
-        return await _go_main_menu(update, context, message_id)
-
-    # ----------------------------------------------------
-    # HOME SCREEN
-    # ----------------------------------------------------
-    if state == REPORT_HOME:
-        if data.startswith(CB_REPORT_OPEN_PREFIX):
-            report_type = data.split(":", 1)[1]
-
-            return await open_report_editor(
-                update, context,
-                report_type=report_type,
-                message_id=message_id,
+    # Выбор дня
+    if prefix == CB_DAY_PREFIX:
+        raw_date = value or ""
+        try:
+            if len(raw_date) == 8:
+                date_str = datetime.strptime(raw_date, "%Y%m%d").strftime("%Y-%m-%d")
+            else:
+                date_str = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+            return await show_day_report(update, context, date_str, message_id)
+        except Exception as e:
+            logger.error("Ошибка разбора даты: %s", e)
+            return await show_calendar(
+                update,
+                context,
+                message_id,
+                notice="Не удалось прочитать дату.",
             )
 
-        return await show_reports_menu(update, context, message_id)
+    # Переключение вкладок
+    if data in (CB_TAB_CHECKLIST, CB_TAB_SHIFT_REPORTS, CB_TAB_TAXI):
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id, tab=data)
 
-    # ----------------------------------------------------
-    # EDITOR SCREEN
-    # ----------------------------------------------------
-    if state == REPORT_EDITOR:
-        if data == CB_REPORT_SAVE:
-            return await save_report_action(update, context)
+    # Режимы отчёта (только для чек-листов)
+    if data == CB_REPORT_SHORT:
+        context.user_data["report_mode"] = REPORT_MODE_SHORT
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id)
 
-        if data == CB_REPORT_TEXT_MODE:
-            return await show_text_mode(update, context)
+    if data == CB_REPORT_FULL:
+        context.user_data["report_mode"] = REPORT_MODE_FULL
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id)
 
-        if data == CB_REPORT_LOAD_LAST:
-            return await load_last_action(update, context)
+    # Фото вкл/выкл
+    if data == CB_REPORT_PHOTOS_ON:
+        context.user_data["report_photos"] = True
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id)
 
-        if data == CB_REPORT_SHOW_EXAMPLE:
-            return await show_example_action(update, context)
+    if data == CB_REPORT_PHOTOS_OFF:
+        context.user_data["report_photos"] = False
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id)
 
-        if data == CB_REPORT_CLEAR:
-            return await clear_report_action(update, context)
+    # Фотоотчёт (чек-листы)
+    if data == CB_PHOTO_REPORT:
+        return await show_photo_overview(update, context, message_id)
 
-        if data == CB_REPORT_SECTION_MODE:
-            return await show_section_menu(update, context)
+    # Фотоотчёт по такси
+    if data == CB_TAXI_PHOTO_REPORT:
+        return await show_taxi_photo_overview(update, context, message_id)
 
-        if data == CB_REPORT_CALENDAR:
-            draft = _get_draft(context)
+    if data == CB_TAXI_PHOTO_BACK:
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id, tab=CB_TAB_TAXI)
 
-            if draft and draft.get("date"):
-                try:
-                    dt = datetime.strptime(draft["date"], "%Y-%m-%d")
-                    context.user_data["editor_cal_year"] = dt.year
-                    context.user_data["editor_cal_month"] = dt.month
-                except Exception:
-                    pass
+    if prefix == CB_TAXI_PHOTO_USER_PREFIX:
+        try:
+            user_id = int(value)
+        except (TypeError, ValueError):
+            return await show_taxi_photo_overview(update, context, message_id)
+        return await send_taxi_user_photos(update, context, user_id, message_id)
 
-            return await show_editor_calendar(update, context, message_id)
+    if data == CB_TAXI_PHOTO_ALL:
+        return await send_all_taxi_photos(update, context, message_id)
 
-        if data == CB_REPORT_CANCEL:
-            _set_draft(context, None)
-            _clear_guided(context)
-            return await show_reports_menu(update, context, message_id, notice="Отменено.")
+    # Legacy: photo_report для чеклистов
+    if data == CB_PHOTO_BACK_DAY:
+        date_str = context.user_data.get("report_date")
+        if not date_str:
+            return await show_calendar(update, context, message_id)
+        return await show_day_report(update, context, date_str, message_id)
 
-        return await show_editor(update, context, message_id)
+    if data == CB_PHOTO_BACK_OVERVIEW:
+        return await show_photo_overview(update, context, message_id)
 
-    # ----------------------------------------------------
-    # CALENDAR INSIDE EDITOR
-    # ----------------------------------------------------
-    if state == REPORT_CALENDAR:
-        if data == CB_REPORT_CAL_PREV_MONTH:
-            return await editor_calendar_navigation(update, context, "prev", message_id)
+    if data == CB_PHOTO_BACK_LOC:
+        location = context.user_data.get("photo_location")
+        if location:
+            return await show_photo_location_menu(update, context, location, message_id)
+        return await show_photo_overview(update, context, message_id)
 
-        if data == CB_REPORT_CAL_NEXT_MONTH:
-            return await editor_calendar_navigation(update, context, "next", message_id)
+    # Локация (чеклисты)
+    if prefix == CB_PHOTO_LOC_PREFIX:
+        return await show_photo_location_menu(update, context, value, message_id)
 
-        if data.startswith(CB_REPORT_CAL_DATE_PREFIX):
-            date_compact = data[len(CB_REPORT_CAL_DATE_PREFIX):]
-            return await editor_calendar_date_selection(update, context, date_compact, message_id)
+    # Категория (чеклисты)
+    if prefix == CB_PHOTO_CAT_PREFIX:
+        location = context.user_data.get("photo_location")
+        if not location:
+            return await show_photo_overview(update, context, message_id)
+        return await show_photo_category_menu(update, context, location, value, 1, message_id)
 
-        if data == CB_REPORT_BACK_EDITOR:
-            return await show_editor(update, context, message_id)
+    # Отправить всю локацию (чеклисты)
+    if data == CB_PHOTO_ALL_LOC:
+        location = context.user_data.get("photo_location")
+        if not location:
+            return await show_photo_overview(update, context, message_id)
+        return await send_all_location_photos(update, context, location, message_id)
 
-        return await show_editor_calendar(update, context, message_id)
+    # Отправить всю категорию (чеклисты)
+    if data == CB_PHOTO_ALL_CAT:
+        location = context.user_data.get("photo_location")
+        category = context.user_data.get("photo_category")
+        if not location or not category:
+            return await show_photo_overview(update, context, message_id)
+        return await send_all_category_photos(update, context, location, category, message_id)
 
-    # ----------------------------------------------------
-    # SECTION MENU
-    # ----------------------------------------------------
-    if state == REPORT_SECTION_MENU:
-        if data == CB_REPORT_SECTION_MENU_CLEAR:
-            return await clear_report_action(update, context)
+    # Отправить конкретную задачу (чеклисты)
+    if prefix == CB_PHOTO_TASK_PREFIX:
+        try:
+            item_id = int(value)
+        except (TypeError, ValueError):
+            return await show_photo_overview(update, context, message_id)
+        return await send_task_photos(update, context, item_id, message_id)
 
-        if data == CB_REPORT_SECTION_START:
-            draft = _get_draft(context)
+    # Пагинация задач (чеклисты)
+    if prefix == CB_PHOTO_PAGE_PREFIX:
+        location = context.user_data.get("photo_location")
+        category = context.user_data.get("photo_category")
+        if not location or not category:
+            return await show_photo_overview(update, context, message_id)
+        try:
+            page = int(value)
+        except (TypeError, ValueError):
+            page = 1
+        return await show_photo_category_menu(update, context, location, category, page, message_id)
 
-            if not draft:
-                return await show_reports_menu(update, context)
-
-            new_draft = empty_draft(draft.get("date"), draft.get("type"))
-            _set_draft(context, new_draft)
-
-            return await prompt_section(update, context, 0, guided=True)
-
-        if data == CB_REPORT_SECTION_CHOOSE:
-            return await show_section_list(update, context, message_id)
-
-        if data == CB_REPORT_BACK_EDITOR:
-            return await show_editor(update, context, message_id)
-
-        return await show_section_menu(update, context)
-
-    # ----------------------------------------------------
-    # SECTION LIST
-    # ----------------------------------------------------
-    if state == REPORT_SECTION_LIST:
-        if data.startswith(CB_REPORT_SECTION_PREFIX):
-            try:
-                section_index = int(data.split(":", 1)[1])
-            except (TypeError, ValueError):
-                return await show_section_list(update, context, message_id)
-
-            return await prompt_section(update, context, section_index, guided=False)
-
-        if data in (CB_REPORT_SECTION_DONE, CB_REPORT_BACK_EDITOR):
-            return await show_editor(update, context, message_id, send_full=True)
-
-        return await show_section_list(update, context, message_id)
+    # Legacy: media:bar / media:kitchen
+    if prefix == CB_SHOW_MEDIA_PREFIX:
+        if value in LOCATIONS:
+            return await show_photo_location_menu(update, context, value, message_id)
+        return await show_photo_overview(update, context, message_id)
 
     # Fallback
-    return await show_reports_menu(update, context, message_id)
+    if (
+        context.user_data.get("ui_state") == ADMIN_DAY_REPORT
+        and context.user_data.get("report_date")
+    ):
+        return await show_day_report(
+            update,
+            context,
+            context.user_data.get("report_date"),
+            message_id,
+        )
+
+    return await show_calendar(update, context, message_id)
