@@ -1,405 +1,463 @@
 import logging
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from datetime import datetime
+
+from telegram import Update
 from telegram.ext import ContextTypes
-from utils.time_utils import now_msk, today_msk_str
-from db.users import get_user
+
+try:
+    from utils.time_utils import now_msk
+except Exception:
+    def now_msk():
+        return datetime.now()
+
 from .constants import (
     REPORT_SELECT_TYPE,
     REPORT_VIEW_DATE,
     REPORT_VIEW_DETAIL,
     REPORT_AWAIT_TEXT,
+    REPORT_CONFIRM_SAVE,
+    CB_NOOP,
     CB_REPORT_BACK_MENU,
-    CB_REPORT_OPENING,
-    CB_REPORT_CLOSING,
+    CB_REPORT_TO_CALENDAR,
+    CB_REPORT_TYPE_PREFIX,
     CB_REPORT_DATE_PREFIX,
     CB_REPORT_PREV_MONTH,
     CB_REPORT_NEXT_MONTH,
     CB_REPORT_CREATE,
+    CB_REPORT_EDIT,
     CB_REPORT_VIEW,
-    CB_REPORT_CANCEL,
+    CB_REPORT_TEMPLATE,
     CB_REPORT_SAVE,
-    CB_REPORT_PREV_OPENING,
-    CB_REPORT_PREV_CLOSING,
-    REPORT_TYPE_LABELS,
-    MSG_LIMIT,
+    CB_REPORT_REENTER,
+    CB_REPORT_CANCEL,
+    CB_REPORT_PREV_REPORT,
     MONTHS,
-    WEEKDAYS_SHORT,
-)
-from .keyboards import (
-    report_type_keyboard,
-    calendar_keyboard,
-    report_action_keyboard,
-    create_report_keyboard,
-)
-from .utils import (
-    save_report,
-    get_report,
-    get_last_report,
-    get_dates_with_reports,
-    get_previous_day_reports,
-    format_report_preview,
-    truncate_text,
+    REPORT_TYPE_LABELS,
+    REPORT_TEMPLATES,
+    REPORT_PREVIEW_LIMIT,
 )
 
-logger = logging.getLogger(__name__)
+from .keyboards import (
+    reports_calendar_keyboard,
+    report_day_keyboard,
+    report_create_keyboard,
+    report_confirm_keyboard,
+)
+
+from .utils import (
+    render,
+    send_long_message,
+    get_dates_with_reports,
+    get_report,
+    get_previous_report,
+    save_report,
+    format_date_ru,
+    format_report_preview,
+    build_report_summary_text,
+)
 
 MAIN_MENU = 3
 
+logger = logging.getLogger(__name__)
+
 
 # =========================================================
-# STATE HELPERS
+# HELPERS
 # =========================================================
 
-def set_state(context, state: int) -> int:
+def _state(context: ContextTypes.DEFAULT_TYPE, state: int) -> int:
     context.user_data["state"] = state
     return state
 
 
-def current_state(context) -> int:
+def _current_state(context: ContextTypes.DEFAULT_TYPE) -> int:
     return context.user_data.get("state", MAIN_MENU)
 
 
-async def render(update, context, text, reply_markup=None, message_id=None):
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    if chat_id and message_id:
-        try:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=text,
-                reply_markup=reply_markup,
-            )
-            return message_id
-        except Exception as e:
-            logger.warning("Edit failed: %s", e)
-    if chat_id:
-        msg = await context.bot.send_message(
-            chat_id=chat_id,
-            text=truncate_text(text, MSG_LIMIT),
-            reply_markup=reply_markup,
-        )
-        return msg.message_id
-    return None
-
-
-async def answer(query, text=None, show_alert=False):
+async def _answer(query, text: str | None = None, show_alert: bool = False):
     try:
         await query.answer(text or "", show_alert=show_alert)
     except Exception:
         pass
 
 
-# =========================================================
-# ENTRY POINT
-# =========================================================
+def _get_report_type(context: ContextTypes.DEFAULT_TYPE) -> str:
+    report_type = context.user_data.get("report_type", "opening")
 
-async def show_reports_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
-    logger.info("📋 Открыто меню выбора типа отчёта")
-    text = "📋 Отчёты\n\nВыберите тип отчёта:"
-    if notice:
-        text = f"{notice}\n\n{text}"
-    await render(update, context, text, report_type_keyboard(), message_id)
-    return set_state(context, REPORT_SELECT_TYPE)
+    if report_type not in REPORT_TYPE_LABELS:
+        report_type = "opening"
+
+    return report_type
 
 
-# =========================================================
-# SELECT TYPE CALLBACK
-# =========================================================
+def _clear_draft(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("awaiting_report_text", None)
+    context.user_data.pop("report_draft", None)
 
-async def report_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    data = query.data
-    await answer(query)
-    logger.info(f"🔘 Выбран тип отчёта: {data}")
 
-    if data == CB_REPORT_BACK_MENU:
-        logger.info("⬅️ Возврат в главное меню")
+async def _go_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None):
+    try:
         from ..menu.handlers import show_main_menu
-        return await show_main_menu(update, context, query.message.message_id)
+        return await show_main_menu(update, context, message_id)
+    except Exception:
+        pass
 
-    if data == CB_REPORT_OPENING or data == CB_REPORT_CLOSING:
-        report_type = "opening" if data == CB_REPORT_OPENING else "closing"
-        context.user_data["report_type"] = report_type
-        logger.info(f"📂 Выбран тип отчёта: {report_type}")
-        return await show_report_calendar(update, context, query.message.message_id)
+    try:
+        from ..menu.handlers import show_main
+        return await show_main(update, context, message_id)
+    except Exception:
+        pass
 
-    return await show_reports_menu(update, context, query.message.message_id)
+    return await show_reports_menu(update, context, message_id)
 
 
 # =========================================================
-# CALENDAR
+# CALENDAR SCREEN
 # =========================================================
 
-async def show_report_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, notice=None) -> int:
+async def show_reports_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+    notice=None,
+) -> int:
+    user = update.effective_user
+
+    if user:
+        logger.info("📋 Пользователь %s открыл отчёты", user.id)
+
     now = now_msk()
+
     year = context.user_data.get("calendar_year", now.year)
     month = context.user_data.get("calendar_month", now.month)
+
     if not (1 <= month <= 12):
         month = now.month
+
     context.user_data["calendar_year"] = year
     context.user_data["calendar_month"] = month
 
-    report_type = context.user_data.get("report_type", "opening")
+    report_type = _get_report_type(context)
+    context.user_data["report_type"] = report_type
+
     dates_with_reports = get_dates_with_reports(year, month, report_type)
 
-    logger.info(f"📅 Показываем календарь для {report_type}, {MONTHS[month-1]} {year}, дат с отчётами: {len(dates_with_reports)}")
+    today = now.strftime("%Y-%m-%d")
 
-    text = f"{REPORT_TYPE_LABELS[report_type]}\n\n{MONTHS[month-1]} {year}\n\nВыберите дату:"
+    text = (
+        "📋 Отчёты\n\n"
+        f"{REPORT_TYPE_LABELS[report_type]}\n"
+        f"{MONTHS[month - 1]} {year}\n\n"
+        "📌 — отчёт сохранён\n"
+        "• — сегодня\n\n"
+        "Выберите день."
+    )
+
     if notice:
         text = f"{notice}\n\n{text}"
 
-    await render(update, context, text, calendar_keyboard(year, month, dates_with_reports), message_id)
-    return set_state(context, REPORT_VIEW_DATE)
+    await render(
+        update,
+        context,
+        text,
+        reports_calendar_keyboard(
+            report_type=report_type,
+            year=year,
+            month=month,
+            dates_with_reports=dates_with_reports,
+            today=today,
+        ),
+        message_id,
+    )
 
-
-async def calendar_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    data = query.data
-    await answer(query)
-    logger.info(f"📅 Навигация по календарю: {data}")
-
-    now = now_msk()
-    year = context.user_data.get("calendar_year", now.year)
-    month = context.user_data.get("calendar_month", now.month)
-
-    if data == CB_REPORT_PREV_MONTH:
-        if month == 1:
-            month = 12
-            year -= 1
-        else:
-            month -= 1
-    elif data == CB_REPORT_NEXT_MONTH:
-        if month == 12:
-            month = 1
-            year += 1
-        else:
-            month += 1
-    else:
-        return await show_report_calendar(update, context, query.message.message_id)
-
-    context.user_data["calendar_year"] = year
-    context.user_data["calendar_month"] = month
-    logger.info(f"📅 Новый месяц: {MONTHS[month-1]} {year}")
-    return await show_report_calendar(update, context, query.message.message_id)
+    return _state(context, REPORT_VIEW_DATE)
 
 
 # =========================================================
-# DATE SELECTION
+# DAY DETAIL SCREEN
 # =========================================================
 
-async def date_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    data = query.data
-    await answer(query)
-    logger.info(f"📆 Выбрана дата: {data}")
+async def show_day_detail(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+    notice=None,
+) -> int:
+    date_str = context.user_data.get("report_date")
+    report_type = _get_report_type(context)
 
-    prefix = CB_REPORT_DATE_PREFIX
-    if not data.startswith(prefix):
-        return await show_report_calendar(update, context, query.message.message_id)
-
-    date_compact = data[len(prefix):]
-    try:
-        date_obj = datetime.strptime(date_compact, "%Y%m%d")
-        date_str = date_obj.strftime("%Y-%m-%d")
-    except Exception as e:
-        logger.error(f"❌ Ошибка разбора даты {date_compact}: {e}")
-        return await show_report_calendar(update, context, query.message.message_id)
-
-    context.user_data["report_date"] = date_str
-    report_type = context.user_data.get("report_type", "opening")
-    logger.info(f"📅 Дата: {date_str}, тип: {report_type}")
+    if not date_str:
+        return await show_reports_menu(update, context, message_id)
 
     report = get_report(date_str, report_type)
-    return await show_report_detail(update, context, query.message.message_id, report)
+    prev_report = get_previous_report(date_str, report_type)
 
+    text = build_report_summary_text(report, date_str, report_type)
 
-async def show_report_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id=None, report=None) -> int:
-    date_str = context.user_data.get("report_date")
-    report_type = context.user_data.get("report_type", "opening")
-    if not date_str:
-        return await show_report_calendar(update, context, message_id)
+    if notice:
+        text = f"{notice}\n\n{text}"
 
-    if report is None:
-        report = get_report(date_str, report_type)
+    kb = report_day_keyboard(
+        has_report=bool(report),
+        prev_exists=bool(prev_report),
+    )
 
-    # Получаем отчёты за предыдущий день
-    prev_reports = get_previous_day_reports(date_str)
-    prev_date = prev_reports.get("date")
-    prev_opening = prev_reports.get("opening")
-    prev_closing = prev_reports.get("closing")
+    await render(update, context, text, kb, message_id)
 
-    logger.info(f"📄 Показ деталей отчёта за {date_str}, тип {report_type}, exists={report is not None}")
+    logger.info(
+        "📄 Пользователь открыл карточку отчёта: date=%s type=%s exists=%s",
+        date_str,
+        report_type,
+        bool(report),
+    )
 
-    text_parts = []
-
-    if report:
-        full_text = report["full_text"]
-        preview = format_report_preview(full_text, 3500)
-        text_parts.append(f"📄 Отчёт за {date_str} ({REPORT_TYPE_LABELS[report_type]}):\n\n{preview}")
-        if len(full_text) > 3500:
-            text_parts.append("\n… (полный текст по кнопке «Просмотреть»)")
-        has_report = True
-    else:
-        text_parts.append(f"📄 Отчёт за {date_str} ещё не создан.\n")
-        has_report = False
-
-    # Добавляем информацию о предыдущем дне
-    if prev_opening or prev_closing:
-        text_parts.append(f"\n\n📅 Предыдущий день ({prev_date}):")
-        if prev_opening:
-            preview_opening = format_report_preview(prev_opening["full_text"], 300)
-            text_parts.append(f"\n📋 Открытие:\n{preview_opening}")
-        if prev_closing:
-            preview_closing = format_report_preview(prev_closing["full_text"], 300)
-            text_parts.append(f"\n🌙 Закрытие:\n{preview_closing}")
-    else:
-        text_parts.append(f"\n\n📅 За {prev_date} отчётов нет.")
-
-    full_text_display = "".join(text_parts)
-
-    kb = report_action_keyboard(date_str, report_type, has_report, prev_reports)
-
-    await render(update, context, full_text_display, kb, message_id)
-    return set_state(context, REPORT_VIEW_DETAIL)
+    return _state(context, REPORT_VIEW_DETAIL)
 
 
 # =========================================================
-# CREATE / EDIT REPORT
+# CREATE / EDIT
 # =========================================================
 
-async def create_report_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await answer(query)
-    logger.info("✏️ Начало создания отчёта")
-
+async def start_report_creation(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+    edit: bool = False,
+) -> int:
     date_str = context.user_data.get("report_date")
-    report_type = context.user_data.get("report_type", "opening")
+    report_type = _get_report_type(context)
+
     if not date_str:
-        return await show_report_calendar(update, context, query.message.message_id)
+        return await show_reports_menu(update, context, message_id)
 
-    # Получаем примеры из предыдущего дня
-    prev_reports = get_previous_day_reports(date_str)
-    prev_date = prev_reports.get("date")
-    prev_opening = prev_reports.get("opening")
-    prev_closing = prev_reports.get("closing")
+    _clear_draft(context)
 
-    prompt_parts = [f"📝 Создание отчёта за {date_str} ({REPORT_TYPE_LABELS[report_type]}).\n\nОтправьте текст отчёта."]
-
-    if prev_opening or prev_closing:
-        prompt_parts.append(f"\n\n📅 Примеры из {prev_date}:")
-        if prev_opening:
-            prompt_parts.append(f"\n📋 Открытие:\n{prev_opening['full_text']}")
-        if prev_closing:
-            prompt_parts.append(f"\n🌙 Закрытие:\n{prev_closing['full_text']}")
-    else:
-        prompt_parts.append(f"\n\n📅 За {prev_date} отчётов нет.")
-
-    prompt = "".join(prompt_parts)
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL)]
-    ])
-    await render(update, context, prompt, kb, query.message.message_id)
     context.user_data["awaiting_report_text"] = True
-    logger.info("⏳ Ожидание текста отчёта")
-    return set_state(context, REPORT_AWAIT_TEXT)
+
+    title = "✏️ Изменение отчёта" if edit else "✏️ Новый отчёт"
+
+    text = (
+        f"{title}\n\n"
+        f"{REPORT_TYPE_LABELS[report_type]} · {format_date_ru(date_str)}\n\n"
+        "Отправьте текст отчёта одним сообщением.\n\n"
+        "Если нужно, нажмите «🧾 Шаблон»."
+    )
+
+    if edit:
+        text += "\n\n⚠️ Текущий отчёт будет заменён новым."
+
+    await render(update, context, text, report_create_keyboard(), message_id)
+
+    logger.info(
+        "📝 Пользователь начал %s отчёта: date=%s type=%s",
+        "изменение" if edit else "создание",
+        date_str,
+        report_type,
+    )
+
+    return _state(context, REPORT_AWAIT_TEXT)
 
 
-async def cancel_report_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def send_report_template(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await answer(query)
-    logger.info("❌ Отмена создания отчёта")
-    context.user_data.pop("awaiting_report_text", None)
-    date_str = context.user_data.get("report_date")
-    if date_str:
-        return await show_report_detail(update, context, query.message.message_id)
-    return await show_report_calendar(update, context, query.message.message_id)
+
+    await _answer(query)
+
+    report_type = _get_report_type(context)
+    template = REPORT_TEMPLATES.get(report_type, "")
+
+    chat_id = update.effective_chat.id
+
+    if chat_id and template:
+        header = f"🧾 Шаблон: {REPORT_TYPE_LABELS.get(report_type, report_type)}\n\n"
+
+        await send_long_message(context, chat_id, header + template)
+
+        logger.info("🧾 Отправлен шаблон отчёта: type=%s", report_type)
+
+    return _state(context, REPORT_AWAIT_TEXT)
 
 
 async def receive_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    logger.info("📩 Получен текст отчёта")
-    if not context.user_data.get("awaiting_report_text"):
-        logger.warning("⚠️ Получен текст отчёта, но не в режиме ожидания")
-        return current_state(context)
-
-    text = update.message.text
-    if not text:
-        await update.message.reply_text("Пожалуйста, отправьте текст отчёта.")
-        return REPORT_AWAIT_TEXT
-
-    date_str = context.user_data.get("report_date")
-    report_type = context.user_data.get("report_type", "opening")
     user = update.effective_user
+
     if not user:
-        await update.message.reply_text("Ошибка авторизации.")
         return MAIN_MENU
 
-    logger.info(f"💾 Сохранение отчёта: date={date_str}, type={report_type}, author={user.id}, длина текста={len(text)}")
+    awaiting = bool(context.user_data.get("awaiting_report_text"))
+    draft_exists = bool(context.user_data.get("report_draft"))
 
-    save_report(date_str, report_type, user.id, text)
+    if not awaiting and not draft_exists:
+        logger.warning("⚠️ Получен текст отчёта, но пользователь не в режиме редактирования")
+        return _current_state(context)
 
-    context.user_data.pop("awaiting_report_text", None)
-    await update.message.reply_text("✅ Отчёт сохранён!")
+    text = (update.message.text or "").strip() if update.message else ""
 
-    logger.info("✅ Отчёт сохранён успешно")
-    return await show_report_detail(update, context, message_id=None, report=None)
+    if not text:
+        await update.message.reply_text("⚠️ Отчёт не может быть пустым.")
+        return _state(context, REPORT_AWAIT_TEXT)
+
+    if len(text) > 4096:
+        await update.message.reply_text("⚠️ Текст слишком длинный. Разбейте его на части.")
+        return _state(context, REPORT_AWAIT_TEXT)
+
+    context.user_data["report_draft"] = text
+    context.user_data["awaiting_report_text"] = False
+
+    logger.info(
+        "📩 Получен текст отчёта от пользователя %s, длина=%s",
+        user.id,
+        len(text),
+    )
+
+    return await show_confirm_save(update, context)
+
+
+async def show_confirm_save(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id=None,
+) -> int:
+    draft = context.user_data.get("report_draft")
+
+    if not draft:
+        return await start_report_creation(update, context, message_id)
+
+    date_str = context.user_data.get("report_date")
+    report_type = _get_report_type(context)
+
+    preview = format_report_preview(draft, REPORT_PREVIEW_LIMIT)
+
+    text = (
+        "✅ Проверьте отчёт\n\n"
+        f"{REPORT_TYPE_LABELS[report_type]} · {format_date_ru(date_str)}\n\n"
+        f"{preview}\n\n"
+        "Если всё верно, сохраните."
+    )
+
+    await render(update, context, text, report_confirm_keyboard(), message_id)
+
+    logger.info("👀 Показан предпросмотр отчёта перед сохранением")
+
+    return _state(context, REPORT_CONFIRM_SAVE)
+
+
+async def save_report_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+
+    if not user:
+        return MAIN_MENU
+
+    draft = context.user_data.get("report_draft")
+    date_str = context.user_data.get("report_date")
+    report_type = _get_report_type(context)
+
+    if not draft or not date_str:
+        return await show_reports_menu(update, context, notice="⚠️ Данные утеряны. Начните заново.")
+
+    save_report(date_str, report_type, user.id, draft)
+
+    _clear_draft(context)
+
+    logger.info(
+        "✅ Пользователь %s сохранил отчёт: date=%s type=%s",
+        user.id,
+        date_str,
+        report_type,
+    )
+
+    return await show_day_detail(update, context, notice="✅ Отчёт сохранён.")
+
+
+async def reenter_report_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.pop("report_draft", None)
+    context.user_data["awaiting_report_text"] = True
+
+    date_str = context.user_data.get("report_date")
+    report_type = _get_report_type(context)
+
+    text = (
+        "✏️ Введите текст заново\n\n"
+        f"{REPORT_TYPE_LABELS[report_type]} · {format_date_ru(date_str)}\n\n"
+        "Отправьте текст отчёта одним сообщением."
+    )
+
+    await render(update, context, text, report_create_keyboard())
+
+    logger.info("🔁 Пользователь решил ввести текст отчёта заново")
+
+    return _state(context, REPORT_AWAIT_TEXT)
+
+
+async def cancel_report_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    _clear_draft(context)
+
+    logger.info("❌ Пользователь отменил создание/изменение отчёта")
+
+    return await show_day_detail(update, context, notice="Отменено.")
 
 
 # =========================================================
-# VIEW REPORT (показать полностью)
+# VIEW ACTIONS
 # =========================================================
 
 async def view_report_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await answer(query)
-    logger.info("👁️ Просмотр полного отчёта")
-
     date_str = context.user_data.get("report_date")
-    report_type = context.user_data.get("report_type", "opening")
+    report_type = _get_report_type(context)
+
     if not date_str:
-        return await show_report_calendar(update, context, query.message.message_id)
+        return await show_reports_menu(update, context)
 
     report = get_report(date_str, report_type)
+
     if not report:
-        return await show_report_detail(update, context, query.message.message_id)
+        return await show_day_detail(update, context, notice="⚠️ Отчёт не найден.")
 
-    full_text = report["full_text"]
     chat_id = update.effective_chat.id
-    await context.bot.send_message(chat_id=chat_id, text=full_text)
-    logger.info(f"📨 Отправлен полный отчёт за {date_str}")
 
-    return await show_report_detail(update, context, query.message.message_id)
+    if not chat_id:
+        return _state(context, REPORT_VIEW_DETAIL)
 
-
-# =========================================================
-# VIEW PREVIOUS DAY REPORTS
-# =========================================================
-
-async def view_previous_report(update: Update, context: ContextTypes.DEFAULT_TYPE, report_type: str) -> int:
-    query = update.callback_query
-    await answer(query)
-    logger.info(f"👁️ Просмотр отчёта за предыдущий день: {report_type}")
-
-    date_str = context.user_data.get("report_date")
-    if not date_str:
-        return await show_report_calendar(update, context, query.message.message_id)
-
-    prev_date = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-    report = get_report(prev_date, report_type)
-    if not report:
-        await answer(query, "Отчёт за предыдущий день не найден", show_alert=True)
-        return await show_report_detail(update, context, query.message.message_id)
-
-    # Отправляем полный текст
-    chat_id = update.effective_chat.id
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"📄 Отчёт за {prev_date} ({REPORT_TYPE_LABELS[report_type]}):\n\n{report['full_text']}"
+    header = (
+        f"📄 {REPORT_TYPE_LABELS.get(report_type, report_type)}\n"
+        f"🗓 {format_date_ru(date_str)}\n\n"
     )
-    logger.info(f"📨 Отправлен отчёт за предыдущий день {prev_date} ({report_type})")
 
-    return await show_report_detail(update, context, query.message.message_id)
+    await send_long_message(context, chat_id, header + (report.get("full_text") or ""))
+
+    logger.info("👁 Пользователь запросил полный текст отчёта: date=%s type=%s", date_str, report_type)
+
+    return await show_day_detail(update, context, notice="Отчёт отправлен выше.")
+
+
+async def view_previous_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    date_str = context.user_data.get("report_date")
+    report_type = _get_report_type(context)
+
+    if not date_str:
+        return await show_reports_menu(update, context)
+
+    prev_report = get_previous_report(date_str, report_type)
+
+    if not prev_report:
+        return await show_day_detail(update, context, notice="⚠️ Предыдущий отчёт не найден.")
+
+    chat_id = update.effective_chat.id
+
+    if not chat_id:
+        return _state(context, REPORT_VIEW_DETAIL)
+
+    header = (
+        f"📄 Предыдущий отчёт\n"
+        f"{REPORT_TYPE_LABELS.get(report_type, report_type)}\n"
+        f"🗓 {format_date_ru(prev_report.get('date'))}\n\n"
+    )
+
+    await send_long_message(context, chat_id, header + (prev_report.get("full_text") or ""))
+
+    logger.info("📄 Пользователь запросил предыдущий отчёт: type=%s", report_type)
+
+    return await show_day_detail(update, context, notice="Предыдущий отчёт отправлен выше.")
 
 
 # =========================================================
@@ -408,39 +466,134 @@ async def view_previous_report(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    data = query.data
-    logger.info(f"🔄 Получен callback: {data}")
 
+    if not query:
+        return _current_state(context)
+
+    data = query.data or ""
+    state = _current_state(context)
+
+    if data == CB_NOOP:
+        await _answer(query)
+        return state
+
+    # Защита во время ввода текста
+    if state == REPORT_AWAIT_TEXT:
+        if data == CB_REPORT_TEMPLATE:
+            await _answer(query)
+            return await send_report_template(update, context)
+
+        if data == CB_REPORT_CANCEL:
+            await _answer(query)
+            return await cancel_report_creation(update, context)
+
+        if data == CB_REPORT_BACK_MENU:
+            await _answer(query)
+            _clear_draft(context)
+            return await _go_main_menu(update, context, query.message.message_id if query.message else None)
+
+        await _answer(query, "Сначала отправьте текст отчёта или нажмите «Отмена».", True)
+        return state
+
+    # Защита во время подтверждения
+    if state == REPORT_CONFIRM_SAVE:
+        if data == CB_REPORT_SAVE:
+            await _answer(query)
+            return await save_report_action(update, context)
+
+        if data == CB_REPORT_REENTER:
+            await _answer(query)
+            return await reenter_report_text(update, context)
+
+        if data == CB_REPORT_CANCEL:
+            await _answer(query)
+            return await cancel_report_creation(update, context)
+
+        if data == CB_REPORT_BACK_MENU:
+            await _answer(query)
+            _clear_draft(context)
+            return await _go_main_menu(update, context, query.message.message_id if query.message else None)
+
+        await _answer(query, "Сначала сохраните, измените или отмените отчёт.", True)
+        return state
+
+    await _answer(query)
+
+    # Главное меню
     if data == CB_REPORT_BACK_MENU:
-        return await report_type_selection(update, context)
+        _clear_draft(context)
+        return await _go_main_menu(update, context, query.message.message_id if query.message else None)
 
-    if data in (CB_REPORT_OPENING, CB_REPORT_CLOSING):
-        return await report_type_selection(update, context)
+    # Назад к календарю
+    if data == CB_REPORT_TO_CALENDAR:
+        return await show_reports_menu(update, context)
 
+    # Переключение типа отчёта
+    if data.startswith(CB_REPORT_TYPE_PREFIX):
+        report_type = data.split(":", 1)[1]
+
+        if report_type in REPORT_TYPE_LABELS:
+            context.user_data["report_type"] = report_type
+
+            logger.info("🔀 Переключён тип отчёта: %s", report_type)
+
+        return await show_reports_menu(update, context)
+
+    # Навигация по месяцам
     if data in (CB_REPORT_PREV_MONTH, CB_REPORT_NEXT_MONTH):
-        return await calendar_navigation(update, context)
+        now = now_msk()
 
+        year = context.user_data.get("calendar_year", now.year)
+        month = context.user_data.get("calendar_month", now.month)
+
+        if data == CB_REPORT_PREV_MONTH:
+            if month == 1:
+                month = 12
+                year -= 1
+            else:
+                month -= 1
+        else:
+            if month == 12:
+                month = 1
+                year += 1
+            else:
+                month += 1
+
+        context.user_data["calendar_year"] = year
+        context.user_data["calendar_month"] = month
+
+        logger.info("📅 Открыт месяц: %s %s", MONTHS[month - 1], year)
+
+        return await show_reports_menu(update, context)
+
+    # Выбор даты
     if data.startswith(CB_REPORT_DATE_PREFIX):
-        return await date_selection(update, context)
+        raw_date = data.split(":", 1)[1]
 
+        try:
+            date_str = datetime.strptime(raw_date, "%Y%m%d").strftime("%Y-%m-%d")
+        except Exception:
+            return await show_reports_menu(update, context, notice="⚠️ Не удалось прочитать дату.")
+
+        context.user_data["report_date"] = date_str
+
+        logger.info("📆 Выбрана дата отчёта: %s", date_str)
+
+        return await show_day_detail(update, context)
+
+    # Создание / редактирование
     if data == CB_REPORT_CREATE:
-        return await create_report_action(update, context)
+        return await start_report_creation(update, context, edit=False)
 
+    if data == CB_REPORT_EDIT:
+        return await start_report_creation(update, context, edit=True)
+
+    # Просмотр
     if data == CB_REPORT_VIEW:
         return await view_report_full(update, context)
 
-    if data == CB_REPORT_CANCEL:
-        return await cancel_report_creation(update, context)
+    if data == CB_REPORT_PREV_REPORT:
+        return await view_previous_report(update, context)
 
-    if data == CB_REPORT_SAVE:
-        logger.warning("⚠️ Кнопка 'Сохранить' нажата, но сохранение происходит при отправке текста")
-        return current_state(context)
-
-    if data == CB_REPORT_PREV_OPENING:
-        return await view_previous_report(update, context, "opening")
-
-    if data == CB_REPORT_PREV_CLOSING:
-        return await view_previous_report(update, context, "closing")
-
-    logger.warning(f"⚠️ Неизвестный callback: {data}")
-    return await show_reports_menu(update, context, query.message.message_id)
+    # Fallback
+    return await show_reports_menu(update, context)
