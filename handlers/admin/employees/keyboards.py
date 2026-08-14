@@ -1,41 +1,142 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constants import (
-    CB_EMPLOYEES_BACK,
-    CB_EMPLOYEES_REPORT_ALL,
-    CB_EMPLOYEE_DETAIL_PREFIX,
-    CB_EMPLOYEE_EDIT_STATUS_PREFIX,
-    CB_EMPLOYEE_EDIT_COMMENT_PREFIX,
-    CB_EMPLOYEE_EDIT_RATE_PREFIX,
-    CB_EMPLOYEE_REPORT_PREFIX,
-    CB_EMPLOYEE_CANCEL,
+    CB_EMP_HOME,
+    CB_EMP_ANALYTICS,
+    CB_EMP_XLSX_ALL,
+    CB_EMP_DETAIL_PREFIX,
+    CB_EMP_PROFILE_PREFIX,
+    CB_EMP_RATE_PREFIX,
+    CB_EMP_STATUS_PREFIX,
+    CB_EMP_COMMENT_PREFIX,
+    CB_EMP_SHIFTS_PREFIX,
+    CB_EMP_TAXI_PREFIX,
+    CB_EMP_REPORTS_PREFIX,
+    CB_EMP_CHECKLISTS_PREFIX,
+    CB_EMP_XLSX_ONE_PREFIX,
+    CB_EMP_TAXI_PHOTOS_PREFIX,
+    CB_EMP_SET_STATUS_PREFIX,
+    CB_EMP_BACK,
+    CB_EMP_CANCEL,
     STATUSES,
 )
 
-def employees_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
-    buttons = []
-    for user in users:
-        name = user.get("full_name") or user.get("first_name") or f"ID {user['tg_id']}"
-        buttons.append([InlineKeyboardButton(name, callback_data=f"{CB_EMPLOYEE_DETAIL_PREFIX}{user['tg_id']}")])
-    buttons.append([InlineKeyboardButton("📊 Отчёт по сотрудникам", callback_data=CB_EMPLOYEES_REPORT_ALL)])
-    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=CB_EMPLOYEES_BACK)])
-    return InlineKeyboardMarkup(buttons)
 
-def employee_detail_keyboard(user_id: int, current_status: str, current_rate: float) -> InlineKeyboardMarkup:
-    buttons = [
-        [InlineKeyboardButton(f"Статус: {current_status}", callback_data=f"{CB_EMPLOYEE_EDIT_STATUS_PREFIX}{user_id}")],
-        [InlineKeyboardButton(f"Ставка: {current_rate:.2f} ₽/час", callback_data=f"{CB_EMPLOYEE_EDIT_RATE_PREFIX}{user_id}")],
-        [InlineKeyboardButton("✏️ Комментарий", callback_data=f"{CB_EMPLOYEE_EDIT_COMMENT_PREFIX}{user_id}")],
-        [InlineKeyboardButton("📊 Отчёт по сотруднику", callback_data=f"{CB_EMPLOYEE_REPORT_PREFIX}{user_id}")],
-        [InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_EMPLOYEES_BACK)],
-    ]
-    return InlineKeyboardMarkup(buttons)
+def employees_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+
+    for user in users:
+        name = (
+            user.get("full_name")
+            or user.get("first_name")
+            or f"ID {user['tg_id']}"
+        )
+
+        status_icon = "👤" if user.get("status") == "Сотрудник" else "🎓"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{status_icon} {name}",
+                    callback_data=f"{CB_EMP_DETAIL_PREFIX}{user['tg_id']}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("📊 Аналитика команды", callback_data=CB_EMP_ANALYTICS)
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton("🏠 Меню", callback_data=CB_EMP_HOME)
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def employee_detail_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("👤 Профиль", callback_data=f"{CB_EMP_PROFILE_PREFIX}{user_id}"),
+                InlineKeyboardButton("💰 Ставка", callback_data=f"{CB_EMP_RATE_PREFIX}{user_id}"),
+            ],
+            [
+                InlineKeyboardButton("🏷 Статус", callback_data=f"{CB_EMP_STATUS_PREFIX}{user_id}"),
+                InlineKeyboardButton("📝 Комментарий", callback_data=f"{CB_EMP_COMMENT_PREFIX}{user_id}"),
+            ],
+            [
+                InlineKeyboardButton("📆 Смены", callback_data=f"{CB_EMP_SHIFTS_PREFIX}{user_id}"),
+                InlineKeyboardButton("🚕 Такси", callback_data=f"{CB_EMP_TAXI_PREFIX}{user_id}"),
+            ],
+            [
+                InlineKeyboardButton("📋 Отчёты", callback_data=f"{CB_EMP_REPORTS_PREFIX}{user_id}"),
+                InlineKeyboardButton("✅ Чек-листы", callback_data=f"{CB_EMP_CHECKLISTS_PREFIX}{user_id}"),
+            ],
+            [
+                InlineKeyboardButton("📊 XLSX-отчёт", callback_data=f"{CB_EMP_XLSX_ONE_PREFIX}{user_id}")
+            ],
+            [
+                InlineKeyboardButton("◀️ Назад", callback_data=CB_EMP_BACK)
+            ],
+        ]
+    )
+
 
 def edit_status_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    buttons = []
+    rows = []
+
     for status in STATUSES:
-        buttons.append([InlineKeyboardButton(status, callback_data=f"emp_set_status:{user_id}:{status}")])
-    buttons.append([InlineKeyboardButton("✖️ Отмена", callback_data=CB_EMPLOYEE_CANCEL)])
-    return InlineKeyboardMarkup(buttons)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    status,
+                    callback_data=f"{CB_EMP_SET_STATUS_PREFIX}{user_id}:{status}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("✖️ Отмена", callback_data=CB_EMP_CANCEL)
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def taxi_photos_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("📸 Отправить фото такси", callback_data=f"{CB_EMP_TAXI_PHOTOS_PREFIX}{user_id}")
+            ],
+            [
+                InlineKeyboardButton("◀️ Назад", callback_data=f"{CB_EMP_DETAIL_PREFIX}{user_id}")
+            ],
+        ]
+    )
+
+
+def analytics_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("📥 Скачать XLSX", callback_data=CB_EMP_XLSX_ALL)
+            ],
+            [
+                InlineKeyboardButton("◀️ Назад", callback_data=CB_EMP_HOME)
+            ],
+        ]
+    )
+
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("✖️ Отмена", callback_data=CB_EMPLOYEE_CANCEL)]])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✖️ Отмена", callback_data=CB_EMP_CANCEL)
+            ]
+        ]
+    )
