@@ -1,5 +1,4 @@
 import logging
-import json
 from datetime import datetime, timedelta
 
 from telegram import Update
@@ -38,44 +37,41 @@ async def show_taxi_menu(
     if not user:
         return MAIN_MENU_STATE
 
-    # Проверим, есть ли активная смена (можно опционально)
-    # Но так как кнопка появляется только при активной смене, можно не проверять.
-
-    text = "🚕 **Такси**\n\nВы можете добавить расход на такси или посмотреть историю."
+    text = "🚕 <b>Такси</b>\n\nВы можете добавить расход на такси или посмотреть историю."
     if notice:
         text = f"{notice}\n\n{text}"
 
     kb = taxi_menu_keyboard()
-    await render(update, context, text, kb, message_id)
+    await render(update, context, text, kb, message_id, parse_mode='HTML')
     return set_state(context, TAXI_MENU)
 
 
 # ==================== ДОБАВЛЕНИЕ РАСХОДА ====================
 async def taxi_add_amount(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id: int | None = None) -> int:
     text = (
-        "➕ **Добавление расхода на такси**\n\n"
+        "➕ <b>Добавление расхода на такси</b>\n\n"
         "Введите сумму в рублях (например, 350.50).\n\n"
         "После этого прикрепите фото чека или скриншот."
     )
     kb = taxi_cancel_keyboard()
-    await render(update, context, text, kb, message_id)
+    await render(update, context, text, kb, message_id, parse_mode='HTML')
     return set_state(context, TAXI_ADD_AMOUNT)
 
 
 async def taxi_add_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id: int | None = None) -> int:
     amount = context.user_data.get("taxi_amount")
     if not amount:
-        await render(update, context, "⚠️ Сумма не указана. Начните заново.", None, message_id)
+        await render(update, context, "⚠️ Сумма не указана. Начните заново.", None, message_id, parse_mode='HTML')
         return await show_taxi_menu(update, context, message_id)
 
     text = (
-        f"➕ **Добавление расхода на такси**\n\n"
+        f"➕ <b>Добавление расхода на такси</b>\n\n"
         f"Сумма: {format_amount(amount)}\n\n"
         "Теперь отправьте фото чека или скриншот.\n"
         "Можно отправить несколько фото (альбомом)."
     )
     kb = taxi_cancel_keyboard()
-    await render(update, context, text, kb, message_id)
+    await render(update, context, text, kb, message_id, parse_mode='HTML')
     return set_state(context, TAXI_ADD_PHOTO)
 
 
@@ -89,7 +85,6 @@ async def taxi_history(
     if not user:
         return MAIN_MENU_STATE
 
-    # За последние 30 дней
     date_to = today_msk_str()
     date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
@@ -97,13 +92,13 @@ async def taxi_history(
     summary = get_taxi_summary(user.id, date_from, date_to)
 
     lines = [
-        "📋 **История такси (за 30 дней)**",
+        "📋 <b>История такси (за 30 дней)</b>",
         f"Всего записей: {summary['count']}, сумма: {format_amount(summary['total'])}",
         ""
     ]
 
     if expenses:
-        for exp in expenses[:10]:  # показываем последние 10
+        for exp in expenses[:10]:
             date = exp.get("date", "—")
             amount = exp.get("amount", 0)
             lines.append(f"🗓 {date} — {format_amount(amount)}")
@@ -112,7 +107,7 @@ async def taxi_history(
 
     text = "\n".join(lines)
     kb = taxi_history_keyboard()
-    await render(update, context, text, kb, message_id)
+    await render(update, context, text, kb, message_id, parse_mode='HTML')
     return set_state(context, TAXI_HISTORY)
 
 
@@ -135,7 +130,6 @@ async def taxi_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return await taxi_history(update, context, message_id)
 
     if data == CB_TAXI_BACK:
-        # Возвращаемся в главное меню
         from ..menu.handlers import show_main_menu
         return await show_main_menu(update, context, message_id)
 
@@ -158,24 +152,19 @@ async def taxi_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("⚠️ Введите сумму цифрами.")
         return get_current_state(context)
 
-    # Парсим сумму
     try:
-        # Заменяем запятую на точку
         amount_str = text.replace(",", ".")
         amount = float(amount_str)
         if amount <= 0:
-            raise ValueError("Сумма должна быть положительной")
+            raise ValueError
     except ValueError:
         await update.message.reply_text("⚠️ Некорректная сумма. Введите число, например 350.50")
         return get_current_state(context)
 
-    # Сохраняем сумму в контекст и переходим к запросу фото
     context.user_data["taxi_amount"] = amount
-    # Удаляем предыдущее сообщение с запросом (если есть)
     chat_id = update.effective_chat.id
     await cleanup_message(context, chat_id, context.user_data.get("taxi_prompt_msg_id"))
 
-    # Отправляем новое сообщение с запросом фото
     return await taxi_add_photo(update, context)
 
 
@@ -194,20 +183,9 @@ async def taxi_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("⚠️ Сумма не найдена. Начните заново.")
         return await show_taxi_menu(update, context)
 
-    # Собираем все медиа из сообщения (если альбом)
     media_items = []
     if update.message.photo:
-        # Одиночное фото
         media_items.append({"type": "photo", "file_id": update.message.photo[-1].file_id})
-    elif update.message.media_group_id:
-        # Альбом – сложнее, но мы будем обрабатывать как одиночное, т.к. альбом приходит частями.
-        # Пока обрабатываем только первый файл, но можно доработать через буфер.
-        # Для простоты: принимаем только одно фото (или первую часть альбома)
-        if update.message.photo:
-            media_items.append({"type": "photo", "file_id": update.message.photo[-1].file_id})
-        else:
-            await update.message.reply_text("⚠️ Отправьте фото или несколько фото альбомом.")
-            return get_current_state(context)
     else:
         await update.message.reply_text("⚠️ Отправьте фото.")
         return get_current_state(context)
@@ -216,7 +194,6 @@ async def taxi_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("⚠️ Не удалось распознать фото. Попробуйте ещё раз.")
         return get_current_state(context)
 
-    # Отправляем фото в канал
     caption = f"🚕 Такси: {format_amount(amount)}"
     try:
         channel_message_ids = await send_media_group_to_channel(context, media_items, caption)
@@ -225,7 +202,6 @@ async def taxi_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("⚠️ Не удалось сохранить фото. Попробуйте позже.")
         return get_current_state(context)
 
-    # Сохраняем запись в БД
     date = today_msk_str()
     photo_file_ids = [item.get("file_id") for item in media_items]
     add_taxi_expense(
@@ -236,11 +212,9 @@ async def taxi_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         photo_channel_message_ids=channel_message_ids
     )
 
-    # Очищаем контекст
     context.user_data.pop("taxi_amount", None)
     await cleanup_message(context, chat_id, context.user_data.get("taxi_prompt_msg_id"))
 
     await update.message.reply_text("✅ Расход на такси сохранён!")
 
-    # Возвращаемся в меню такси
     return await show_taxi_menu(update, context, notice="✅ Расход добавлен")
