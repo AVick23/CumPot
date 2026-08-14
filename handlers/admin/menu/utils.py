@@ -41,3 +41,20 @@ async def render(update, context, text, reply_markup=None, message_id=None, pars
         )
         return msg.message_id
     return None
+
+
+async def answer(query, text: str | None = None, show_alert: bool = False):
+    """Отвечает на callback query."""
+    try:
+        await query.answer(text or "", show_alert=show_alert)
+    except Exception:
+        pass
+
+
+def set_state(context, state: int) -> int:
+    context.user_data["state"] = state
+    return state
+
+
+def get_current_state(context) -> int:
+    return context.user_data.get("state", 100)  # ADMIN_MAIN
