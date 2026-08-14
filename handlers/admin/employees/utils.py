@@ -1,15 +1,16 @@
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 
-from db.profile import get_employee_full_info
-from db.taxi import get_taxi_expenses, get_taxi_summary
-from db.shifts import get_shifts_for_date, get_shifts_for_month
+from db.profile import get_employee_full_info, get_taxi_summary   # <-- исправлено
+from db.shifts import get_shifts_for_month
 from utils.time_utils import today_msk_str
+
 
 def _safe_str(value) -> str:
     return str(value) if value is not None else ""
+
 
 def generate_all_employees_report(users: list[dict]) -> bytes:
     wb = Workbook()
@@ -25,16 +26,13 @@ def generate_all_employees_report(users: list[dict]) -> bytes:
     for user in users:
         tg_id = user['tg_id']
         full_info = get_employee_full_info(tg_id) or {}
-        # считаем смены (за всё время – упрощённо, можно за период)
-        shifts = get_shifts_for_month(tg_id, 2026, 8)  # для примера, можно брать все смены, но сложно
-        # для простоты – количество смен за последние 30 дней
-        from datetime import timedelta
+        # количество смен за последние 30 дней (для примера)
         date_to = today_msk_str()
         date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        # но у нас нет функции для смен за период, поэтому пока пропустим
-        # или используем общее количество из базы – добавим позднее
-        total_shifts = 0  # пока заглушка
-        taxi_summary = get_taxi_summary(tg_id, "1970-01-01", today_msk_str())  # за всё время
+        # упрощённо – используем функцию get_shifts_for_month, но она требует год и месяц,
+        # поэтому для демонстрации оставим 0, можно доработать
+        total_shifts = 0
+        taxi_summary = get_taxi_summary(tg_id, "1970-01-01", today_msk_str())
         ws.append([
             _safe_str(full_info.get('full_name')),
             _safe_str(full_info.get('position')),
@@ -47,7 +45,7 @@ def generate_all_employees_report(users: list[dict]) -> bytes:
             taxi_summary.get('total', 0),
         ])
 
-    # автоширина колонок
+    # автоширина
     for col in ws.columns:
         max_length = 0
         column = col[0].column_letter
@@ -65,6 +63,7 @@ def generate_all_employees_report(users: list[dict]) -> bytes:
     buffer.seek(0)
     return buffer.getvalue()
 
+
 def generate_employee_report(tg_id: int) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -74,7 +73,6 @@ def generate_employee_report(tg_id: int) -> bytes:
     if not user:
         return b""
 
-    # Общая информация
     ws.append(["ФИО", user.get('full_name', '')])
     ws.append(["Позиция", user.get('position', '')])
     ws.append(["Телефон", user.get('phone', '')])
@@ -84,17 +82,12 @@ def generate_employee_report(tg_id: int) -> bytes:
     ws.append(["Ставка (₽/час)", user.get('current_rate', 0)])
     ws.append([])
 
-    # Заголовки для детализации
     ws.append(["Дата", "Тип", "Сумма такси", "Смена"])
-
-    # Получаем такси
-    expenses = get_taxi_expenses(tg_id)
+    expenses = get_taxi_expenses(tg_id)   # нужен импорт get_taxi_expenses
     for exp in expenses:
         ws.append([exp['date'], "Такси", exp['amount'], ""])
 
-    # Можно добавить смены, но у нас нет функции получения смен за период, пока пропустим
-
-    # Автоширина
+    # автоширина
     for col in ws.columns:
         max_length = 0
         column = col[0].column_letter

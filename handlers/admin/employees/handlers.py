@@ -8,8 +8,8 @@ from db.profile import (
     update_employee_status,
     update_employee_comment,
     set_salary_rate,
+    get_taxi_summary,        # <-- добавлено, если используется
 )
-from db.taxi import get_taxi_summary
 from utils.time_utils import today_msk_str
 
 from .constants import (
@@ -39,7 +39,8 @@ from .utils import generate_all_employees_report, generate_employee_report
 from ..menu.utils import render, answer, set_state, get_current_state
 
 logger = logging.getLogger(__name__)
-MAIN_MENU_STATE = 100  # состояние админ-меню
+MAIN_MENU_STATE = 100
+
 
 async def show_employees_list(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id: int | None = None, notice: str | None = None) -> int:
     users = get_all_users()
@@ -55,6 +56,7 @@ async def show_employees_list(update: Update, context: ContextTypes.DEFAULT_TYPE
     kb = employees_list_keyboard(users)
     await render(update, context, text, kb, message_id)
     return set_state(context, EMPLOYEES_LIST)
+
 
 async def show_employee_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, tg_id: int, message_id: int | None = None, notice: str | None = None) -> int:
     user = get_employee_full_info(tg_id)
@@ -79,13 +81,13 @@ async def show_employee_detail(update: Update, context: ContextTypes.DEFAULT_TYP
     await render(update, context, text, kb, message_id, parse_mode='HTML')
     return set_state(context, EMPLOYEE_DETAIL)
 
+
 async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     data = query.data or ""
     message_id = query.message.message_id if query.message else None
     await answer(query)
 
-    # Обработка команд
     if data == CB_EMPLOYEES_BACK:
         from ..menu.handlers import show_main
         return await show_main(update, context, message_id)
@@ -166,6 +168,7 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     return await show_employees_list(update, context, message_id)
 
+
 async def employee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     if not user:
@@ -198,7 +201,6 @@ async def employee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         except ValueError:
             await update.message.reply_text("⚠️ Введите положительное число.")
             return state
-        # Устанавливаем новую ставку с сегодняшней даты
         set_salary_rate(tg_id, rate, today_msk_str())
         context.user_data.pop("edit_employee_id", None)
         await update.message.reply_text(f"✅ Ставка обновлена до {rate:.2f} ₽/час")
