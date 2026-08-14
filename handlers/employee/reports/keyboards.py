@@ -24,6 +24,7 @@ from .constants import (
     CB_REPORT_SECTION_DONE,
     CB_REPORT_SECTION_SKIP,
     CB_REPORT_SECTION_EXIT,
+    CB_NOOP,
     MONTHS,
     WEEKDAYS_SHORT,
 )
