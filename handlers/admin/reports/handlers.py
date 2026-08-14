@@ -684,7 +684,7 @@ async def show_taxi_photo_overview(
     context: ContextTypes.DEFAULT_TYPE,
     message_id: int | None = None,
     notice: str | None = None,
-    date_str: str | None = None,          # новый параметр
+    date_str: str | None = None,
 ) -> int:
     # если дата не передана, берём из контекста
     if date_str is None:
@@ -696,6 +696,9 @@ async def show_taxi_photo_overview(
             message_id,
             notice="Сначала выберите день.",
         )
+
+    # ✅ СОХРАНЯЕМ ДАТУ В КОНТЕКСТ – ЭТО КЛЮЧЕВОЙ МОМЕНТ
+    context.user_data["report_date"] = date_str
 
     overview = get_taxi_photo_overview(date_str)
     if overview.get("total_media", 0) <= 0:
