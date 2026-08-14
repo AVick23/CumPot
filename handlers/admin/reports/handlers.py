@@ -193,128 +193,156 @@ async def show_day_report(
     context.user_data["report_date"] = date_str
     _set_calendar_to_date(context, date_str)
 
-    # Генерируем клавиатуру один раз, она одинаковая для всех сообщений этого экрана
-    kb = day_report_keyboard(
-        mode=mode,
-        show_photos=show_photos,
-        has_bar_media=False, 
-        has_kitchen_media=False,
-        current_tab=current_tab,
-        taxi_has_media=False,
-    )
+    taxi_has_media = False
+    has_bar_media = False
+    has_kitchen_media = False
+    parse_mode = None  # По умолчанию обычный текст
 
     # =========================================================
-    # ВКЛАДКА: ЧЕК-ЛИСТЫ (Одно сообщение)
+    # ВКЛАДКА: ЧЕК-ЛИСТЫ
     # =========================================================
     if current_tab == CB_TAB_CHECKLIST:
         try:
-            text, has_bar_media, has_kitchen_media = get_report_text(date_str, mode, show_photos)
+            text, has_bar_media, has_kitchen_media = get_report_text(
+                date_str, mode, show_photos
+            )
         except Exception as e:
             logger.error("Ошибка построения отчёта чек-листов: %s", e)
             text = "❌ Не удалось загрузить отчёт по чек-листам."
-            has_bar_media = False
-            has_kitchen_media = False
-
-        if notice:
-            text = f"{notice}\n\n{text}"
-
-        await render(update, context, text, kb, message_id)
-        return _state(context, ADMIN_DAY_REPORT)
 
     # =========================================================
-    # ВКЛАДКА: СМЕНЫ (ДВА ОТДЕЛЬНЫХ СООБЩЕНИЯ)
+    # ВКЛАДКА: СМЕННЫЕ ОТЧЁТЫ (HTML + Разделители)
     # =========================================================
     elif current_tab == CB_TAB_SHIFT_REPORTS:
+        parse_mode = "HTML"
         reports = get_shift_reports_for_date(date_str)
-        
-        # Удаляем старое сообщение, чтобы не плодить историю при переключении вкладок
-        if message_id:
-            try:
-                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
-            except Exception:
-                pass 
 
-        # --- Сообщение 1: Открытие ---
-        opening_report = reports.get("opening")
-        opening_text = f"📄 <b>СМЕНА: ОТКРЫТИЕ</b>\n🗓 {format_date_ru(date_str)}\n\n"
-        if opening_report:
-            opening_text += format_shift_report_text(opening_report)
+        lines = [
+            "<b>📄 СМЕННЫЕ ОТЧЁТЫ</b>",
+            f"🗓 <i>{format_date_ru(date_str)}</i>",
+            "━━━━━━━━━━━━━━━━━━━━",
+        ]
+
+        # Блок ОТКРЫТИЕ
+        opening = reports.get("opening")
+        lines.append("\n<b>☀️ ОТКРЫТИЕ СМЕНЫ</b>")
+        if opening:
+            raw_text = format_shift_report_text(opening)
+            # Экранируем HTML-спецсимволы в пользовательском тексте
+            safe_text = (
+                raw_text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            lines.append(safe_text)
         else:
-            opening_text += "⚠️ Отчёт об открытии ещё не сохранён."
-            
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=opening_text,
-            reply_markup=kb,
-            parse_mode="HTML"
-        )
+            lines.append("<i>⚠️ Отчёт ещё не сохранён</i>")
 
-        # --- Сообщение 2: Закрытие ---
-        closing_report = reports.get("closing")
-        closing_text = f"📄 <b>СМЕНА: ЗАКРЫТИЕ</b>\n🗓 {format_date_ru(date_str)}\n\n"
-        if closing_report:
-            closing_text += format_shift_report_text(closing_report)
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+
+        # Блок ЗАКРЫТИЕ
+        closing = reports.get("closing")
+        lines.append("\n<b>🌙 ЗАКРЫТИЕ СМЕНЫ</b>")
+        if closing:
+            raw_text = format_shift_report_text(closing)
+            safe_text = (
+                raw_text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            lines.append(safe_text)
         else:
-            closing_text += "⚠️ Отчёт о закрытии ещё не сохранён."
+            lines.append("<i>⚠️ Отчёт ещё не сохранён</i>")
 
-        msg = await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=closing_text,
-            reply_markup=kb,
-            parse_mode="HTML"
-        )
-        
-        # Сохраняем ID последнего сообщения как текущий активный экран
-        return _state(context, ADMIN_DAY_REPORT)
+        text = "\n".join(lines)
 
     # =========================================================
-    # ВКЛАДКА: ТАКСИ (Одно сообщение)
+    # ВКЛАДКА: ТАКСИ
     # =========================================================
     else:
         taxi_data = get_taxi_for_date(date_str) or []
-        taxi_has_media = False
-        
-        lines = [f"🚕 <b>ТАКСИ</b>", f"🗓 {format_date_ru(date_str)}", ""]
-        
+        lines = [f"🚕 Такси · {format_date_ru(date_str)}", ""]
+
         if not taxi_data:
-            lines.append("ℹ️ За этот день нет записей по такси.")
+            lines.append("ℹ️ Нет записей.")
         else:
             total_all = 0.0
             for user_data in taxi_data:
                 name = user_data.get("full_name") or "Сотрудник"
                 total = float(user_data.get("total") or 0.0)
                 total_all += total
-                
-                lines.append(f"👤 <b>{name}</b>: {total:.2f} ₽")
-                
+
+                lines.append(f"👤 {name} — {total:.2f} ₽")
+
                 for exp in user_data.get("expenses", []):
                     exp_date = exp.get("date") or date_str
                     amount = float(exp.get("amount") or 0.0)
-                    lines.append(f"   • {format_date_ru(exp_date)} — {amount:.2f} ₽")
-                    
-                    # Проверяем наличие фото
+                    lines.append(f"   • {format_date_ru(exp_date)} · {amount:.2f} ₽")
+
                     raw_media = exp.get("photo_file_ids") or exp.get("photo_file_id")
                     if raw_media:
                         taxi_has_media = True
-                        
+
                 lines.append("")
-            
-            lines.append(f"💰 <b>Итого:</b> {total_all:.2f} ₽")
 
-        # Обновляем клавиатуру, если есть фото такси
-        if taxi_has_media:
-            kb = day_report_keyboard(
-                mode=mode, show_photos=show_photos,
-                has_bar_media=False, has_kitchen_media=False,
-                current_tab=current_tab, taxi_has_media=True,
-            )
+            lines.append(f"💰 Итого · {total_all:.2f} ₽")
 
-        text = "\n".join(lines)
-        if notice:
+        text = "\n".join(lines).strip()
+
+    # Добавляем уведомление (notice) если есть
+    if notice:
+        if parse_mode == "HTML":
+            # Для HTML режима notice тоже нужно обернуть или оставить как есть
+            # (предполагаем, что notice генерируется нами и безопасен)
+            text = f"<b>ℹ️ {notice}</b>\n\n{text}"
+        else:
             text = f"{notice}\n\n{text}"
 
-        await render(update, context, text, kb, message_id)
-        return _state(context, ADMIN_DAY_REPORT)
+    # Генерируем клавиатуру
+    kb = day_report_keyboard(
+        mode=mode,
+        show_photos=show_photos,
+        has_bar_media=has_bar_media,
+        has_kitchen_media=has_kitchen_media,
+        current_tab=current_tab,
+        taxi_has_media=taxi_has_media,
+    )
+
+    # Рендерим с учётом parse_mode
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    
+    if chat_id and message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=kb,
+                parse_mode=parse_mode,
+            )
+        except Exception as e:
+            # Если редактирование не удалось (например, смена parse_mode), 
+            # удаляем старое и шлем новое
+            logger.warning("Edit failed in show_day_report: %s", e)
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except Exception:
+                pass
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=kb,
+                parse_mode=parse_mode,
+            )
+    elif chat_id:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=kb,
+            parse_mode=parse_mode,
+        )
+
+    return _state(context, ADMIN_DAY_REPORT)
 
 
 # =========================================================
