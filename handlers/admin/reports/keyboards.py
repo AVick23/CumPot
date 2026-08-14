@@ -1,56 +1,211 @@
 import calendar
 from datetime import datetime
-
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .constants import (
-    CB_HOME,
-    CB_TO_CALENDAR,
-    CB_PREV_MONTH,
-    CB_NEXT_MONTH,
-    CB_DAY_PREFIX,
     CB_NOOP,
-    CB_REPORT_SHORT,
-    CB_REPORT_FULL,
-    CB_REPORT_PHOTOS_ON,
-    CB_REPORT_PHOTOS_OFF,
-    CB_PHOTO_REPORT,
-    CB_PHOTO_LOC_PREFIX,
-    CB_PHOTO_CAT_PREFIX,
-    CB_PHOTO_ALL_LOC,
-    CB_PHOTO_ALL_CAT,
-    CB_PHOTO_TASK_PREFIX,
-    CB_PHOTO_PAGE_PREFIX,
-    CB_PHOTO_BACK_DAY,
-    CB_PHOTO_BACK_OVERVIEW,
-    CB_PHOTO_BACK_LOC,
-    CB_TAB_CHECKLIST,
-    CB_TAB_SHIFT_REPORTS,
-    CB_TAB_TAXI,
-    CB_TAXI_PHOTO_REPORT,
-    CB_TAXI_PHOTO_USER_PREFIX,
-    CB_TAXI_PHOTO_ALL,
-    CB_TAXI_PHOTO_BACK,
-    REPORT_MODE_SHORT,
-    REPORT_MODE_FULL,
+    CB_REPORT_BACK_MENU,
+    CB_REPORT_OPEN_PREFIX,
+    CB_REPORT_SAVE,
+    CB_REPORT_TEXT_MODE,
+    CB_REPORT_LOAD_LAST,
+    CB_REPORT_SHOW_EXAMPLE,
+    CB_REPORT_CLEAR,
+    CB_REPORT_SECTION_MODE,
+    CB_REPORT_CANCEL,
+    CB_REPORT_BACK_EDITOR,
+    CB_REPORT_CALENDAR,
+    CB_REPORT_CAL_DATE_PREFIX,
+    CB_REPORT_CAL_PREV_MONTH,
+    CB_REPORT_CAL_NEXT_MONTH,
+    CB_REPORT_SECTION_MENU_CLEAR,
+    CB_REPORT_SECTION_START,
+    CB_REPORT_SECTION_CHOOSE,
+    CB_REPORT_SECTION_PREFIX,
+    CB_REPORT_SECTION_DONE,
+    CB_REPORT_SECTION_SKIP,
+    CB_REPORT_SECTION_EXIT,
     MONTHS,
     WEEKDAYS_SHORT,
-    CATEGORY_ORDER,
-    CATEGORY_LABELS,
 )
 
 
-def _clip(text: str | None, limit: int = 35) -> str:
-    text = " ".join((text or "").split())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "…"
+def report_home_keyboard(
+    opening_exists: bool,
+    closing_exists: bool,
+) -> InlineKeyboardMarkup:
+    opening_label = f"{'✅' if opening_exists else '⚪️'} 📋 Открытие"
+    closing_label = f"{'✅' if closing_exists else '⚪️'} 🌙 Закрытие"
+
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    opening_label,
+                    callback_data=f"{CB_REPORT_OPEN_PREFIX}opening",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    closing_label,
+                    callback_data=f"{CB_REPORT_OPEN_PREFIX}closing",
+                )
+            ],
+            [
+                InlineKeyboardButton("🏠 Меню", callback_data=CB_REPORT_BACK_MENU)
+            ],
+        ]
+    )
 
 
-def calendar_keyboard(
+def report_editor_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ Сохранить", callback_data=CB_REPORT_SAVE)
+            ],
+            [
+                InlineKeyboardButton("🧾 Текстом", callback_data=CB_REPORT_TEXT_MODE),
+                InlineKeyboardButton("📋 Последний", callback_data=CB_REPORT_LOAD_LAST),
+            ],
+            [
+                InlineKeyboardButton("🗑 Очистить", callback_data=CB_REPORT_CLEAR),
+                InlineKeyboardButton("🧩 По пунктам", callback_data=CB_REPORT_SECTION_MODE),
+            ],
+            [
+                InlineKeyboardButton("📅 Календарь", callback_data=CB_REPORT_CALENDAR),
+                InlineKeyboardButton("📋 Пример", callback_data=CB_REPORT_SHOW_EXAMPLE),
+            ],
+            [
+                InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL)
+            ],
+        ]
+    )
+
+
+def section_mode_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🗑 Очистить весь отчёт",
+                    callback_data=CB_REPORT_SECTION_MENU_CLEAR,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🚀 Заполнить с нуля",
+                    callback_data=CB_REPORT_SECTION_START,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "✏️ Выбрать пункт",
+                    callback_data=CB_REPORT_SECTION_CHOOSE,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "◀️ Назад",
+                    callback_data=CB_REPORT_BACK_EDITOR,
+                )
+            ],
+        ]
+    )
+
+
+def section_list_keyboard(values: dict, sections: list[str]) -> InlineKeyboardMarkup:
+    rows = []
+
+    filled = sum(1 for s in sections if (values.get(s) or "").strip())
+
+    rows.append(
+        [
+            InlineKeyboardButton("✅ Готово", callback_data=CB_REPORT_SECTION_DONE)
+        ]
+    )
+
+    for index, section in enumerate(sections):
+        value = (values.get(section) or "").strip()
+
+        if value:
+            preview = " ".join(value.split())
+            if len(preview) > 25:
+                preview = preview[:24] + "…"
+            label = f"✅ {section} · {preview}"
+        else:
+            label = f"⚪️ {section}"
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"{CB_REPORT_SECTION_PREFIX}{index}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ Назад", callback_data=CB_REPORT_BACK_EDITOR)
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def section_prompt_keyboard(guided: bool) -> InlineKeyboardMarkup:
+    if guided:
+        return InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "⏭ Пропустить",
+                        callback_data=CB_REPORT_SECTION_SKIP,
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "✖️ Завершить",
+                        callback_data=CB_REPORT_SECTION_EXIT,
+                    )
+                ],
+            ]
+        )
+
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🗑 Очистить пункт",
+                    callback_data=CB_REPORT_SECTION_SKIP,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "◀️ Назад",
+                    callback_data=CB_REPORT_BACK_EDITOR,
+                )
+            ],
+        ]
+    )
+
+
+def text_prompt_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("◀️ Назад", callback_data=CB_REPORT_BACK_EDITOR),
+                InlineKeyboardButton("✖️ Отмена", callback_data=CB_REPORT_CANCEL),
+            ]
+        ]
+    )
+
+
+def editor_calendar_keyboard(
     year: int,
     month: int,
-    shift_days: set[str],
+    dates_with_reports: set[str],
     selected_date: str | None = None,
     today: str | None = None,
 ) -> InlineKeyboardMarkup:
@@ -58,9 +213,9 @@ def calendar_keyboard(
 
     rows.append(
         [
-            InlineKeyboardButton("◀️", callback_data=CB_PREV_MONTH),
+            InlineKeyboardButton("◀️", callback_data=CB_REPORT_CAL_PREV_MONTH),
             InlineKeyboardButton(f"{MONTHS[month - 1]} {year}", callback_data=CB_NOOP),
-            InlineKeyboardButton("▶️", callback_data=CB_NEXT_MONTH),
+            InlineKeyboardButton("▶️", callback_data=CB_REPORT_CAL_NEXT_MONTH),
         ]
     )
 
@@ -85,8 +240,8 @@ def calendar_keyboard(
 
         if selected_date == date_db:
             label = f"🔹 {day}"
-        elif date_db in shift_days:
-            label = f"✅ {day}"
+        elif date_db in dates_with_reports:
+            label = f"📌 {day}"
         elif today == date_db:
             label = f"{day}·"
         else:
@@ -95,7 +250,7 @@ def calendar_keyboard(
         row.append(
             InlineKeyboardButton(
                 label,
-                callback_data=f"{CB_DAY_PREFIX}:{date_compact}",
+                callback_data=f"{CB_REPORT_CAL_DATE_PREFIX}{date_compact}",
             )
         )
 
@@ -110,283 +265,8 @@ def calendar_keyboard(
 
     rows.append(
         [
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME)
+            InlineKeyboardButton("◀️ Назад к отчёту", callback_data=CB_REPORT_BACK_EDITOR)
         ]
     )
 
     return InlineKeyboardMarkup(rows)
-
-
-def day_report_tabs_keyboard(current_tab: str) -> InlineKeyboardMarkup:
-    tabs = [
-        (CB_TAB_CHECKLIST, "📋 Чек-листы"),
-        (CB_TAB_SHIFT_REPORTS, "📄 Сменные отчёты"),
-        (CB_TAB_TAXI, "🚕 Такси"),
-    ]
-    buttons = []
-    for tab, label in tabs:
-        if tab == current_tab:
-            label = f"✅ {label}"
-        buttons.append(InlineKeyboardButton(label, callback_data=tab))
-    return InlineKeyboardMarkup([buttons])
-
-
-def taxi_photo_keyboard(has_media: bool, date_str: str) -> InlineKeyboardMarkup | None:
-    if has_media:
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("📸 Фотоотчёт по такси", callback_data=CB_TAXI_PHOTO_REPORT)]
-        ])
-    return None
-
-
-def day_report_keyboard(
-    mode: str,
-    show_photos: bool,
-    has_bar_media: bool,
-    has_kitchen_media: bool,
-    current_tab: str,
-    taxi_has_media: bool = False,
-) -> InlineKeyboardMarkup:
-    rows = []
-
-    rows.append(day_report_tabs_keyboard(current_tab).inline_keyboard[0])
-
-    if current_tab == CB_TAB_CHECKLIST:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{'✅ ' if mode == REPORT_MODE_SHORT else ''}Кратко",
-                    callback_data=CB_REPORT_SHORT,
-                ),
-                InlineKeyboardButton(
-                    f"{'✅ ' if mode == REPORT_MODE_FULL else ''}Полный",
-                    callback_data=CB_REPORT_FULL,
-                ),
-            ]
-        )
-
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{'✅ ' if show_photos else ''}С фото",
-                    callback_data=CB_REPORT_PHOTOS_ON,
-                ),
-                InlineKeyboardButton(
-                    f"{'✅ ' if not show_photos else ''}Без фото",
-                    callback_data=CB_REPORT_PHOTOS_OFF,
-                ),
-            ]
-        )
-
-        if show_photos and (has_bar_media or has_kitchen_media):
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        "📸 Фотоотчёт",
-                        callback_data=CB_PHOTO_REPORT,
-                    )
-                ]
-            )
-
-    elif current_tab == CB_TAB_TAXI:
-        if taxi_has_media:
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        "📸 Фотоотчёт по такси",
-                        callback_data=CB_TAXI_PHOTO_REPORT,
-                    )
-                ]
-            )
-
-    rows.append(
-        [
-            InlineKeyboardButton("◀️ Календарь", callback_data=CB_TO_CALENDAR),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
-
-
-# =========================================================
-# Фотоотчёт по чек-листам – клавиатуры
-# =========================================================
-
-def photo_overview_keyboard(
-    bar_media_count: int,
-    kitchen_media_count: int,
-) -> InlineKeyboardMarkup:
-    rows = []
-
-    if bar_media_count > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"🍸 Бар · {bar_media_count}",
-                    callback_data=f"{CB_PHOTO_LOC_PREFIX}:bar",
-                )
-            ]
-        )
-
-    if kitchen_media_count > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"🍳 Кухня · {kitchen_media_count}",
-                    callback_data=f"{CB_PHOTO_LOC_PREFIX}:kitchen",
-                )
-            ]
-        )
-
-    rows.append(
-        [
-            InlineKeyboardButton("◀️ Отчёт", callback_data=CB_PHOTO_BACK_DAY),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
-
-
-def photo_location_keyboard(location_menu: dict) -> InlineKeyboardMarkup:
-    rows = []
-
-    total_media = location_menu.get("total_media", 0)
-
-    if total_media > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"📤 Отправить всё · {total_media}",
-                    callback_data=CB_PHOTO_ALL_LOC,
-                )
-            ]
-        )
-
-    categories = location_menu.get("categories", {})
-
-    for category in CATEGORY_ORDER:
-        if category not in categories:
-            continue
-
-        cat_data = categories[category]
-        media_count = cat_data.get("media_count", 0)
-
-        if media_count <= 0:
-            continue
-
-        label = f"{CATEGORY_LABELS.get(category, category)} · {media_count}"
-
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    label,
-                    callback_data=f"{CB_PHOTO_CAT_PREFIX}:{category}",
-                )
-            ]
-        )
-
-    rows.append(
-        [
-            InlineKeyboardButton("◀️ Локации", callback_data=CB_PHOTO_BACK_OVERVIEW),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
-
-
-def photo_category_keyboard(
-    location: str,
-    category: str,
-    page_items: list[dict],
-    page: int,
-    total_pages: int,
-) -> InlineKeyboardMarkup:
-    rows = []
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                "📤 Отправить всю категорию",
-                callback_data=CB_PHOTO_ALL_CAT,
-            )
-        ]
-    )
-
-    for item in page_items:
-        media_count = item.get("media_count", 0)
-        text = _clip(item.get("text"), 30)
-
-        label = f"{text} · 🖼{media_count}"
-
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    label,
-                    callback_data=f"{CB_PHOTO_TASK_PREFIX}:{item.get('id')}",
-                )
-            ]
-        )
-
-    if total_pages > 1:
-        nav_row = []
-
-        if page > 1:
-            nav_row.append(
-                InlineKeyboardButton(
-                    "←",
-                    callback_data=f"{CB_PHOTO_PAGE_PREFIX}:{page - 1}",
-                )
-            )
-
-        nav_row.append(
-            InlineKeyboardButton(
-                f"{page}/{total_pages}",
-                callback_data=CB_NOOP,
-            )
-        )
-
-        if page < total_pages:
-            nav_row.append(
-                InlineKeyboardButton(
-                    "→",
-                    callback_data=f"{CB_PHOTO_PAGE_PREFIX}:{page + 1}",
-                )
-            )
-
-        rows.append(nav_row)
-
-    rows.append(
-        [
-            InlineKeyboardButton("◀️ Категории", callback_data=CB_PHOTO_BACK_LOC),
-            InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
-
-
-# =========================================================
-# Фотоотчёт по такси – клавиатуры
-# =========================================================
-
-def taxi_photo_overview_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
-    rows = []
-    for user in users:
-        label = f"{user['full_name']} · 🖼{user['media_count']}"
-        rows.append([
-            InlineKeyboardButton(label, callback_data=f"{CB_TAXI_PHOTO_USER_PREFIX}{user['user_id']}")
-        ])
-    rows.append([
-        InlineKeyboardButton("📤 Отправить все фото", callback_data=CB_TAXI_PHOTO_ALL),
-        InlineKeyboardButton("◀️ Назад", callback_data=CB_TAXI_PHOTO_BACK),
-    ])
-    return InlineKeyboardMarkup(rows)
-
-
-def taxi_photo_back_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_TAXI_PHOTO_BACK)]
-    ])

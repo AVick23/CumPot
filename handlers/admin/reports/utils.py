@@ -5,101 +5,84 @@ from datetime import datetime
 from telegram.error import BadRequest
 
 try:
-    from utils.time_utils import now_msk
+    from utils.time_utils import now_msk, today_msk_str
 except Exception:
     def now_msk():
         return datetime.now()
 
+    def today_msk_str():
+        return datetime.now().strftime("%Y-%m-%d")
+
 from db import get_connection
-from db.checklist import (
-    get_items_for_location_and_day,
-    get_shared_progress,
-)
-from db.shifts import get_shifts_for_date
-from db.profile import get_taxi_expenses
+
 from .constants import (
-    CATEGORY_ORDER,
-    CATEGORY_LABELS,
-    LOCATIONS,
     MSG_LIMIT,
     MONTHS_GEN,
-    WEEKDAYS_FULL,
-    REPORT_MODE_SHORT,
-    REPORT_MODE_FULL,
-    PHOTO_PAGE_SIZE,
+    REPORT_SECTIONS,
+    REPORT_SECTION_VARIANTS,
+    REPORT_SECTION_OUTPUT_MARKERS,
 )
 
 logger = logging.getLogger(__name__)
 
+_reports_table_ready = False
+
 
 # =========================================================
-# TEXT HELPERS
+# DB
 # =========================================================
 
-def _clip(text: str | None, limit: int = 80) -> str:
-    text = " ".join((text or "").split())
+def _ensure_reports_table() -> None:
+    global _reports_table_ready
 
-    if len(text) <= limit:
-        return text
+    if _reports_table_ready:
+        return
 
-    return text[: limit - 1].rstrip() + "…"
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS shift_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                report_type TEXT NOT NULL,
+                author_id INTEGER,
+                full_text TEXT NOT NULL,
+                parsed_data TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
 
+        cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(shift_reports)")
+        }
 
-def full_name(user: dict | None) -> str:
-    if not user:
-        return "Пользователь"
+        if "parsed_data" not in cols:
+            conn.execute("ALTER TABLE shift_reports ADD COLUMN parsed_data TEXT")
 
-    full = (user.get("full_name") or "").strip()
-    if full:
-        return full
+        if "created_at" not in cols:
+            conn.execute("ALTER TABLE shift_reports ADD COLUMN created_at TEXT")
 
-    first = (user.get("first_name") or "").strip()
-    last = (user.get("last_name") or "").strip()
-    username = (user.get("username") or "").strip()
+        if "updated_at" not in cols:
+            conn.execute("ALTER TABLE shift_reports ADD COLUMN updated_at TEXT")
 
-    name = " ".join([x for x in [first, last] if x]).strip()
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_shift_reports_date_type
+            ON shift_reports(date, report_type)
+            """
+        )
 
-    if name:
-        return name
+        conn.commit()
 
-    if username:
-        return f"@{username}"
-
-    return str(user.get("tg_id", "Пользователь"))
-
-
-def progress_bar(done: int, total: int, size: int = 10) -> str:
-    if total <= 0:
-        return "▱" * size
-
-    filled = round(size * done / total)
-    filled = max(0, min(size, filled))
-
-    return "▰" * filled + "▱" * (size - filled)
-
-
-def percent(done: int, total: int) -> int:
-    if total <= 0:
-        return 0
-
-    return int(done / total * 100)
-
-
-def format_date_ru(date_str: str) -> str:
-    try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        return f"{dt.day} {MONTHS_GEN[dt.month - 1]} {dt.year}"
-    except Exception:
-        return date_str
+    _reports_table_ready = True
 
 
-def format_weekday_ru(date_str: str) -> str:
-    try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        return WEEKDAYS_FULL[dt.weekday()]
-    except Exception:
-        return ""
-
+# =========================================================
+# BASIC HELPERS
+# =========================================================
 
 def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
     text = text or ""
@@ -108,6 +91,14 @@ def truncate_text(text: str | None, limit: int = MSG_LIMIT) -> str:
         return text
 
     return text[: limit - 1].rstrip() + "…"
+
+
+def format_date_ru(date_str: str) -> str:
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return f"{dt.day} {MONTHS_GEN[dt.month - 1]} {dt.year}"
+    except Exception:
+        return date_str
 
 
 async def render(update, context, text: str, reply_markup=None, message_id=None):
@@ -139,569 +130,354 @@ async def render(update, context, text: str, reply_markup=None, message_id=None)
     return None
 
 
-def paginate_list(items: list, page: int, page_size: int = PHOTO_PAGE_SIZE):
-    total_pages = max(1, (len(items) + page_size - 1) // page_size)
-    page = max(1, min(page, total_pages))
+async def send_long_message(context, chat_id: int, text: str, limit: int = 4000) -> None:
+    text = text or ""
 
-    start = (page - 1) * page_size
-    end = start + page_size
+    if not text:
+        return
 
-    return items[start:end], total_pages, page
+    for start in range(0, len(text), limit):
+        chunk = text[start:start + limit]
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=chunk,
+        )
 
 
 # =========================================================
-# CALENDAR DATA
+# REPORT DB OPERATIONS
 # =========================================================
 
-def get_shift_days_for_month(year: int, month: int) -> set[str]:
+def save_report(
+    date_str: str,
+    report_type: str,
+    author_id: int,
+    full_text: str,
+    parsed: dict | None = None,
+) -> int:
+    _ensure_reports_table()
+
+    if parsed is None:
+        parsed = parse_report_sections(full_text, report_type)
+
+    parsed_json = json.dumps(parsed, ensure_ascii=False)
+    now = now_msk().isoformat()
+
+    with get_connection() as conn:
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM shift_reports
+            WHERE date = ? AND report_type = ?
+            """,
+            (date_str, report_type),
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                """
+                UPDATE shift_reports
+                SET full_text = ?, parsed_data = ?, updated_at = ?, author_id = ?
+                WHERE id = ?
+                """,
+                (full_text, parsed_json, now, author_id, existing["id"]),
+            )
+            report_id = existing["id"]
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO shift_reports (
+                    date, report_type, author_id, full_text,
+                    parsed_data, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (date_str, report_type, author_id, full_text, parsed_json, now, now),
+            )
+            report_id = cur.lastrowid
+
+        conn.commit()
+
+    logger.info("💾 Сохранён отчёт %s за %s (id=%s)", report_type, date_str, report_id)
+    return report_id
+
+
+def get_report(date_str: str, report_type: str) -> dict | None:
+    _ensure_reports_table()
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, date, report_type, author_id, full_text,
+                   parsed_data, created_at, updated_at
+            FROM shift_reports
+            WHERE date = ? AND report_type = ?
+            """,
+            (date_str, report_type),
+        ).fetchone()
+
+    return dict(row) if row else None
+
+
+def get_previous_report_of_type(date_str: str, report_type: str) -> dict | None:
+    _ensure_reports_table()
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, date, report_type, author_id, full_text,
+                   parsed_data, created_at, updated_at
+            FROM shift_reports
+            WHERE report_type = ? AND date < ?
+            ORDER BY date DESC, id DESC
+            LIMIT 1
+            """,
+            (report_type, date_str),
+        ).fetchone()
+
+    return dict(row) if row else None
+
+
+def get_dates_with_reports_for_type(year: int, month: int, report_type: str) -> set[str]:
+    _ensure_reports_table()
+
     start_date = f"{year:04d}-{month:02d}-01"
-    end_date = (
-        f"{year + 1}-01-01"
-        if month == 12
-        else f"{year:04d}-{month + 1:02d}-01"
-    )
+
+    if month < 12:
+        end_date = f"{year:04d}-{month + 1:02d}-01"
+    else:
+        end_date = f"{year + 1:04d}-01-01"
 
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT DISTINCT date
-            FROM shifts
-            WHERE date >= ? AND date < ?
+            FROM shift_reports
+            WHERE date >= ? AND date < ? AND report_type = ?
             """,
-            (start_date, end_date),
+            (start_date, end_date, report_type),
         ).fetchall()
 
     return {row["date"] for row in rows}
 
 
 # =========================================================
-# MEDIA HELPERS
+# PARSER / GENERATOR
 # =========================================================
 
-def _parse_media(raw) -> list[dict]:
-    """
-    Парсим photo_file_ids.
+def _clean_marker_remainder(remainder: str) -> str:
+    remainder = (remainder or "").strip()
 
-    Важно:
-    - если там объект с мета-данными, сохраняем его целиком;
-    - если строка, превращаем в объект photo.
-    """
-    if not raw:
-        return []
+    if not remainder:
+        return ""
 
-    data = raw
+    if all(not ch.isalnum() for ch in remainder):
+        return ""
 
-    if isinstance(data, str):
-        data = data.strip()
+    return remainder.lstrip(":;-– ").strip()
 
-        if not data:
-            return []
 
-        try:
-            data = json.loads(data)
-        except Exception:
-            data = [x.strip() for x in data.split(",") if x.strip()]
+def _match_section_key(line: str, report_type: str) -> tuple[str | None, str | None]:
+    stripped = line.strip()
 
-    if isinstance(data, str):
-        data = [data]
+    if not stripped:
+        return None, None
 
-    if not isinstance(data, list):
-        return []
+    sections = REPORT_SECTIONS.get(report_type, [])
+    variants_map = REPORT_SECTION_VARIANTS.get(report_type, {})
 
-    result = []
+    for section in sections:
+        variants = variants_map.get(section, [])
 
-    for entry in data:
-        if isinstance(entry, str):
-            if entry.strip():
-                result.append(
-                    {
-                        "type": "photo",
-                        "file_id": entry.strip(),
-                    }
-                )
-            continue
-
-        if isinstance(entry, dict):
-            file_id = entry.get("file_id")
-
-            if not file_id:
-                continue
-
-            media_item = dict(entry)
-            media_item.setdefault("type", "photo")
-
-            result.append(media_item)
-
-    return result
-
-
-# =========================================================
-# DAY REPORT DATA (ЧЕК-ЛИСТЫ)
-# =========================================================
-
-def get_day_report(date_str: str) -> dict:
-    shifts = get_shifts_for_date(date_str)
-
-    result = {
-        "date": date_str,
-        "bar": {
-            "shifts": [],
-            "items": [],
-            "done": 0,
-            "total": 0,
-            "grouped": {},
-            "media_count": 0,
-            "has_media": False,
-        },
-        "kitchen": {
-            "shifts": [],
-            "items": [],
-            "done": 0,
-            "total": 0,
-            "grouped": {},
-            "media_count": 0,
-            "has_media": False,
-        },
-    }
-
-    for shift in shifts:
-        loc = shift.get("location")
-
-        if loc in result:
-            result[loc]["shifts"].append(shift)
-
-    for loc_key in ["bar", "kitchen"]:
-        items = get_items_for_location_and_day(loc_key, date_str)
-
-        if not items:
-            continue
-
-        shared_progress = get_shared_progress(loc_key, date_str)
-
-        grouped = {}
-        enriched_items = []
-
-        done = 0
-        total = 0
-        media_count = 0
-
-        for item in items:
-            item_dict = dict(item)
-
-            item_id = item_dict.get("id")
-            progress = shared_progress.get(item_id)
-
-            completed = bool(progress and progress.get("completed"))
-            item_dict["completed"] = completed
-
-            media_items = []
-
-            if progress:
-                media_items = _parse_media(progress.get("photo_file_ids"))
-
-                if not media_items and progress.get("photo_file_id"):
-                    media_items = [
-                        {
-                            "type": "photo",
-                            "file_id": progress.get("photo_file_id"),
-                        }
-                    ]
-
-            item_dict["media_items"] = media_items
-            item_dict["media_count"] = len(media_items)
-
-            total += 1
-            media_count += len(media_items)
-
-            if completed:
-                done += 1
-
-            category = item_dict.get("category") or "weekly"
-            grouped.setdefault(category, []).append(item_dict)
-
-            enriched_items.append(item_dict)
-
-        ordered_grouped = {}
-
-        for cat in CATEGORY_ORDER:
-            if cat in grouped:
-                ordered_grouped[cat] = grouped[cat]
-
-        for cat, cat_items in grouped.items():
-            if cat not in ordered_grouped:
-                ordered_grouped[cat] = cat_items
-
-        result[loc_key]["items"] = enriched_items
-        result[loc_key]["done"] = done
-        result[loc_key]["total"] = total
-        result[loc_key]["grouped"] = ordered_grouped
-        result[loc_key]["media_count"] = media_count
-        result[loc_key]["has_media"] = media_count > 0
-
-    return result
-
-
-# =========================================================
-# REPORT TEXT (ЧЕК-ЛИСТЫ)
-# =========================================================
-
-def build_report_text(
-    report: dict,
-    mode: str = REPORT_MODE_SHORT,
-    show_photos: bool = True,
-) -> tuple[str, bool, bool]:
-    date_str = report.get("date", "")
-
-    header = f"📊 {format_date_ru(date_str)}"
-    weekday = format_weekday_ru(date_str)
-
-    if weekday:
-        header += f" · {weekday}"
-
-    lines = [header, ""]
-
-    total_done = report["bar"]["done"] + report["kitchen"]["done"]
-    total_all = report["bar"]["total"] + report["kitchen"]["total"]
-    total_media = report["bar"]["media_count"] + report["kitchen"]["media_count"]
-
-    if total_all > 0:
-        lines.append(
-            f"Итого: {total_done}/{total_all} · {percent(total_done, total_all)}%"
-        )
-    else:
-        lines.append("Задач нет")
-
-    if show_photos and total_media > 0:
-        lines.append(f"Фото: {total_media}")
-
-    lines.append("")
-
-    has_bar_media = report["bar"]["has_media"]
-    has_kitchen_media = report["kitchen"]["has_media"]
-
-    for loc_key in ["bar", "kitchen"]:
-        loc_data = report[loc_key]
-        loc_label = LOCATIONS[loc_key]
-
-        shifts = loc_data["shifts"]
-        grouped = loc_data["grouped"]
-
-        done = loc_data["done"]
-        total = loc_data["total"]
-        loc_media_count = loc_data["media_count"]
-
-        if mode == REPORT_MODE_FULL:
-            lines.append(loc_label)
-
-            if shifts:
-                names = ", ".join(full_name(s) for s in shifts)
-                lines.append(f"Команда: {names}")
-            else:
-                lines.append("Смен нет")
-
-            if total > 0:
-                lines.append(
-                    f"Прогресс: {progress_bar(done, total)} {done}/{total} · {percent(done, total)}%"
-                )
-
-                if show_photos and loc_media_count > 0:
-                    lines.append(f"Фото: {loc_media_count}")
-
-                lines.append("")
-
-                for category, category_items in grouped.items():
-                    category_label = CATEGORY_LABELS.get(category, category)
-                    category_done = sum(1 for i in category_items if i.get("completed"))
-
-                    lines.append(
-                        f"{category_label} · {category_done}/{len(category_items)}"
-                    )
-
-                    for item in category_items:
-                        mark = "✓" if item.get("completed") else "○"
-                        text = _clip(item.get("text"), 70)
-
-                        suffix = ""
-
-                        if show_photos and item.get("media_count", 0) > 0:
-                            suffix = f" · 📸{item['media_count']}"
-
-                        lines.append(f"{mark} {text}{suffix}")
-
-                    lines.append("")
-            else:
-                lines.append("Чек-лист пуст")
-                lines.append("")
-
-        else:
-            lines.append(loc_label)
-
-            if shifts:
-                names = ", ".join(full_name(s) for s in shifts)
-                lines.append(f"Смены: {len(shifts)} · {names}")
-            else:
-                lines.append("Смен нет")
-
-            if total > 0:
-                lines.append(
-                    f"Прогресс: {done}/{total} · {percent(done, total)}%"
-                )
-
-                left = total - done
-
-                if left > 0:
-                    lines.append(f"Осталось: {left}")
-
-                if show_photos and loc_media_count > 0:
-                    lines.append(f"Фото: {loc_media_count}")
-            else:
-                lines.append("Чек-лист пуст")
-
-            lines.append("")
-
-    text = "\n".join(lines).strip()
-
-    return text, has_bar_media, has_kitchen_media
-
-
-def get_report_text(
-    date_str: str,
-    mode: str,
-    show_photos: bool,
-) -> tuple[str, bool, bool]:
-    report = get_day_report(date_str)
-    return build_report_text(report, mode, show_photos)
-
-
-# =========================================================
-# PHOTO REPORT DATA (ЧЕК-ЛИСТЫ)
-# =========================================================
-
-def get_photo_overview(date_str: str) -> dict:
-    report = get_day_report(date_str)
-
-    bar_count = report["bar"]["media_count"]
-    kitchen_count = report["kitchen"]["media_count"]
-
-    return {
-        "date": date_str,
-        "bar": bar_count,
-        "kitchen": kitchen_count,
-        "total": bar_count + kitchen_count,
-    }
-
-
-def get_location_photo_menu(date_str: str, location: str) -> dict:
-    report = get_day_report(date_str)
-
-    loc_data = report.get(location) or {}
-    items = loc_data.get("items", [])
-
-    items_with_media = [
-        item for item in items
-        if item.get("media_count", 0) > 0
-    ]
-
-    categories_raw = {}
-
-    total_media = 0
-
-    for item in items_with_media:
-        category = item.get("category") or "weekly"
-        media_count = item.get("media_count", 0)
-
-        categories_raw.setdefault(
-            category,
-            {
-                "media_count": 0,
-                "task_count": 0,
-            },
-        )
-
-        categories_raw[category]["media_count"] += media_count
-        categories_raw[category]["task_count"] += 1
-
-        total_media += media_count
-
-    ordered_categories = {}
-
-    for category in CATEGORY_ORDER:
-        if category in categories_raw:
-            ordered_categories[category] = categories_raw[category]
-
-    for category, data in categories_raw.items():
-        if category not in ordered_categories:
-            ordered_categories[category] = data
-
-    return {
-        "date": date_str,
-        "location": location,
-        "total_media": total_media,
-        "task_count": len(items_with_media),
-        "categories": ordered_categories,
-        "items": items_with_media,
-    }
-
-
-def get_category_photo_tasks(date_str: str, location: str, category: str) -> dict:
-    menu = get_location_photo_menu(date_str, location)
-
-    tasks = [
-        item for item in menu.get("items", [])
-        if item.get("category") == category
-    ]
-
-    media_count = sum(item.get("media_count", 0) for item in tasks)
-
-    return {
-        "date": date_str,
-        "location": location,
-        "category": category,
-        "tasks": tasks,
-        "media_count": media_count,
-        "task_count": len(tasks),
-    }
-
-
-def get_task_by_id_from_report(date_str: str, item_id: int) -> tuple[dict | None, str | None]:
-    report = get_day_report(date_str)
-
-    for loc_key in ["bar", "kitchen"]:
-        for item in report[loc_key]["items"]:
-            if item.get("id") == item_id:
-                return item, loc_key
+        for variant in variants:
+            if stripped.lower().startswith(variant.lower()):
+                return section, variant
 
     return None, None
 
 
-def build_task_media_caption(item: dict, location: str, date_str: str) -> str:
-    location_label = LOCATIONS.get(location, location)
-    category_label = CATEGORY_LABELS.get(item.get("category"), item.get("category"))
+def parse_report_sections(full_text: str, report_type: str) -> dict:
+    values = {"_header": ""}
 
-    media_count = item.get("media_count", 0)
+    for section in REPORT_SECTIONS.get(report_type, []):
+        values[section] = ""
 
-    user_name = None
+    lines = (full_text or "").split("\n")
 
-    for media in item.get("media_items", []):
-        if isinstance(media, dict) and media.get("user_name"):
-            user_name = media.get("user_name")
-            break
+    header_lines = []
+    current_key = None
+    buffer = []
+    started = False
 
-    lines = [
-        "📌 Фото к задаче",
-        "",
-        item.get("text") or "",
-        "",
-        f"📍 {location_label}",
-        f"📂 {category_label}",
-        f"🗓 {format_date_ru(date_str)}",
-        f"🖼 {media_count} шт.",
-    ]
+    for line in lines:
+        if not started:
+            key, variant = _match_section_key(line, report_type)
 
-    if user_name:
-        lines.append(f"👤 {user_name}")
+            if key:
+                started = True
+                values["_header"] = "\n".join(header_lines).strip()
 
-    caption = "\n".join(lines)
+                current_key = key
+                remainder = line[len(variant):] if variant else ""
+                remainder = _clean_marker_remainder(remainder)
 
-    if len(caption) > 1024:
-        caption = caption[:1023] + "…"
+                buffer = [remainder] if remainder else []
+            else:
+                header_lines.append(line.rstrip())
+        else:
+            key, variant = _match_section_key(line, report_type)
 
-    return caption
+            if key:
+                if current_key:
+                    values[current_key] = "\n".join(buffer).strip()
+
+                current_key = key
+                remainder = line[len(variant):] if variant else ""
+                remainder = _clean_marker_remainder(remainder)
+
+                buffer = [remainder] if remainder else []
+            else:
+                if current_key:
+                    buffer.append(line.rstrip())
+
+    if not started:
+        return {"_header": (full_text or "").strip()}
+
+    if current_key:
+        values[current_key] = "\n".join(buffer).strip()
+
+    return values
+
+
+def build_full_text(report_type: str, values: dict) -> str:
+    parts = []
+
+    header = (values.get("_header") or "").strip()
+
+    if header:
+        parts.append(header)
+
+    sections = REPORT_SECTIONS.get(report_type, [])
+    output_markers = REPORT_SECTION_OUTPUT_MARKERS.get(report_type, {})
+
+    for section in sections:
+        value = (values.get(section) or "").strip()
+
+        if not value:
+            continue
+
+        marker = output_markers.get(section, section)
+
+        if "\n" in value or len(value) > 60:
+            parts.append(f"{marker}\n{value}".rstrip())
+        else:
+            parts.append(f"{marker} {value}".rstrip())
+
+    return "\n\n".join(parts)
 
 
 # =========================================================
-# SHIFT REPORTS (СМЕННЫЕ ОТЧЁТЫ)
+# DRAFT LOGIC
 # =========================================================
 
-def get_shift_reports_for_date(date_str: str) -> dict:
-    """Возвращает словарь с отчётами opening и closing за дату."""
-    result = {"opening": None, "closing": None}
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, date, report_type, author_id, full_text, parsed_data, created_at, updated_at
-            FROM shift_reports
-            WHERE date = ?
-            """,
-            (date_str,)
-        ).fetchall()
-        for row in rows:
-            report = dict(row)
-            if report["report_type"] in result:
-                result[report["report_type"]] = report
-    return result
+def auto_report_header(date_str: str, report_type: str) -> str:
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        short_date = dt.strftime("%d.%m")
+    except Exception:
+        short_date = date_str
+
+    if report_type == "opening":
+        return f"Открытие {short_date}"
+
+    return f"Закрытие {short_date}"
 
 
-def format_shift_report_text(report: dict | None) -> str:
-    """Форматирует текст сменного отчёта для отображения."""
-    if not report:
-        return "❌ Отчёт не сохранён"
-    text = report.get("full_text", "")
-    if not text.strip():
-        return "⚠️ Отчёт пуст"
-    return text
+def empty_draft(date_str: str, report_type: str) -> dict:
+    values = {"_header": auto_report_header(date_str, report_type)}
 
+    for section in REPORT_SECTIONS.get(report_type, []):
+        values[section] = ""
 
-# =========================================================
-# TAXI (ТАКСИ) – данные и фото
-# =========================================================
-
-def get_taxi_for_date(date_str: str) -> list[dict]:
-    """
-    Возвращает список всех записей такси за указанную дату,
-    сгруппированных по пользователям.
-    """
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT tg_id, full_name
-            FROM users
-            WHERE tg_id IN (
-                SELECT DISTINCT user_id FROM taxi_expenses WHERE date = ?
-            )
-            ORDER BY full_name
-            """,
-            (date_str,)
-        ).fetchall()
-        users = [dict(row) for row in rows]
-
-    result = []
-    for user in users:
-        expenses = get_taxi_expenses(user["tg_id"], date_str, date_str)
-        total = sum(e["amount"] for e in expenses)
-        result.append({
-            "user_id": user["tg_id"],
-            "full_name": user.get("full_name") or "Сотрудник",
-            "expenses": expenses,
-            "total": total,
-        })
-    return result
-
-
-def get_taxi_photo_overview(date_str: str) -> dict:
-    """
-    Возвращает структуру для фотоотчёта по такси:
-    - список пользователей с их медиа (photo_file_ids из taxi_expenses)
-    """
-    taxi_data = get_taxi_for_date(date_str)
-    users = []
-    total_media = 0
-    for user_data in taxi_data:
-        media_items = []
-        for exp in user_data["expenses"]:
-            if exp.get("photo_file_ids"):
-                # photo_file_ids хранится как JSON-список строк
-                media_items.extend(_parse_media(exp["photo_file_ids"]))
-        if media_items:
-            users.append({
-                "user_id": user_data["user_id"],
-                "full_name": user_data["full_name"],
-                "media_items": media_items,
-                "media_count": len(media_items),
-            })
-            total_media += len(media_items)
     return {
         "date": date_str,
-        "users": users,
-        "total_media": total_media,
+        "type": report_type,
+        "values": values,
+        "raw": None,
+        "source": "empty",
+        "source_date": None,
     }
+
+
+def draft_from_report(report: dict, report_type: str) -> dict:
+    full_text = report.get("full_text") or ""
+    values = parse_report_sections(full_text, report_type)
+
+    return {
+        "date": report.get("date"),
+        "type": report_type,
+        "values": values,
+        "raw": full_text,
+        "source": "saved",
+        "source_date": report.get("date"),
+    }
+
+
+def draft_from_last(date_str: str, report_type: str) -> dict:
+    last_report = get_previous_report_of_type(date_str, report_type)
+
+    if not last_report:
+        return empty_draft(date_str, report_type)
+
+    full_text = last_report.get("full_text") or ""
+
+    if not full_text.strip():
+        return empty_draft(date_str, report_type)
+
+    values = parse_report_sections(full_text, report_type)
+
+    has_sections = any(
+        (values.get(section) or "").strip()
+        for section in REPORT_SECTIONS.get(report_type, [])
+    )
+
+    if has_sections:
+        values["_header"] = auto_report_header(date_str, report_type)
+
+        return {
+            "date": date_str,
+            "type": report_type,
+            "values": values,
+            "raw": None,
+            "source": "prev",
+            "source_date": last_report.get("date"),
+        }
+
+    return {
+        "date": date_str,
+        "type": report_type,
+        "values": {"_header": auto_report_header(date_str, report_type)},
+        "raw": full_text,
+        "source": "prev",
+        "source_date": last_report.get("date"),
+    }
+
+
+def load_draft(date_str: str, report_type: str) -> dict:
+    existing = get_report(date_str, report_type)
+
+    if existing:
+        return draft_from_report(existing, report_type)
+
+    return draft_from_last(date_str, report_type)
+
+
+def draft_full_text(draft: dict) -> str:
+    if draft.get("raw") is not None:
+        return draft.get("raw") or ""
+
+    return build_full_text(
+        draft.get("type", "opening"),
+        draft.get("values", {}),
+    )
