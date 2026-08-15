@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional, List
 
-# Импортируем nltk и загружаем punkt, если ещё не загружен
+# Импортируем nltk
 try:
     import nltk
     nltk.data.find('tokenizers/punkt')
@@ -30,16 +30,10 @@ STOPWORDS = {
 }
 
 def tokenize(text: str) -> List[str]:
-    """
-    Разбивает текст на токены: удаляет пунктуацию, приводит к нижнему регистру,
-    удаляет стоп-слова, выполняет стемминг.
-    """
     if not text:
         return []
-    # Убираем пунктуацию и разбиваем на слова
     text = text.translate(str.maketrans('', '', string.punctuation))
     words = text.lower().split()
-    # Фильтруем и стеммим
     result = []
     for w in words:
         if len(w) >= 3 and w not in STOPWORDS:
@@ -51,9 +45,9 @@ def tokenize(text: str) -> List[str]:
 
 @dataclass
 class Recipe:
-    id: int
-    name: str
-    category: str
+    id: int = 0   # будет перезаписан при добавлении
+    name: str = ""
+    category: str = ""
     subcategory: str = ""
     volume: str = ""
     ingredients: List[dict] = field(default_factory=list)
@@ -65,9 +59,9 @@ class Recipe:
 
 @dataclass
 class ShelfLifeItem:
-    id: int
-    name: str
-    category: str
+    id: int = 0
+    name: str = ""
+    category: str = ""
     subcategory: str = ""
     shelf_life_days: int = 0
     location: str = ""
@@ -75,7 +69,7 @@ class ShelfLifeItem:
 
 class SearchIndex:
     def __init__(self):
-        self.index = defaultdict(set)   # token -> set(recipe_id)
+        self.index = defaultdict(set)
         self.recipes: dict[int, Recipe] = {}
         self.vocabulary = set()
         self._next_id = 1
@@ -84,12 +78,11 @@ class SearchIndex:
         recipe.id = self._next_id
         self._next_id += 1
         self.recipes[recipe.id] = recipe
-        # Индексируем название, описание, ингредиенты и инструкцию
         texts = [
             recipe.name,
             recipe.description,
             ' '.join(ing.get('name', '') for ing in recipe.ingredients),
-            recipe.instruction[:300]  # ограничим длину для индексации
+            recipe.instruction[:300]
         ]
         for text in texts:
             if text:
@@ -102,13 +95,11 @@ class SearchIndex:
         if not tokens:
             return []
 
-        # Нечёткая коррекция опечаток: если токена нет в словаре, подбираем ближайший
         corrected_tokens = []
         for token in tokens:
             if token in self.vocabulary:
                 corrected_tokens.append(token)
             else:
-                # Используем нечёткое сравнение (можно заменить на Damerau-Levenshtein)
                 import difflib
                 matches = difflib.get_close_matches(token, list(self.vocabulary), n=1, cutoff=0.7)
                 if matches:
@@ -116,17 +107,14 @@ class SearchIndex:
                 else:
                     corrected_tokens.append(token)
 
-        # Логическое И (AND)
         result_ids = set(self.index.get(corrected_tokens[0], set()))
         for token in corrected_tokens[1:]:
             result_ids &= self.index.get(token, set())
 
-        # Если ничего не найдено – используем OR
         if not result_ids:
             for token in corrected_tokens:
                 result_ids |= self.index.get(token, set())
 
-        # Ранжирование
         scored = []
         for recipe_id in result_ids:
             recipe = self.recipes[recipe_id]
@@ -153,16 +141,13 @@ class SearchIndex:
         return self.recipes.get(recipe_id)
 
 
-# Глобальный индекс (заполняется при старте)
 _search_index = None
-
 
 def get_search_index() -> SearchIndex:
     global _search_index
     if _search_index is None:
         _search_index = SearchIndex()
     return _search_index
-
 
 def get_categories() -> List[str]:
     return get_search_index().get_all_categories()
