@@ -19,9 +19,12 @@ CB_REF_SEARCH = "ref_search"
 CB_REF_BACK = "ref_back"
 CB_REF_HOME = "ref_home"
 CB_REF_SHELF_LIFE = "ref_shelf"
-CB_REF_PAGE_PREFIX = "ref_page:"  # для пагинации
+CB_REF_PAGE_PREFIX = "ref_page:"
+CB_REF_SEARCH_PAGE_PREFIX = "ref_spage:"
+CB_REF_BACK_TO_LIST = "ref_back_list"
 
 # =========================================================
 # UI
 # =========================================================
-PAGE_SIZE = 8  # количество рецептов на странице
+PAGE_SIZE = 10
+SEARCH_PAGE_SIZE = 10
