@@ -5,7 +5,6 @@ from .handlers import (
     employees_callback,
     employee_text_input,
 )
-
 from .constants import (
     EMPLOYEES_LIST,
     EMPLOYEE_HIDDEN_LIST,

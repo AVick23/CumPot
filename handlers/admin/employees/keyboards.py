@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from .constants import (
     CB_EMP_HOME,
     CB_EMP_ANALYTICS,
@@ -35,7 +36,6 @@ def employees_list_keyboard(users: list[dict], has_hidden: bool = False) -> Inli
             or user.get("first_name")
             or f"ID {user['tg_id']}"
         )
-
         status_icon = "👤" if user.get("status") == "Сотрудник" else "🎓"
         rows.append(
             [
@@ -46,7 +46,6 @@ def employees_list_keyboard(users: list[dict], has_hidden: bool = False) -> Inli
             ]
         )
 
-    # Кнопка "Скрытые" – появляется, если есть хотя бы один скрытый сотрудник
     if has_hidden:
         rows.append(
             [
@@ -62,6 +61,7 @@ def employees_list_keyboard(users: list[dict], has_hidden: bool = False) -> Inli
             InlineKeyboardButton("📊 Аналитика команды", callback_data=CB_EMP_ANALYTICS)
         ]
     )
+
     rows.append(
         [
             InlineKeyboardButton("🏠 Меню", callback_data=CB_EMP_HOME)
@@ -72,14 +72,15 @@ def employees_list_keyboard(users: list[dict], has_hidden: bool = False) -> Inli
 
 
 def hidden_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
-    """Клавиатура для списка скрытых сотрудников (с возможностью восстановить или удалить)."""
     rows = []
+
     for user in users:
         name = (
             user.get("full_name")
             or user.get("first_name")
             or f"ID {user['tg_id']}"
         )
+
         rows.append(
             [
                 InlineKeyboardButton(
@@ -88,7 +89,7 @@ def hidden_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
                 )
             ]
         )
-        # Кнопки действий для каждого скрытого
+
         rows.append(
             [
                 InlineKeyboardButton(
@@ -107,6 +108,7 @@ def hidden_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
             InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_EMP_BACK)
         ]
     )
+
     return InlineKeyboardMarkup(rows)
 
 
@@ -169,6 +171,7 @@ def confirm_delete_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def edit_status_keyboard(user_id: int) -> InlineKeyboardMarkup:
     rows = []
+
     for status in STATUSES:
         rows.append(
             [
@@ -178,11 +181,13 @@ def edit_status_keyboard(user_id: int) -> InlineKeyboardMarkup:
                 )
             ]
         )
+
     rows.append(
         [
             InlineKeyboardButton("✖️ Отмена", callback_data=CB_EMP_CANCEL)
         ]
     )
+
     return InlineKeyboardMarkup(rows)
 
 
@@ -190,7 +195,10 @@ def taxi_photos_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📸 Отправить фото такси", callback_data=f"{CB_EMP_TAXI_PHOTOS_PREFIX}{user_id}")
+                InlineKeyboardButton(
+                    "📸 Отправить фото такси",
+                    callback_data=f"{CB_EMP_TAXI_PHOTOS_PREFIX}{user_id}"
+                )
             ],
             [
                 InlineKeyboardButton("◀️ Назад", callback_data=f"{CB_EMP_DETAIL_PREFIX}{user_id}")

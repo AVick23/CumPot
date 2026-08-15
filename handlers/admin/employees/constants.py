@@ -1,7 +1,6 @@
 # =========================================================
 # STATES
 # =========================================================
-
 EMPLOYEES_LIST = 200
 EMPLOYEE_DETAIL = 201
 EMPLOYEE_PROFILE = 202
@@ -16,13 +15,11 @@ EMPLOYEES_ANALYTICS = 210
 EMPLOYEE_AWAIT_RATE = 211
 EMPLOYEE_AWAIT_COMMENT = 212
 EMPLOYEE_DELETE_CONFIRM = 213
-EMPLOYEE_HIDDEN_LIST = 214   # <-- НОВОЕ
-
+EMPLOYEE_HIDDEN_LIST = 214
 
 # =========================================================
 # CALLBACK DATA
 # =========================================================
-
 CB_EMP_HOME = "emp_home"
 CB_EMP_ANALYTICS = "emp_analytics"
 CB_EMP_XLSX_ALL = "emp_xlsx_all"
@@ -36,26 +33,22 @@ CB_EMP_SHIFTS_PREFIX = "emp_sh:"
 CB_EMP_TAXI_PREFIX = "emp_taxi:"
 CB_EMP_REPORTS_PREFIX = "emp_rep:"
 CB_EMP_CHECKLISTS_PREFIX = "emp_ch:"
-
 CB_EMP_XLSX_ONE_PREFIX = "emp_xlsx1:"
 CB_EMP_TAXI_PHOTOS_PREFIX = "emp_tph:"
-
 CB_EMP_SET_STATUS_PREFIX = "emp_setst:"
 
 CB_EMP_BACK = "emp_back"
 CB_EMP_CANCEL = "emp_cancel"
-CB_EMP_HIDDEN = "emp_hidden"                 # <-- НОВОЕ
-CB_EMP_RESTORE_PREFIX = "emp_restore:"       # <-- НОВОЕ
+
+CB_EMP_HIDDEN = "emp_hidden"
+CB_EMP_RESTORE_PREFIX = "emp_restore:"
 
 CB_EMP_DELETE = "emp_delete"
 CB_EMP_DELETE_SOFT = "emp_del_soft"
 CB_EMP_DELETE_HARD = "emp_del_hard"
 
-
 # =========================================================
 # UI / DICTIONARIES
 # =========================================================
-
 STATUSES = ["Стажёр", "Сотрудник"]
-
 REPORT_PERIOD_DAYS = 30
