@@ -394,7 +394,7 @@ def attach_media_to_task(
     channel_message_ids: list,
     mark_done: bool = False,
     task_item: dict | None = None,
-    replace: bool = False,  # новый параметр
+    replace: bool = False,
 ) -> None:
     """
     Сохраняет медиа не просто как file_id, а с мета-данными.
@@ -440,7 +440,7 @@ def attach_media_to_task(
     with get_connection() as conn:
         existing = conn.execute(
             """
-            SELECT photo_file_ids, photo_channel_message_ids, completed
+            SELECT id, photo_file_ids, photo_channel_message_ids, completed
             FROM checklist_shared_progress
             WHERE location = ? AND date = ? AND item_id = ?
             """,
@@ -449,7 +449,10 @@ def attach_media_to_task(
 
         existing_records = []
         existing_channel_ids = []
+        existing_id = None
+
         if existing:
+            existing_id = existing["id"]
             try:
                 existing_records = json.loads(existing["photo_file_ids"]) if existing["photo_file_ids"] else []
                 if not isinstance(existing_records, list):
@@ -516,7 +519,8 @@ def attach_media_to_task(
         first_file_id = final_records[0].get("file_id") if final_records else None
         first_channel_message_id = final_channel_ids[0] if final_channel_ids else None
 
-        if existing:
+        if existing_id is not None:
+            # Обновляем существующую запись
             conn.execute(
                 """
                 UPDATE checklist_shared_progress
@@ -538,10 +542,11 @@ def attach_media_to_task(
                     user_id,
                     1 if mark_done else 0,
                     time_msk_str() if mark_done else None,
-                    existing["id"],
+                    existing_id,
                 ),
             )
         else:
+            # Вставляем новую запись
             conn.execute(
                 """
                 INSERT INTO checklist_shared_progress (
