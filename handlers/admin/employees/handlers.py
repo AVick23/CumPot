@@ -5,7 +5,7 @@ from telegram import Update, InputMediaPhoto
 from telegram.ext import ContextTypes
 
 from db import get_connection
-from db.users import get_all_users, get_active_users, get_user, deactivate_user
+from db.users import get_all_users, get_active_users, get_user, deactivate_user, activate_user
 from db.profile import (
     get_employee_full_info,
     update_employee_status,
@@ -19,6 +19,7 @@ from utils.time_utils import today_msk_str
 
 from .constants import (
     EMPLOYEES_LIST,
+    EMPLOYEE_HIDDEN_LIST,
     EMPLOYEE_DETAIL,
     EMPLOYEE_PROFILE,
     EMPLOYEE_RATE,
@@ -52,12 +53,15 @@ from .constants import (
     CB_EMP_DELETE,
     CB_EMP_DELETE_SOFT,
     CB_EMP_DELETE_HARD,
+    CB_EMP_HIDDEN,
+    CB_EMP_RESTORE_PREFIX,
     STATUSES,
     REPORT_PERIOD_DAYS,
 )
 
 from .keyboards import (
     employees_list_keyboard,
+    hidden_list_keyboard,
     employee_detail_keyboard,
     edit_status_keyboard,
     taxi_photos_keyboard,
@@ -150,11 +154,25 @@ async def show_employees_list(
     message_id: int | None = None,
     notice: str | None = None,
 ) -> int:
-    users = get_active_users()  # <-- ТОЛЬКО АКТИВНЫЕ
+    users = get_active_users()
+    
+    # Получаем скрытых сотрудников
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM users WHERE is_active = 0 ORDER BY full_name, first_name").fetchall()
+        hidden_users = [dict(row) for row in rows]
+    has_hidden = bool(hidden_users)
 
     if not users:
         text = "👥 Команда пока пуста."
-        kb = cancel_keyboard()
+        if has_hidden:
+            kb = InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("🙈 Скрытые сотрудники", callback_data=CB_EMP_HIDDEN)],
+                    [InlineKeyboardButton("🏠 Меню", callback_data=CB_EMP_HOME)],
+                ]
+            )
+        else:
+            kb = cancel_keyboard()
         await _render(update, context, text, kb, message_id)
         return _set_state(context, EMPLOYEES_LIST)
 
@@ -166,11 +184,39 @@ async def show_employees_list(
     if notice:
         text = f"{notice}\n\n{text}"
 
-    kb = employees_list_keyboard(users)
+    kb = employees_list_keyboard(users, has_hidden)
 
     await _render(update, context, text, kb, message_id)
 
     return _set_state(context, EMPLOYEES_LIST)
+
+
+async def show_hidden_list(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int | None = None,
+    notice: str | None = None,
+) -> int:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM users WHERE is_active = 0 ORDER BY full_name, first_name").fetchall()
+        users = [dict(row) for row in rows]
+
+    if not users:
+        text = "🙈 Скрытых сотрудников нет."
+        kb = cancel_keyboard()
+        await _render(update, context, text, kb, message_id)
+        return _set_state(context, EMPLOYEE_HIDDEN_LIST)
+
+    text = "🙈 <b>Скрытые сотрудники</b>\n\nНажмите на имя, чтобы открыть карточку, или используйте кнопки действий ниже."
+
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    kb = hidden_list_keyboard(users)
+
+    await _render(update, context, text, kb, message_id)
+
+    return _set_state(context, EMPLOYEE_HIDDEN_LIST)
 
 
 async def show_employee_detail(
@@ -188,7 +234,6 @@ async def show_employee_detail(
         await _render(update, context, "⚠️ Сотрудник не найден.", None, message_id)
         return await show_employees_list(update, context, message_id)
 
-    # Проверка активности (необязательно, можно показывать карточку даже если скрыт)
     if user.get("is_active") == 0:
         notice = (notice or "") + "\n\n⚠️ Сотрудник скрыт из списка."
 
@@ -405,7 +450,7 @@ async def show_analytics(
     context: ContextTypes.DEFAULT_TYPE,
     message_id: int | None = None,
 ) -> int:
-    users = get_active_users()  # <-- ТОЛЬКО АКТИВНЫЕ
+    users = get_active_users()
 
     date_from, date_to = _period_range(REPORT_PERIOD_DAYS)
 
@@ -447,7 +492,7 @@ async def show_analytics(
 
 
 # =========================================================
-# УДАЛЕНИЕ СОТРУДНИКА
+# УДАЛЕНИЕ И ВОССТАНОВЛЕНИЕ
 # =========================================================
 
 async def show_delete_confirm(
@@ -511,6 +556,28 @@ async def delete_employee(
     return await show_employees_list(update, context, message_id, notice)
 
 
+async def restore_employee(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    tg_id: int,
+    message_id: int | None = None,
+) -> int:
+    user = get_user(tg_id)
+    if not user:
+        await _render(update, context, "⚠️ Сотрудник не найден.", None, message_id)
+        return await show_hidden_list(update, context, message_id)
+
+    name = _short_name(user)
+    try:
+        activate_user(tg_id)
+        notice = f"✅ Сотрудник <b>{name}</b> восстановлен."
+    except Exception as e:
+        logger.error("Ошибка восстановления %s: %s", tg_id, e)
+        notice = f"⚠️ Ошибка при восстановлении сотрудника {name}."
+
+    return await show_hidden_list(update, context, message_id, notice)
+
+
 # =========================================================
 # CALLBACK ROUTER
 # =========================================================
@@ -522,7 +589,7 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await _answer(query)
 
-    # Домой
+    # --- Навигация ---
     if data == CB_EMP_HOME:
         try:
             from ..menu.handlers import show_main
@@ -530,31 +597,44 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception:
             return await show_employees_list(update, context, message_id)
 
-    # Назад к списку
     if data == CB_EMP_BACK:
+        state = _current_state(context)
+        if state == EMPLOYEE_HIDDEN_LIST:
+            return await show_employees_list(update, context, message_id)
         return await show_employees_list(update, context, message_id)
 
-    # Отмена ввода
     if data == CB_EMP_CANCEL:
         context.user_data.pop("edit_employee_id", None)
         return await show_employees_list(update, context, message_id, notice="Отменено.")
 
-    # Аналитика
+    # --- Скрытые ---
+    if data == CB_EMP_HIDDEN:
+        return await show_hidden_list(update, context, message_id)
+
+    if data.startswith(CB_EMP_RESTORE_PREFIX):
+        tg_id = int(data.split(":")[1])
+        return await restore_employee(update, context, tg_id, message_id)
+
+    # --- Удаление ---
+    if data.startswith(CB_EMP_DELETE_HARD):
+        tg_id = int(data.split(":")[1])
+        return await show_delete_confirm(update, context, tg_id, message_id)
+
+    if data.startswith(CB_EMP_DELETE_SOFT):
+        tg_id = int(data.split(":")[1])
+        return await delete_employee(update, context, tg_id, message_id, hard=False)
+
+    # --- Аналитика ---
     if data == CB_EMP_ANALYTICS:
         return await show_analytics(update, context, message_id)
 
-    # Общий XLSX
     if data == CB_EMP_XLSX_ALL:
         users = get_active_users()
-
         if not users:
             return await show_employees_list(update, context, message_id, notice="⚠️ Нет данных.")
-
         await _answer(query, "Готовлю отчёт...")
-
         try:
             file_bytes = generate_all_employees_report(users, REPORT_PERIOD_DAYS)
-
             await context.bot.send_document(
                 chat_id=update.effective_chat.id,
                 document=file_bytes,
@@ -564,99 +644,76 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception as e:
             logger.error("Ошибка генерации общего отчёта: %s", e)
             return await show_analytics(update, context, message_id)
-
         return await show_analytics(update, context, message_id)
 
-    # Карточка сотрудника
+    # --- Карточка сотрудника ---
     if data.startswith(CB_EMP_DETAIL_PREFIX):
         tg_id = int(data.split(":")[1])
         return await show_employee_detail(update, context, tg_id, message_id)
 
-    # Профиль
+    # --- Профиль ---
     if data.startswith(CB_EMP_PROFILE_PREFIX):
         tg_id = int(data.split(":")[1])
         return await show_employee_profile(update, context, tg_id, message_id)
 
-    # Ставка — запрос ввода
+    # --- Ставка ---
     if data.startswith(CB_EMP_RATE_PREFIX):
         tg_id = int(data.split(":")[1])
         context.user_data["edit_employee_id"] = tg_id
-
         text = "💰 Отправьте новую ставку в формате:\n<code>250</code>"
-
         await _render(update, context, text, cancel_keyboard(), message_id)
-
         return _set_state(context, EMPLOYEE_AWAIT_RATE)
 
-    # Статус — выбор
+    # --- Статус ---
     if data.startswith(CB_EMP_STATUS_PREFIX):
         tg_id = int(data.split(":")[1])
-
         text = "🏷 Выберите статус:"
-
         await _render(update, context, text, edit_status_keyboard(tg_id), message_id)
-
         return _set_state(context, EMPLOYEE_STATUS)
 
-    # Установка статуса
     if data.startswith(CB_EMP_SET_STATUS_PREFIX):
         payload = data.split(":", 1)[1]
         tg_id_str, new_status = payload.split(":", 1)
         tg_id = int(tg_id_str)
-
         update_employee_status(tg_id, new_status)
+        return await show_employee_detail(update, context, tg_id, message_id, notice="✅ Статус обновлён.")
 
-        return await show_employee_detail(
-            update,
-            context,
-            tg_id,
-            message_id,
-            notice="✅ Статус обновлён.",
-        )
-
-    # Комментарий — запрос ввода
+    # --- Комментарий ---
     if data.startswith(CB_EMP_COMMENT_PREFIX):
         tg_id = int(data.split(":")[1])
         context.user_data["edit_employee_id"] = tg_id
-
         text = "📝 Отправьте комментарий.\nОтправьте <code>-</code>, чтобы удалить."
-
         await _render(update, context, text, cancel_keyboard(), message_id)
-
         return _set_state(context, EMPLOYEE_AWAIT_COMMENT)
 
-    # Смены
+    # --- Смены ---
     if data.startswith(CB_EMP_SHIFTS_PREFIX):
         tg_id = int(data.split(":")[1])
         return await show_employee_shifts(update, context, tg_id, message_id)
 
-    # Такси
+    # --- Такси ---
     if data.startswith(CB_EMP_TAXI_PREFIX):
         tg_id = int(data.split(":")[1])
         return await show_employee_taxi(update, context, tg_id, message_id)
 
-    # Отчёты
+    # --- Отчёты ---
     if data.startswith(CB_EMP_REPORTS_PREFIX):
         tg_id = int(data.split(":")[1])
         return await show_employee_reports(update, context, tg_id, message_id)
 
-    # Чек-листы
+    # --- Чек-листы ---
     if data.startswith(CB_EMP_CHECKLISTS_PREFIX):
         tg_id = int(data.split(":")[1])
         return await show_employee_checklists(update, context, tg_id, message_id)
 
-    # XLSX по одному
+    # --- XLSX по одному ---
     if data.startswith(CB_EMP_XLSX_ONE_PREFIX):
         tg_id = int(data.split(":")[1])
-
         await _answer(query, "Готовлю отчёт...")
-
         try:
             file_bytes = generate_employee_report(tg_id, REPORT_PERIOD_DAYS)
-
             user = get_user(tg_id) or {}
             file_name = f"employee_{tg_id}_{today_msk_str()}.xlsx"
-
             await context.bot.send_document(
                 chat_id=update.effective_chat.id,
                 document=file_bytes,
@@ -665,53 +722,32 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         except Exception as e:
             logger.error("Ошибка генерации отчёта по сотруднику: %s", e)
-
         return await show_employee_detail(update, context, tg_id, message_id)
 
-    # Фото такси
+    # --- Фото такси ---
     if data.startswith(CB_EMP_TAXI_PHOTOS_PREFIX):
         tg_id = int(data.split(":")[1])
-
         photo_ids = collect_taxi_photo_ids(tg_id, REPORT_PERIOD_DAYS)
-
         if not photo_ids:
             return await show_employee_taxi(update, context, tg_id, message_id)
-
         chat_id = update.effective_chat.id
-
         try:
             for start in range(0, len(photo_ids), 10):
                 chunk = photo_ids[start:start + 10]
-
-                media_group = [
-                    InputMediaPhoto(media=photo_id)
-                    for photo_id in chunk
-                ]
-
+                media_group = [InputMediaPhoto(media=photo_id) for photo_id in chunk]
                 await context.bot.send_media_group(chat_id=chat_id, media=media_group)
         except Exception as e:
             logger.error("Ошибка отправки фото такси: %s", e)
-
         return await show_employee_taxi(update, context, tg_id, message_id)
 
-    # УДАЛЕНИЕ СОТРУДНИКА – показать подтверждение
+    # --- Удаление (основное меню) ---
     if data == CB_EMP_DELETE:
         tg_id = context.user_data.get("current_employee_id")
         if not tg_id:
             return await show_employees_list(update, context, message_id, notice="⚠️ Ошибка: сотрудник не выбран.")
-
         return await show_delete_confirm(update, context, tg_id, message_id)
 
-    # ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ – полное
-    if data.startswith(CB_EMP_DELETE_HARD):
-        tg_id = int(data.split(":")[1])
-        return await delete_employee(update, context, tg_id, message_id, hard=True)
-
-    # ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ – скрытие
-    if data.startswith(CB_EMP_DELETE_SOFT):
-        tg_id = int(data.split(":")[1])
-        return await delete_employee(update, context, tg_id, message_id, hard=False)
-
+    # Fallback
     return await show_employees_list(update, context, message_id)
 
 
@@ -721,12 +757,10 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def employee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
-
     if not user:
         return MAIN_MENU_STATE
 
     text = (update.message.text or "").strip()
-
     if not text:
         await update.message.reply_text("⚠️ Пустой ввод.")
         return _current_state(context)
@@ -738,11 +772,9 @@ async def employee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("⚠️ Начните заново.")
         return MAIN_MENU_STATE
 
-    # Ставка
     if state == EMPLOYEE_AWAIT_RATE:
         try:
             rate = float(text.replace(",", "."))
-
             if rate < 0:
                 raise ValueError
         except ValueError:
@@ -750,29 +782,13 @@ async def employee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             return state
 
         set_salary_rate(tg_id, rate, today_msk_str())
-
         context.user_data.pop("edit_employee_id", None)
+        return await show_employee_detail(update, context, tg_id, notice=f"✅ Ставка обновлена: {rate} ₽/час")
 
-        return await show_employee_detail(
-            update,
-            context,
-            tg_id,
-            notice=f"✅ Ставка обновлена: {rate} ₽/час",
-        )
-
-    # Комментарий
     if state == EMPLOYEE_AWAIT_COMMENT:
         comment = None if text == "-" else text
-
         update_employee_comment(tg_id, comment)
-
         context.user_data.pop("edit_employee_id", None)
-
-        return await show_employee_detail(
-            update,
-            context,
-            tg_id,
-            notice="✅ Комментарий обновлён.",
-        )
+        return await show_employee_detail(update, context, tg_id, notice="✅ Комментарий обновлён.")
 
     return state

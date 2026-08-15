@@ -20,11 +20,13 @@ from .constants import (
     CB_EMP_DELETE,
     CB_EMP_DELETE_SOFT,
     CB_EMP_DELETE_HARD,
+    CB_EMP_HIDDEN,
+    CB_EMP_RESTORE_PREFIX,
     STATUSES,
 )
 
 
-def employees_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
+def employees_list_keyboard(users: list[dict], has_hidden: bool = False) -> InlineKeyboardMarkup:
     rows = []
 
     for user in users:
@@ -44,6 +46,17 @@ def employees_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
             ]
         )
 
+    # Кнопка "Скрытые" – появляется, если есть хотя бы один скрытый сотрудник
+    if has_hidden:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "🙈 Скрытые сотрудники",
+                    callback_data=CB_EMP_HIDDEN,
+                )
+            ]
+        )
+
     rows.append(
         [
             InlineKeyboardButton("📊 Аналитика команды", callback_data=CB_EMP_ANALYTICS)
@@ -55,6 +68,45 @@ def employees_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
         ]
     )
 
+    return InlineKeyboardMarkup(rows)
+
+
+def hidden_list_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
+    """Клавиатура для списка скрытых сотрудников (с возможностью восстановить или удалить)."""
+    rows = []
+    for user in users:
+        name = (
+            user.get("full_name")
+            or user.get("first_name")
+            or f"ID {user['tg_id']}"
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"👤 {name}",
+                    callback_data=f"{CB_EMP_DETAIL_PREFIX}{user['tg_id']}",
+                )
+            ]
+        )
+        # Кнопки действий для каждого скрытого
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "↩️ Восстановить",
+                    callback_data=f"{CB_EMP_RESTORE_PREFIX}{user['tg_id']}",
+                ),
+                InlineKeyboardButton(
+                    "🗑 Удалить полностью",
+                    callback_data=f"{CB_EMP_DELETE_HARD}:{user['tg_id']}",
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_EMP_BACK)
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -91,7 +143,6 @@ def employee_detail_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 
 def confirm_delete_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """Клавиатура подтверждения удаления с двумя вариантами."""
     return InlineKeyboardMarkup(
         [
             [
@@ -118,7 +169,6 @@ def confirm_delete_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def edit_status_keyboard(user_id: int) -> InlineKeyboardMarkup:
     rows = []
-
     for status in STATUSES:
         rows.append(
             [
@@ -128,13 +178,11 @@ def edit_status_keyboard(user_id: int) -> InlineKeyboardMarkup:
                 )
             ]
         )
-
     rows.append(
         [
             InlineKeyboardButton("✖️ Отмена", callback_data=CB_EMP_CANCEL)
         ]
     )
-
     return InlineKeyboardMarkup(rows)
 
 

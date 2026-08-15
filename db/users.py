@@ -82,3 +82,21 @@ def update_user_profile(tg_id: int, full_name: str | None = None, position: str 
     with get_connection() as conn:
         conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE tg_id = ?", tuple(params))
         conn.commit()
+        
+def get_all_users(active_only: bool = True, is_active: bool | None = None) -> list[dict]:
+    """
+    Возвращает список пользователей с возможностью фильтрации по is_active.
+    Если is_active не указан, возвращает всех.
+    active_only – устаревший параметр, используйте is_active.
+    """
+    with get_connection() as conn:
+        if is_active is not None:
+            rows = conn.execute(
+                "SELECT * FROM users WHERE is_active = ? ORDER BY full_name, first_name",
+                (1 if is_active else 0,)
+            ).fetchall()
+        elif not active_only:
+            rows = conn.execute("SELECT * FROM users ORDER BY full_name, first_name").fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM users WHERE is_active = 1 ORDER BY full_name, first_name").fetchall()
+        return [dict(row) for row in rows]

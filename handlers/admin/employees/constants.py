@@ -16,6 +16,7 @@ EMPLOYEES_ANALYTICS = 210
 EMPLOYEE_AWAIT_RATE = 211
 EMPLOYEE_AWAIT_COMMENT = 212
 EMPLOYEE_DELETE_CONFIRM = 213
+EMPLOYEE_HIDDEN_LIST = 214   # <-- НОВОЕ
 
 
 # =========================================================
@@ -43,11 +44,12 @@ CB_EMP_SET_STATUS_PREFIX = "emp_setst:"
 
 CB_EMP_BACK = "emp_back"
 CB_EMP_CANCEL = "emp_cancel"
+CB_EMP_HIDDEN = "emp_hidden"                 # <-- НОВОЕ
+CB_EMP_RESTORE_PREFIX = "emp_restore:"       # <-- НОВОЕ
 
 CB_EMP_DELETE = "emp_delete"
-CB_EMP_DELETE_SOFT = "emp_del_soft"          # НОВОЕ – скрыть
-CB_EMP_DELETE_HARD = "emp_del_hard"          # НОВОЕ – удалить полностью
-CB_EMP_DELETE_CONFIRM_PREFIX = "emp_delc:"   # Удалено, используем отдельные callback'и
+CB_EMP_DELETE_SOFT = "emp_del_soft"
+CB_EMP_DELETE_HARD = "emp_del_hard"
 
 
 # =========================================================

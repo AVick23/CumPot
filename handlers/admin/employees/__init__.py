@@ -8,6 +8,7 @@ from .handlers import (
 
 from .constants import (
     EMPLOYEES_LIST,
+    EMPLOYEE_HIDDEN_LIST,
     EMPLOYEE_DETAIL,
     EMPLOYEE_PROFILE,
     EMPLOYEE_RATE,
@@ -26,6 +27,10 @@ from .constants import (
 
 def register_employee_states(states: dict):
     states[EMPLOYEES_LIST] = [
+        CallbackQueryHandler(employees_callback),
+    ]
+
+    states[EMPLOYEE_HIDDEN_LIST] = [
         CallbackQueryHandler(employees_callback),
     ]
 
