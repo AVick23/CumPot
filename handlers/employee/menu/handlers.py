@@ -22,6 +22,7 @@ from .constants import (
     CB_SHIFT_TYPE_PREFIX,
     CB_REPORTS,
     CB_PROFILE,
+    CB_REFERENCE,   # ДОБАВЛЕНО
     LOCATIONS,
     FULL_NAME_LIMIT,
 )
@@ -199,6 +200,10 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data == CB_PROFILE:
         from ..profile.handlers import show_profile
         return await show_profile(update, context, message_id)
+
+    if data == CB_REFERENCE:   # ДОБАВЛЕНО
+        from ..reference.handlers import show_reference_main
+        return await show_reference_main(update, context, message_id)
 
     if data == CB_BACK_MENU:
         return await show_main_menu(update, context, message_id)

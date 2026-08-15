@@ -13,6 +13,7 @@ CB_POSITION_PREFIX = "pos:"
 CB_SHIFT_TYPE_PREFIX = "shift_type:"
 CB_REPORTS = "reports"
 CB_PROFILE = "profile"
+CB_REFERENCE = "reference"   # ДОБАВЛЕНО
 
 # UI
 LOCATIONS = {

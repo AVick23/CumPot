@@ -22,9 +22,10 @@ from .checklists.handlers import (
     noop,
 )
 
-# Импорт для отчётов и профиля
+# Импорт для отчётов, профиля и справочника
 from .reports import register_report_states
 from .profile import register_profile_states
+from .reference import register_reference_states   # ДОБАВЛЕНО
 
 from .menu.constants import (
     ONBOARD_NAME,
@@ -50,8 +51,8 @@ from .checklists.constants import (
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
     CB_TOGGLE_PREFIX,
-    CB_PHOTO_ADD_PREFIX,        # добавлено
-    CB_PHOTO_REPLACE_PREFIX,    # добавлено
+    CB_PHOTO_ADD_PREFIX,
+    CB_PHOTO_REPLACE_PREFIX,
     CB_VIEW_PHOTO_PREFIX,
     CB_PHOTO_CANCEL,
     CB_BACK_CATEGORIES,
@@ -82,7 +83,7 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(onboarding_position_guard),
     ]
 
-    # Главное меню – убрали CB_TAXI
+    # Главное меню
     states[MAIN_MENU] = [
         CallbackQueryHandler(
             main_menu_callback,
@@ -118,8 +119,8 @@ def register_employee_states(states: dict):
             toggle_item_callback,
             pattern=(
                 f"^{CB_TOGGLE_PREFIX}.*|"
-                f"^{CB_PHOTO_ADD_PREFIX}.*|"        # добавлен
-                f"^{CB_PHOTO_REPLACE_PREFIX}.*|"    # добавлен
+                f"^{CB_PHOTO_ADD_PREFIX}.*|"
+                f"^{CB_PHOTO_REPLACE_PREFIX}.*|"
                 f"^{CB_VIEW_PHOTO_PREFIX}.*|"
                 f"^{CB_BACK_CATEGORIES}$|"
                 f"^{CB_BACK_MENU}$"
@@ -143,6 +144,7 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(photo_state_guard),
     ]
 
-    # Регистрируем состояния для отчётов и профиля
+    # Регистрируем состояния для отчётов, профиля и справочника
     register_report_states(states)
     register_profile_states(states)
+    register_reference_states(states)   # ДОБАВЛЕНО

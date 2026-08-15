@@ -22,6 +22,7 @@ from .constants import (
     CB_SHIFT_TYPE_PREFIX,
     CB_REPORTS,
     CB_PROFILE,
+    CB_REFERENCE,   # ДОБАВЛЕНО
 )
 
 
@@ -41,7 +42,7 @@ def register_menu_states(states: dict):
             main_menu_callback,
             pattern=(
                 f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|"
-                f"^{CB_BACK_MENU}$|^{CB_REPORTS}$|^{CB_PROFILE}$"
+                f"^{CB_BACK_MENU}$|^{CB_REPORTS}$|^{CB_PROFILE}$|^{CB_REFERENCE}$"  # ДОБАВЛЕНО
             )
         ),
         CallbackQueryHandler(lambda *_: None, pattern="^noop$"),
