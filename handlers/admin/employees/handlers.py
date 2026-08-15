@@ -1,6 +1,6 @@
 import logging
 
-from telegram import Update, InputMediaPhoto, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from db import get_connection
@@ -9,8 +9,6 @@ from db.profile import (
     get_employee_full_info,
     update_employee_status,
     update_employee_comment,
-    set_salary_rate,
-    get_taxi_summary,
 )
 
 from utils.time_utils import today_msk_str
@@ -20,31 +18,25 @@ from .constants import (
     EMPLOYEE_HIDDEN_LIST,
     EMPLOYEE_DETAIL,
     EMPLOYEE_PROFILE,
-    EMPLOYEE_RATE,
     EMPLOYEE_STATUS,
     EMPLOYEE_COMMENT,
     EMPLOYEE_SHIFTS,
-    EMPLOYEE_TAXI,
     EMPLOYEE_REPORTS,
     EMPLOYEE_CHECKLISTS,
     EMPLOYEES_ANALYTICS,
-    EMPLOYEE_AWAIT_RATE,
     EMPLOYEE_AWAIT_COMMENT,
     EMPLOYEE_DELETE_CONFIRM,
     CB_EMP_HOME,
     CB_EMP_ANALYTICS,
     CB_EMP_XLSX_ALL,
+    CB_EMP_XLSX_ONE_PREFIX,
     CB_EMP_DETAIL_PREFIX,
     CB_EMP_PROFILE_PREFIX,
-    CB_EMP_RATE_PREFIX,
     CB_EMP_STATUS_PREFIX,
     CB_EMP_COMMENT_PREFIX,
     CB_EMP_SHIFTS_PREFIX,
-    CB_EMP_TAXI_PREFIX,
     CB_EMP_REPORTS_PREFIX,
     CB_EMP_CHECKLISTS_PREFIX,
-    CB_EMP_XLSX_ONE_PREFIX,
-    CB_EMP_TAXI_PHOTOS_PREFIX,
     CB_EMP_SET_STATUS_PREFIX,
     CB_EMP_BACK,
     CB_EMP_CANCEL,
@@ -61,7 +53,6 @@ from .keyboards import (
     hidden_list_keyboard,
     employee_detail_keyboard,
     edit_status_keyboard,
-    taxi_photos_keyboard,
     analytics_keyboard,
     cancel_keyboard,
     confirm_delete_keyboard,
@@ -73,8 +64,6 @@ from .utils import (
     get_employee_shifts,
     get_employee_reports,
     get_employee_checklist_activity,
-    get_taxi_expenses_full,
-    collect_taxi_photo_ids,
     _period_range,
     delete_employee_completely,
 )
@@ -238,7 +227,6 @@ async def show_employee_detail(
     date_from, date_to = _period_range(REPORT_PERIOD_DAYS)
     shifts = get_employee_shifts(tg_id, date_from, date_to)
     total_hours = sum((s.get("duration") or 0) / 60 for s in shifts)
-    taxi = get_taxi_summary(tg_id, date_from, date_to)
     reports = get_employee_reports(tg_id, date_from, date_to)
     checklist = get_employee_checklist_activity(tg_id, date_from, date_to)
 
@@ -248,10 +236,8 @@ async def show_employee_detail(
         f"Статус: {info.get('status') or '—'}\n\n"
         f"📊 <b>За {REPORT_PERIOD_DAYS} дней</b>\n"
         f"📆 Смен: {len(shifts)} · {round(total_hours, 1)} ч\n"
-        f"🚕 Такси: {taxi.get('total') or 0} ₽\n"
         f"📋 Отчётов: {len(reports)}\n"
-        f"✅ Задач: {len(checklist)}\n"
-        f"💰 Ставка: {info.get('current_rate') or 0} ₽/час"
+        f"✅ Задач: {len(checklist)}"
     )
 
     if notice:
@@ -279,7 +265,6 @@ async def show_employee_profile(
         f"🎂 ДР: {info.get('birthday') or '—'}\n"
         f"🏠 Адрес: {info.get('address') or '—'}\n"
         f"🧾 Обязанности: {info.get('responsibilities') or '—'}\n"
-        f"💰 Ставка: {info.get('current_rate') or 0} ₽/час\n"
         f"📝 Комментарий: {info.get('admin_comment') or '—'}"
     )
 
@@ -322,42 +307,6 @@ async def show_employee_shifts(
     kb = employee_detail_keyboard(tg_id)
     await _render(update, context, "\n".join(lines), kb, message_id)
     return _set_state(context, EMPLOYEE_SHIFTS)
-
-
-async def show_employee_taxi(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    tg_id: int,
-    message_id: int | None = None,
-) -> int:
-    user = get_user(tg_id) or {}
-    date_from, date_to = _period_range(REPORT_PERIOD_DAYS)
-
-    expenses = get_taxi_expenses_full(tg_id, date_from, date_to)
-    total = sum(e.get("amount") or 0 for e in expenses)
-    photos_count = sum(1 for e in expenses if e.get("photos"))
-
-    lines = [
-        f"🚕 <b>Такси: {_short_name(user)}</b>",
-        f"Период: {date_from} — {date_to}",
-        f"Всего: {len(expenses)} поездок · {total} ₽",
-        f"С фото: {photos_count}",
-        "",
-    ]
-
-    if not expenses:
-        lines.append("Поездок за этот период нет.")
-    else:
-        for expense in expenses[:10]:
-            photo_mark = " 📷" if expense.get("photos") else ""
-            lines.append(f"• {expense.get('date')} · {expense.get('amount')} ₽{photo_mark}")
-
-        if len(expenses) > 10:
-            lines.append(f"… и ещё {len(expenses) - 10}")
-
-    kb = taxi_photos_keyboard(tg_id)
-    await _render(update, context, "\n".join(lines), kb, message_id)
-    return _set_state(context, EMPLOYEE_TAXI)
 
 
 async def show_employee_reports(
@@ -435,7 +384,6 @@ async def show_analytics(
 
     total_shifts = 0
     total_hours = 0
-    total_taxi = 0
     total_reports = 0
     total_tasks = 0
 
@@ -446,9 +394,6 @@ async def show_analytics(
         total_shifts += len(shifts)
         total_hours += sum((s.get("duration") or 0) / 60 for s in shifts)
 
-        taxi = get_taxi_summary(tg_id, date_from, date_to)
-        total_taxi += taxi.get("total") or 0
-
         total_reports += len(get_employee_reports(tg_id, date_from, date_to))
         total_tasks += len(get_employee_checklist_activity(tg_id, date_from, date_to))
 
@@ -458,7 +403,6 @@ async def show_analytics(
         f"👥 Сотрудников: {len(users)}\n"
         f"📆 Смен: {total_shifts}\n"
         f"⏱ Часов: {round(total_hours, 1)}\n"
-        f"🚕 Такси: {total_taxi} ₽\n"
         f"📋 Отчётов: {total_reports}\n"
         f"✅ Задач: {total_tasks}"
     )
@@ -635,14 +579,6 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         tg_id = int(data.split(":")[1])
         return await show_employee_profile(update, context, tg_id, message_id)
 
-    # --- Ставка ---
-    if data.startswith(CB_EMP_RATE_PREFIX):
-        tg_id = int(data.split(":")[1])
-        context.user_data["edit_employee_id"] = tg_id
-        text = "💰 Отправьте новую ставку в формате:\n<code>250</code>"
-        await _render(update, context, text, cancel_keyboard(), message_id)
-        return _set_state(context, EMPLOYEE_AWAIT_RATE)
-
     # --- Статус ---
     if data.startswith(CB_EMP_STATUS_PREFIX):
         tg_id = int(data.split(":")[1])
@@ -669,11 +605,6 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data.startswith(CB_EMP_SHIFTS_PREFIX):
         tg_id = int(data.split(":")[1])
         return await show_employee_shifts(update, context, tg_id, message_id)
-
-    # --- Такси ---
-    if data.startswith(CB_EMP_TAXI_PREFIX):
-        tg_id = int(data.split(":")[1])
-        return await show_employee_taxi(update, context, tg_id, message_id)
 
     # --- Отчёты ---
     if data.startswith(CB_EMP_REPORTS_PREFIX):
@@ -707,26 +638,6 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         return await show_employee_detail(update, context, tg_id, message_id)
 
-    # --- Фото такси ---
-    if data.startswith(CB_EMP_TAXI_PHOTOS_PREFIX):
-        tg_id = int(data.split(":")[1])
-        photo_ids = collect_taxi_photo_ids(tg_id, REPORT_PERIOD_DAYS)
-
-        if not photo_ids:
-            return await show_employee_taxi(update, context, tg_id, message_id)
-
-        chat_id = update.effective_chat.id
-
-        try:
-            for start in range(0, len(photo_ids), 10):
-                chunk = photo_ids[start:start + 10]
-                media_group = [InputMediaPhoto(media=photo_id) for photo_id in chunk]
-                await context.bot.send_media_group(chat_id=chat_id, media=media_group)
-        except Exception as e:
-            logger.error("Ошибка отправки фото такси: %s", e)
-
-        return await show_employee_taxi(update, context, tg_id, message_id)
-
     # --- Удаление (основное меню) ---
     if data == CB_EMP_DELETE:
         tg_id = context.user_data.get("current_employee_id")
@@ -746,7 +657,7 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # =========================================================
-# TEXT INPUT (ставка / комментарий)
+# TEXT INPUT (комментарий)
 # =========================================================
 async def employee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -767,25 +678,7 @@ async def employee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("⚠️ Начните заново.")
         return MAIN_MENU_STATE
 
-    if state == EMPLOYEE_AWAIT_RATE:
-        try:
-            rate = float(text.replace(",", "."))
-            if rate < 0:
-                raise ValueError
-        except ValueError:
-            await update.message.reply_text("⚠️ Введите положительное число.")
-            return state
-
-        set_salary_rate(tg_id, rate, today_msk_str())
-        context.user_data.pop("edit_employee_id", None)
-
-        return await show_employee_detail(
-            update,
-            context,
-            tg_id,
-            notice=f"✅ Ставка обновлена: {rate} ₽/час",
-        )
-
+    # Комментарий
     if state == EMPLOYEE_AWAIT_COMMENT:
         comment = None if text == "-" else text
         update_employee_comment(tg_id, comment)

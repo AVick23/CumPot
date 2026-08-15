@@ -12,7 +12,6 @@ except Exception:
 from db import get_connection
 from db.checklist import get_items_for_location_and_day, get_shared_progress
 from db.shifts import get_shifts_for_date
-from db.profile import get_taxi_expenses
 from .constants import (
     CATEGORY_ORDER,
     CATEGORY_LABELS,
@@ -282,9 +281,7 @@ def get_day_report(date_str: str) -> dict:
 # ==========================================================
 
 def build_report_text(report: dict, mode: str = REPORT_MODE_SHORT):
-    # Фото теперь учитываются всегда
-    show_photos = True 
-    
+    show_photos = True  # Фото всегда показываем
     date_str = report.get("date", "")
     header = f"📊 {format_date_ru(date_str)}"
     weekday = format_weekday_ru(date_str)
@@ -513,61 +510,3 @@ def format_shift_report_text(report: dict | None) -> str:
     if not text:
         return "⚠️ Отчёт пуст"
     return text
-
-
-# ==========================================================
-# TAXI (ТАКСИ) – данные и фото
-# ==========================================================
-
-def get_taxi_for_date(date_str: str) -> list[dict]:
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT tg_id, full_name
-            FROM users
-            WHERE tg_id IN (
-                SELECT DISTINCT user_id FROM taxi_expenses WHERE date = ?
-            )
-            ORDER BY full_name
-            """,
-            (date_str,),
-        ).fetchall()
-    users = [dict(row) for row in rows]
-
-    result = []
-    for user in users:
-        expenses = get_taxi_expenses(user["tg_id"], date_str, date_str) or []
-        total = sum(float(e.get("amount") or 0) for e in expenses)
-        result.append({
-            "user_id": user["tg_id"],
-            "full_name": user.get("full_name") or "Сотрудник",
-            "expenses": expenses,
-            "total": total,
-        })
-    return result
-
-
-def get_taxi_photo_overview(date_str: str) -> dict:
-    taxi_data = get_taxi_for_date(date_str)
-    users = []
-    total_media = 0
-    for user_data in taxi_data:
-        media_items = []
-        for exp in user_data.get("expenses", []):
-            raw = exp.get("photo_file_ids") or exp.get("photo_file_id")
-            if raw:
-                media_items.extend(_parse_media(raw))
-        if media_items:
-            users.append({
-                "user_id": user_data["user_id"],
-                "full_name": user_data["full_name"],
-                "media_items": media_items,
-                "media_count": len(media_items),
-            })
-            total_media += len(media_items)
-
-    return {
-        "date": date_str,
-        "users": users,
-        "total_media": total_media,
-    }

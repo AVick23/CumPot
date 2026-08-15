@@ -1,8 +1,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .constants import (
     CB_START_SHIFT, CB_CHECKLIST, CB_PROGRESS, CB_BACK_MENU,
-    CB_POSITION_PREFIX, CB_SHIFT_TYPE_PREFIX, CB_PROFILE, CB_TAXI,
-    CB_REPORTS  # <-- добавлен импорт
+    CB_POSITION_PREFIX, CB_SHIFT_TYPE_PREFIX, CB_PROFILE,
+    CB_REPORTS
 )
 
 
@@ -20,7 +20,6 @@ def main_menu_keyboard(has_shift: bool) -> InlineKeyboardMarkup:
         buttons.append([InlineKeyboardButton("📋 Чек-лист", callback_data=CB_CHECKLIST)])
         buttons.append([InlineKeyboardButton("📊 Прогресс", callback_data=CB_PROGRESS)])
         buttons.append([InlineKeyboardButton("📋 Отчёты", callback_data=CB_REPORTS)])
-        buttons.append([InlineKeyboardButton("🚕 Такси", callback_data=CB_TAXI)])
     else:
         buttons.append([InlineKeyboardButton("🚀 Начать смену", callback_data=CB_START_SHIFT)])
 

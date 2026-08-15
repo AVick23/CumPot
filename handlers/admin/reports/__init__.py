@@ -6,8 +6,6 @@ from .constants import (
     ADMIN_PHOTO_OVERVIEW,
     ADMIN_PHOTO_LOCATION,
     ADMIN_PHOTO_CATEGORY,
-    ADMIN_TAXI_PHOTO_OVERVIEW,
-    ADMIN_TAXI_PHOTO_USER,
 )
 
 
@@ -30,11 +28,5 @@ def register_report_states(states: dict):
         CallbackQueryHandler(calendar_callback),
     ]
     states[ADMIN_PHOTO_CATEGORY] = [
-        CallbackQueryHandler(calendar_callback),
-    ]
-    states[ADMIN_TAXI_PHOTO_OVERVIEW] = [
-        CallbackQueryHandler(calendar_callback),
-    ]
-    states[ADMIN_TAXI_PHOTO_USER] = [
         CallbackQueryHandler(calendar_callback),
     ]

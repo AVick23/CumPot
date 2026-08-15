@@ -4,17 +4,14 @@ from .constants import (
     CB_EMP_HOME,
     CB_EMP_ANALYTICS,
     CB_EMP_XLSX_ALL,
+    CB_EMP_XLSX_ONE_PREFIX,
     CB_EMP_DETAIL_PREFIX,
     CB_EMP_PROFILE_PREFIX,
-    CB_EMP_RATE_PREFIX,
     CB_EMP_STATUS_PREFIX,
     CB_EMP_COMMENT_PREFIX,
     CB_EMP_SHIFTS_PREFIX,
-    CB_EMP_TAXI_PREFIX,
     CB_EMP_REPORTS_PREFIX,
     CB_EMP_CHECKLISTS_PREFIX,
-    CB_EMP_XLSX_ONE_PREFIX,
-    CB_EMP_TAXI_PHOTOS_PREFIX,
     CB_EMP_SET_STATUS_PREFIX,
     CB_EMP_BACK,
     CB_EMP_CANCEL,
@@ -117,15 +114,11 @@ def employee_detail_keyboard(user_id: int) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton("👤 Профиль", callback_data=f"{CB_EMP_PROFILE_PREFIX}{user_id}"),
-                InlineKeyboardButton("💰 Ставка", callback_data=f"{CB_EMP_RATE_PREFIX}{user_id}"),
-            ],
-            [
                 InlineKeyboardButton("🏷 Статус", callback_data=f"{CB_EMP_STATUS_PREFIX}{user_id}"),
-                InlineKeyboardButton("📝 Комментарий", callback_data=f"{CB_EMP_COMMENT_PREFIX}{user_id}"),
             ],
             [
+                InlineKeyboardButton("📝 Комментарий", callback_data=f"{CB_EMP_COMMENT_PREFIX}{user_id}"),
                 InlineKeyboardButton("📆 Смены", callback_data=f"{CB_EMP_SHIFTS_PREFIX}{user_id}"),
-                InlineKeyboardButton("🚕 Такси", callback_data=f"{CB_EMP_TAXI_PREFIX}{user_id}"),
             ],
             [
                 InlineKeyboardButton("📋 Отчёты", callback_data=f"{CB_EMP_REPORTS_PREFIX}{user_id}"),
@@ -189,22 +182,6 @@ def edit_status_keyboard(user_id: int) -> InlineKeyboardMarkup:
     )
 
     return InlineKeyboardMarkup(rows)
-
-
-def taxi_photos_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "📸 Отправить фото такси",
-                    callback_data=f"{CB_EMP_TAXI_PHOTOS_PREFIX}{user_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton("◀️ Назад", callback_data=f"{CB_EMP_DETAIL_PREFIX}{user_id}")
-            ],
-        ]
-    )
 
 
 def analytics_keyboard() -> InlineKeyboardMarkup:

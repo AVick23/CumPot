@@ -10,15 +10,12 @@ from .constants import (
     EMPLOYEE_HIDDEN_LIST,
     EMPLOYEE_DETAIL,
     EMPLOYEE_PROFILE,
-    EMPLOYEE_RATE,
     EMPLOYEE_STATUS,
     EMPLOYEE_COMMENT,
     EMPLOYEE_SHIFTS,
-    EMPLOYEE_TAXI,
     EMPLOYEE_REPORTS,
     EMPLOYEE_CHECKLISTS,
     EMPLOYEES_ANALYTICS,
-    EMPLOYEE_AWAIT_RATE,
     EMPLOYEE_AWAIT_COMMENT,
     EMPLOYEE_DELETE_CONFIRM,
 )
@@ -41,10 +38,6 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(employees_callback),
     ]
 
-    states[EMPLOYEE_RATE] = [
-        CallbackQueryHandler(employees_callback),
-    ]
-
     states[EMPLOYEE_STATUS] = [
         CallbackQueryHandler(employees_callback),
     ]
@@ -57,10 +50,6 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(employees_callback),
     ]
 
-    states[EMPLOYEE_TAXI] = [
-        CallbackQueryHandler(employees_callback),
-    ]
-
     states[EMPLOYEE_REPORTS] = [
         CallbackQueryHandler(employees_callback),
     ]
@@ -70,11 +59,6 @@ def register_employee_states(states: dict):
     ]
 
     states[EMPLOYEES_ANALYTICS] = [
-        CallbackQueryHandler(employees_callback),
-    ]
-
-    states[EMPLOYEE_AWAIT_RATE] = [
-        MessageHandler(filters.TEXT & ~filters.COMMAND, employee_text_input),
         CallbackQueryHandler(employees_callback),
     ]
 

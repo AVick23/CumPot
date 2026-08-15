@@ -8,9 +8,7 @@ from .constants import (
     CB_PHOTO_LOC_PREFIX, CB_PHOTO_CAT_PREFIX, CB_PHOTO_ALL_LOC,
     CB_PHOTO_ALL_CAT, CB_PHOTO_TASK_PREFIX, CB_PHOTO_PAGE_PREFIX,
     CB_PHOTO_BACK_DAY, CB_PHOTO_BACK_OVERVIEW, CB_PHOTO_BACK_LOC,
-    CB_TAB_CHECKLIST, CB_TAB_SHIFT_REPORTS, CB_TAB_TAXI,
-    CB_TAXI_PHOTO_REPORT, CB_TAXI_PHOTO_USER_PREFIX,
-    CB_TAXI_PHOTO_ALL, CB_TAXI_PHOTO_BACK,
+    CB_TAB_CHECKLIST, CB_TAB_SHIFT_REPORTS,
     REPORT_MODE_SHORT, REPORT_MODE_FULL, MONTHS, WEEKDAYS_SHORT,
     CATEGORY_ORDER, CATEGORY_LABELS,
 )
@@ -70,7 +68,6 @@ def day_report_tabs_keyboard(current_tab: str) -> InlineKeyboardMarkup:
     tabs = [
         (CB_TAB_CHECKLIST, "📋 Чек-листы"),
         (CB_TAB_SHIFT_REPORTS, "📄 Смены"),
-        (CB_TAB_TAXI, "🚕 Такси"),
     ]
     buttons = []
     for tab, label in tabs:
@@ -80,15 +77,7 @@ def day_report_tabs_keyboard(current_tab: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([buttons])
 
 
-def taxi_photo_keyboard(has_media: bool, date_str: str = None) -> InlineKeyboardMarkup | None:
-    if has_media:
-        return InlineKeyboardMarkup([[
-            InlineKeyboardButton("📸 Фотоотчёт по такси", callback_data=CB_TAXI_PHOTO_REPORT)
-        ]])
-    return None
-
-
-def day_report_keyboard(mode: str, has_bar_media: bool, has_kitchen_media: bool, current_tab: str, taxi_has_media: bool = False) -> InlineKeyboardMarkup:
+def day_report_keyboard(mode: str, has_bar_media: bool, has_kitchen_media: bool, current_tab: str) -> InlineKeyboardMarkup:
     rows = []
     rows.append(day_report_tabs_keyboard(current_tab).inline_keyboard[0])
 
@@ -100,10 +89,6 @@ def day_report_keyboard(mode: str, has_bar_media: bool, has_kitchen_media: bool,
         # Кнопка фотоотчёта появляется автоматически, если есть медиа
         if has_bar_media or has_kitchen_media:
             rows.append([InlineKeyboardButton("📸 Фотоотчёт", callback_data=CB_PHOTO_REPORT)])
-
-    elif current_tab == CB_TAB_TAXI:
-        if taxi_has_media:
-            rows.append([InlineKeyboardButton("📸 Фотоотчёт по такси", callback_data=CB_TAXI_PHOTO_REPORT)])
 
     rows.append([
         InlineKeyboardButton("◀️ Календарь", callback_data=CB_TO_CALENDAR),
@@ -186,29 +171,3 @@ def photo_category_keyboard(location: str, category: str, page_items: list[dict]
         InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
     ])
     return InlineKeyboardMarkup(rows)
-
-
-# ==========================================================
-# Фотоотчёт по такси – клавиатуры
-# ==========================================================
-
-def taxi_photo_overview_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
-    rows = []
-    for user in users:
-        label = f"{user['full_name']} · 🖼 {user['media_count']}"
-        rows.append([InlineKeyboardButton(label, callback_data=f"{CB_TAXI_PHOTO_USER_PREFIX}:{user['user_id']}")])
-
-    if users:
-        rows.append([InlineKeyboardButton("📤 Отправить все фото", callback_data=CB_TAXI_PHOTO_ALL)])
-
-    rows.append([
-        InlineKeyboardButton("◀️ Назад", callback_data=CB_TAXI_PHOTO_BACK),
-        InlineKeyboardButton("🏠 Меню", callback_data=CB_HOME),
-    ])
-    return InlineKeyboardMarkup(rows)
-
-
-def taxi_photo_back_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад к списку", callback_data=CB_TAXI_PHOTO_BACK)]
-    ])

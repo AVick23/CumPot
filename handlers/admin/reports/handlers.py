@@ -16,8 +16,6 @@ from .constants import (
     ADMIN_PHOTO_OVERVIEW,
     ADMIN_PHOTO_LOCATION,
     ADMIN_PHOTO_CATEGORY,
-    ADMIN_TAXI_PHOTO_OVERVIEW,
-    ADMIN_TAXI_PHOTO_USER,
     CB_HOME,
     CB_TO_CALENDAR,
     CB_PREV_MONTH,
@@ -39,11 +37,6 @@ from .constants import (
     CB_PHOTO_BACK_LOC,
     CB_TAB_CHECKLIST,
     CB_TAB_SHIFT_REPORTS,
-    CB_TAB_TAXI,
-    CB_TAXI_PHOTO_REPORT,
-    CB_TAXI_PHOTO_USER_PREFIX,
-    CB_TAXI_PHOTO_ALL,
-    CB_TAXI_PHOTO_BACK,
     REPORT_MODE_SHORT,
     REPORT_MODE_FULL,
     MONTHS,
@@ -58,8 +51,6 @@ from .keyboards import (
     photo_overview_keyboard,
     photo_location_keyboard,
     photo_category_keyboard,
-    taxi_photo_overview_keyboard,
-    taxi_photo_back_keyboard,
 )
 from .utils import (
     get_shift_days_for_month,
@@ -75,8 +66,6 @@ from .utils import (
     build_task_media_caption,
     get_shift_reports_for_date,
     format_shift_report_text,
-    get_taxi_for_date,
-    get_taxi_photo_overview,
 )
 
 logger = logging.getLogger(__name__)
@@ -181,7 +170,6 @@ async def show_day_report(
     context.user_data["report_date"] = date_str
     _set_calendar_to_date(context, date_str)
 
-    taxi_has_media = False
     has_bar_media = False
     has_kitchen_media = False
     parse_mode = None
@@ -191,7 +179,6 @@ async def show_day_report(
     # =========================================================
     if current_tab == CB_TAB_CHECKLIST:
         try:
-            # show_photos убран, внутри utils всегда True
             text, has_bar_media, has_kitchen_media = get_report_text(date_str, mode)
         except Exception as e:
             logger.error("Ошибка построения отчёта чек-листов: %s", e)
@@ -239,32 +226,6 @@ async def show_day_report(
 
         text = "\n".join(lines)
 
-    # =========================================================
-    # ВКЛАДКА: ТАКСИ
-    # =========================================================
-    else:
-        taxi_data = get_taxi_for_date(date_str) or []
-        lines = [f"🚕 Такси · {format_date_ru(date_str)}", ""]
-        if not taxi_data:
-            lines.append("ℹ️ Нет записей.")
-        else:
-            total_all = 0.0
-            for user_data in taxi_data:
-                name = user_data.get("full_name") or "Сотрудник"
-                total = float(user_data.get("total") or 0.0)
-                total_all += total
-                lines.append(f"👤 {name} — {total:.2f} ₽")
-                for exp in user_data.get("expenses", []):
-                    exp_date = exp.get("date") or date_str
-                    amount = float(exp.get("amount") or 0.0)
-                    lines.append(f"   • {format_date_ru(exp_date)} · {amount:.2f} ₽")
-                    raw_media = exp.get("photo_file_ids") or exp.get("photo_file_id")
-                    if raw_media:
-                        taxi_has_media = True
-                lines.append("")
-            lines.append(f"💰 Итого · {total_all:.2f} ₽")
-        text = "\n".join(lines).strip()
-
     if notice:
         if parse_mode == "HTML":
             text = f"<b>ℹ️ {notice}</b>\n\n{text}"
@@ -276,7 +237,6 @@ async def show_day_report(
         has_bar_media=has_bar_media,
         has_kitchen_media=has_kitchen_media,
         current_tab=current_tab,
-        taxi_has_media=taxi_has_media,
     )
 
     chat_id = update.effective_chat.id if update.effective_chat else None
@@ -739,238 +699,6 @@ async def send_task_photos(
 
 
 # ==========================================================
-# PHOTO REPORT FOR TAXI
-# ==========================================================
-
-async def show_taxi_photo_overview(
-    update,
-    context,
-    message_id=None,
-    notice=None,
-    date_str=None,
-):
-    if date_str is None:
-        date_str = context.user_data.get("report_date")
-    if not date_str:
-        return await show_calendar(
-            update,
-            context,
-            message_id,
-            notice="Сначала выберите день.",
-        )
-
-    context.user_data["report_date"] = date_str
-    _set_calendar_to_date(context, date_str)
-
-    overview = get_taxi_photo_overview(date_str)
-    if overview.get("total_media", 0) <= 0:
-        return await show_day_report(
-            update,
-            context,
-            date_str,
-            message_id,
-            notice="За этот день нет фото по такси.",
-            tab=CB_TAB_TAXI,
-        )
-
-    text = (
-        f"Фотоотчёт · Такси\n"
-        f"{format_date_ru(date_str)}\n\n"
-        f"Вложений · {overview.get('total_media', 0)}\n\n"
-        "Выберите сотрудника."
-    )
-    if notice:
-        text = f"{notice}\n\n{text}"
-
-    kb = taxi_photo_overview_keyboard(overview.get("users", []))
-    await render(
-        update,
-        context,
-        text,
-        kb,
-        message_id,
-    )
-    return _state(context, ADMIN_TAXI_PHOTO_OVERVIEW)
-
-
-async def send_taxi_user_photos(
-    update,
-    context,
-    user_id,
-    message_id=None,
-):
-    date_str = context.user_data.get("report_date")
-    if not date_str:
-        return await show_calendar(update, context, message_id)
-
-    overview = get_taxi_photo_overview(date_str)
-    user_data = next(
-        (u for u in overview.get("users", []) if u.get("user_id") == user_id),
-        None,
-    )
-
-    if not user_data or not user_data.get("media_items"):
-        return await show_taxi_photo_overview(
-            update,
-            context,
-            message_id,
-            notice="У этого сотрудника нет фото.",
-            date_str=date_str,
-        )
-
-    media_items = user_data.get("media_items", [])
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    if not chat_id:
-        return await show_taxi_photo_overview(
-            update,
-            context,
-            message_id,
-            date_str=date_str,
-        )
-
-    caption = f"Такси · {user_data.get('full_name')} · {format_date_ru(date_str)}"
-    sent_count = 0
-
-    try:
-        for start in range(0, len(media_items), MEDIA_CHUNK_SIZE):
-            chunk = media_items[start:start + MEDIA_CHUNK_SIZE]
-            media_group = []
-            for index, media in enumerate(chunk):
-                file_id = media.get("file_id")
-                if not file_id:
-                    continue
-                media_caption = caption if start == 0 and index == 0 else None
-                if media.get("type") == "video":
-                    media_group.append(
-                        InputMediaVideo(
-                            media=file_id,
-                            caption=media_caption,
-                        )
-                    )
-                else:
-                    media_group.append(
-                        InputMediaPhoto(
-                            media=file_id,
-                            caption=media_caption,
-                        )
-                    )
-            if media_group:
-                await context.bot.send_media_group(
-                    chat_id=chat_id,
-                    media=media_group,
-                )
-                await asyncio.sleep(TASK_SEND_DELAY)
-                sent_count += len(media_group)
-    except Exception as e:
-        logger.error("Ошибка отправки фото такси: %s", e, exc_info=True)
-        if sent_count > 0:
-            notice = f"Отправлено файлов · {sent_count}, есть ошибки"
-        else:
-            notice = "Ошибка при отправке фото"
-        return await show_taxi_photo_overview(
-            update,
-            context,
-            message_id,
-            notice=notice,
-            date_str=date_str,
-        )
-
-    return await show_taxi_photo_overview(
-        update,
-        context,
-        message_id,
-        notice=f"Отправлено файлов · {sent_count} · {user_data.get('full_name')}",
-        date_str=date_str,
-    )
-
-
-async def send_all_taxi_photos(
-    update,
-    context,
-    message_id=None,
-):
-    date_str = context.user_data.get("report_date")
-    if not date_str:
-        return await show_calendar(update, context, message_id)
-
-    overview = get_taxi_photo_overview(date_str)
-    if overview.get("total_media", 0) <= 0:
-        return await show_taxi_photo_overview(
-            update,
-            context,
-            message_id,
-            notice="Нет фото для отправки.",
-            date_str=date_str,
-        )
-
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    if not chat_id:
-        return await show_taxi_photo_overview(
-            update,
-            context,
-            message_id,
-            date_str=date_str,
-        )
-
-    total_sent = 0
-    errors = False
-
-    for user_data in overview.get("users", []):
-        media_items = user_data.get("media_items", [])
-        if not media_items:
-            continue
-
-        caption = f"Такси · {user_data.get('full_name')} · {format_date_ru(date_str)}"
-        try:
-            for start in range(0, len(media_items), MEDIA_CHUNK_SIZE):
-                chunk = media_items[start:start + MEDIA_CHUNK_SIZE]
-                media_group = []
-                for index, media in enumerate(chunk):
-                    file_id = media.get("file_id")
-                    if not file_id:
-                        continue
-                    media_caption = caption if start == 0 and index == 0 else None
-                    if media.get("type") == "video":
-                        media_group.append(
-                            InputMediaVideo(
-                                media=file_id,
-                                caption=media_caption,
-                            )
-                        )
-                    else:
-                        media_group.append(
-                            InputMediaPhoto(
-                                media=file_id,
-                                caption=media_caption,
-                            )
-                        )
-                if media_group:
-                    await context.bot.send_media_group(
-                        chat_id=chat_id,
-                        media=media_group,
-                    )
-                    await asyncio.sleep(TASK_SEND_DELAY)
-                    total_sent += len(media_group)
-        except Exception as e:
-            logger.error("Ошибка отправки фото такси: %s", e, exc_info=True)
-            errors = True
-            continue
-
-    if errors:
-        notice = f"Отправлено файлов · {total_sent}, есть ошибки"
-    else:
-        notice = f"Отправлено файлов · {total_sent}"
-
-    return await show_taxi_photo_overview(
-        update,
-        context,
-        message_id,
-        notice=notice,
-        date_str=date_str,
-    )
-
-
-# ==========================================================
 # CALLBACK ROUTER
 # ==========================================================
 
@@ -989,12 +717,10 @@ async def calendar_callback(update, context):
     send_actions = {
         CB_PHOTO_ALL_LOC,
         CB_PHOTO_ALL_CAT,
-        CB_TAXI_PHOTO_ALL,
     }
     if (
         data in send_actions
         or data.startswith(f"{CB_PHOTO_TASK_PREFIX}:")
-        or data.startswith(f"{CB_TAXI_PHOTO_USER_PREFIX}:")
     ):
         await query.answer("Отправляю…")
     else:
@@ -1062,7 +788,7 @@ async def calendar_callback(update, context):
             )
 
     # Переключение вкладок
-    if data in (CB_TAB_CHECKLIST, CB_TAB_SHIFT_REPORTS, CB_TAB_TAXI):
+    if data in (CB_TAB_CHECKLIST, CB_TAB_SHIFT_REPORTS):
         date_str = context.user_data.get("report_date")
         if not date_str:
             return await show_calendar(update, context, message_id)
@@ -1092,54 +818,6 @@ async def calendar_callback(update, context):
     # Фотоотчёт чек-листов
     if data == CB_PHOTO_REPORT:
         return await show_photo_overview(update, context, message_id)
-
-    # Фотоотчёт по такси
-    if data == CB_TAXI_PHOTO_REPORT:
-        date_str = context.user_data.get("report_date")
-        if not date_str:
-            return await show_calendar(
-                update,
-                context,
-                message_id,
-                notice="Сначала выберите день.",
-            )
-        return await show_taxi_photo_overview(
-            update,
-            context,
-            message_id,
-            date_str=date_str,
-        )
-
-    if data == CB_TAXI_PHOTO_BACK:
-        date_str = context.user_data.get("report_date")
-        if not date_str:
-            return await show_calendar(update, context, message_id)
-        return await show_day_report(
-            update,
-            context,
-            date_str,
-            message_id,
-            tab=CB_TAB_TAXI,
-        )
-
-    # ВАЖНО: сотрудник такси
-    if prefix == CB_TAXI_PHOTO_USER_PREFIX:
-        try:
-            user_id = int(value)
-        except (TypeError, ValueError):
-            date_str = context.user_data.get("report_date")
-            if not date_str:
-                return await show_calendar(update, context, message_id)
-            return await show_taxi_photo_overview(
-                update,
-                context,
-                message_id,
-                date_str=date_str,
-            )
-        return await send_taxi_user_photos(update, context, user_id, message_id)
-
-    if data == CB_TAXI_PHOTO_ALL:
-        return await send_all_taxi_photos(update, context, message_id)
 
     # Назад: фотоотчёт чек-листов
     if data == CB_PHOTO_BACK_DAY:
@@ -1253,14 +931,6 @@ async def calendar_callback(update, context):
                 message_id,
             )
         return await show_photo_overview(update, context, message_id)
-
-    if state in (ADMIN_TAXI_PHOTO_OVERVIEW, ADMIN_TAXI_PHOTO_USER) and date_str:
-        return await show_taxi_photo_overview(
-            update,
-            context,
-            message_id,
-            date_str=date_str,
-        )
 
     if state == ADMIN_DAY_REPORT and date_str:
         return await show_day_report(

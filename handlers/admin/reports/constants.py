@@ -6,8 +6,6 @@ ADMIN_DAY_REPORT = 104
 ADMIN_PHOTO_OVERVIEW = 130
 ADMIN_PHOTO_LOCATION = 131
 ADMIN_PHOTO_CATEGORY = 132
-ADMIN_TAXI_PHOTO_OVERVIEW = 140
-ADMIN_TAXI_PHOTO_USER = 141
 
 # =========================================================
 # CALLBACK DATA
@@ -43,13 +41,6 @@ CB_PHOTO_BACK_LOC = "pback_loc"
 # Вкладки дневного отчёта
 CB_TAB_CHECKLIST = "tab_checklist"
 CB_TAB_SHIFT_REPORTS = "tab_shift_reports"
-CB_TAB_TAXI = "tab_taxi"
-
-# Фотоотчёт по такси
-CB_TAXI_PHOTO_REPORT = "taxi_photo_report"
-CB_TAXI_PHOTO_USER_PREFIX = "taxi_photo_user"
-CB_TAXI_PHOTO_ALL = "taxi_photo_all"
-CB_TAXI_PHOTO_BACK = "taxi_photo_back"
 
 # =========================================================
 # REPORT MODES

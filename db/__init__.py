@@ -136,47 +136,6 @@ def init_db():
         """)
 
         # ------------------------------------------------------------
-        # НОВЫЕ ТАБЛИЦЫ (личные данные, ставки, такси)
-        # ------------------------------------------------------------
-
-        # Таблица ставок
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS salary_rates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                rate REAL NOT NULL,
-                date_from TEXT NOT NULL,
-                date_to TEXT,
-                created_at TEXT,
-                updated_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(tg_id)
-            )
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_salary_rates_user_date
-            ON salary_rates (user_id, date_from)
-        """)
-
-        # Таблица расходов на такси
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS taxi_expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                photo_file_ids TEXT,
-                photo_channel_message_ids TEXT,
-                created_at TEXT,
-                updated_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(tg_id)
-            )
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_taxi_user_date
-            ON taxi_expenses (user_id, date)
-        """)
-
-        # ------------------------------------------------------------
         # МИГРАЦИИ ДЛЯ СУЩЕСТВУЮЩИХ ТАБЛИЦ
         # ------------------------------------------------------------
 
@@ -189,7 +148,7 @@ def init_db():
             "responsibilities": "TEXT",
             "status": "TEXT DEFAULT 'Сотрудник'",
             "admin_comment": "TEXT",
-            "is_active": "BOOLEAN DEFAULT 1",          # <-- НОВОЕ
+            "is_active": "BOOLEAN DEFAULT 1",
         }
         for field, col_type in new_user_fields.items():
             if field not in user_columns:
@@ -238,5 +197,5 @@ def init_db():
     logger.info("Инициализация базы данных завершена.")
 
 
-# Инициализация при первом импорте (по-прежнему вызывается)
+# Инициализация при первом импорте
 init_db()
