@@ -17,7 +17,7 @@ from .keyboards import (
 )
 from .search import (
     SearchIndex, get_search_index, Recipe, ShelfLifeItem,
-    tokenize,
+    tokenize, get_categories,
 )
 
 from ..menu.utils import render, answer, set_state, get_current_state
