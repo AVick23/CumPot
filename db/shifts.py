@@ -215,7 +215,3 @@ def get_shifts_for_month(user_id: int, year: int, month: int) -> set[str]:
             (user_id, start_date, end_date)
         ).fetchall()
         return {row["date"] for row in rows}
-    
-def get_shifts_for_date(date_str: str) -> list[dict]:
-    # Дублирующая функция – лучше удалить, но для совместимости оставим, вызывая основную.
-    return get_shifts_for_date(date_str)

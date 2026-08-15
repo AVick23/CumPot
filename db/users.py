@@ -33,20 +33,28 @@ def get_user(tg_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def get_all_users() -> list[dict]:
-    """Возвращает всех пользователей без учёта is_active (для админ-отчётов)."""
+def get_all_users(active_only: bool = True, is_active: bool | None = None) -> list[dict]:
+    """
+    Возвращает список пользователей с возможностью фильтрации по is_active.
+    Если is_active не указан, возвращает всех.
+    active_only – устаревший параметр, используйте is_active.
+    """
     with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM users ORDER BY full_name, first_name").fetchall()
+        if is_active is not None:
+            rows = conn.execute(
+                "SELECT * FROM users WHERE is_active = ? ORDER BY full_name, first_name",
+                (1 if is_active else 0,)
+            ).fetchall()
+        elif not active_only:
+            rows = conn.execute("SELECT * FROM users ORDER BY full_name, first_name").fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM users WHERE is_active = 1 ORDER BY full_name, first_name").fetchall()
         return [dict(row) for row in rows]
 
 
 def get_active_users() -> list[dict]:
     """Возвращает только активных сотрудников (is_active = 1)."""
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM users WHERE is_active = 1 ORDER BY full_name, first_name"
-        ).fetchall()
-        return [dict(row) for row in rows]
+    return get_all_users(active_only=True, is_active=True)
 
 
 def deactivate_user(tg_id: int) -> None:
@@ -82,21 +90,3 @@ def update_user_profile(tg_id: int, full_name: str | None = None, position: str 
     with get_connection() as conn:
         conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE tg_id = ?", tuple(params))
         conn.commit()
-        
-def get_all_users(active_only: bool = True, is_active: bool | None = None) -> list[dict]:
-    """
-    Возвращает список пользователей с возможностью фильтрации по is_active.
-    Если is_active не указан, возвращает всех.
-    active_only – устаревший параметр, используйте is_active.
-    """
-    with get_connection() as conn:
-        if is_active is not None:
-            rows = conn.execute(
-                "SELECT * FROM users WHERE is_active = ? ORDER BY full_name, first_name",
-                (1 if is_active else 0,)
-            ).fetchall()
-        elif not active_only:
-            rows = conn.execute("SELECT * FROM users ORDER BY full_name, first_name").fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM users WHERE is_active = 1 ORDER BY full_name, first_name").fetchall()
-        return [dict(row) for row in rows]
