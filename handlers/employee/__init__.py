@@ -50,7 +50,8 @@ from .checklists.constants import (
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
     CB_TOGGLE_PREFIX,
-    CB_PHOTO_PREFIX,
+    CB_PHOTO_ADD_PREFIX,        # добавлено
+    CB_PHOTO_REPLACE_PREFIX,    # добавлено
     CB_VIEW_PHOTO_PREFIX,
     CB_PHOTO_CANCEL,
     CB_BACK_CATEGORIES,
@@ -117,7 +118,8 @@ def register_employee_states(states: dict):
             toggle_item_callback,
             pattern=(
                 f"^{CB_TOGGLE_PREFIX}.*|"
-                f"^{CB_PHOTO_PREFIX}.*|"
+                f"^{CB_PHOTO_ADD_PREFIX}.*|"        # добавлен
+                f"^{CB_PHOTO_REPLACE_PREFIX}.*|"    # добавлен
                 f"^{CB_VIEW_PHOTO_PREFIX}.*|"
                 f"^{CB_BACK_CATEGORIES}$|"
                 f"^{CB_BACK_MENU}$"

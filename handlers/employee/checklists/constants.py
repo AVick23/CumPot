@@ -18,8 +18,7 @@ CB_NOOP = "noop"
 CB_CATEGORY_PREFIX = "cat:"
 CB_ITEM_PREFIX = "item:"
 CB_TOGGLE_PREFIX = "toggle:"
-CB_PHOTO_PREFIX = "photo:"           # оставляем для обратной совместимости, но лучше не использовать
-CB_PHOTO_ADD_PREFIX = "photo_add:"   # добавить фото
+CB_PHOTO_ADD_PREFIX = "photo_add:"       # добавить фото (или выполнить с фото)
 CB_PHOTO_REPLACE_PREFIX = "photo_replace:" # заменить фото
 CB_VIEW_PHOTO_PREFIX = "view_photo:"
 

@@ -123,7 +123,7 @@ def item_detail_keyboard(
                 ]
             )
 
-        # Кнопка "Выполнить с фото" – это добавление
+        # Используем CB_PHOTO_ADD_PREFIX для выполнения с фото
         rows.append(
             [
                 InlineKeyboardButton(
