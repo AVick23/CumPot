@@ -6,7 +6,8 @@ from .constants import (
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
     CB_TOGGLE_PREFIX,
-    CB_PHOTO_PREFIX,
+    CB_PHOTO_ADD_PREFIX,
+    CB_PHOTO_REPLACE_PREFIX,
     CB_VIEW_PHOTO_PREFIX,
     CB_PHOTO_CANCEL,
     CB_BACK_MENU,
@@ -122,11 +123,12 @@ def item_detail_keyboard(
                 ]
             )
 
+        # Кнопка "Выполнить с фото" – это добавление
         rows.append(
             [
                 InlineKeyboardButton(
                     "📸 Выполнить с фото",
-                    callback_data=f"{CB_PHOTO_PREFIX}{item_id}",
+                    callback_data=f"{CB_PHOTO_ADD_PREFIX}{item_id}",
                 )
             ]
         )
@@ -140,16 +142,30 @@ def item_detail_keyboard(
             ]
         )
 
-        photo_label = "📷 Заменить фото" if has_photo else "📷 Прикрепить фото"
-
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    photo_label,
-                    callback_data=f"{CB_PHOTO_PREFIX}{item_id}",
-                )
-            ]
-        )
+        if has_photo:
+            # Если фото уже есть, две кнопки: добавить и заменить
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "➕ Добавить фото",
+                        callback_data=f"{CB_PHOTO_ADD_PREFIX}{item_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "📷 Заменить фото",
+                        callback_data=f"{CB_PHOTO_REPLACE_PREFIX}{item_id}",
+                    ),
+                ]
+            )
+        else:
+            # Если фото нет, одна кнопка прикрепить
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "📷 Прикрепить фото",
+                        callback_data=f"{CB_PHOTO_ADD_PREFIX}{item_id}",
+                    )
+                ]
+            )
 
     if has_photo:
         rows.append(
@@ -181,12 +197,6 @@ def progress_keyboard() -> InlineKeyboardMarkup:
 
 
 def photo_prompt_keyboard(has_photos: bool = False) -> InlineKeyboardMarkup:
-    """
-    Сейчас намеренно оставляем только отмену.
-
-    Альбом обрабатывается автоматически после загрузки всех частей,
-    поэтому кнопка "Готово" не нужна и только путает пользователя.
-    """
     return InlineKeyboardMarkup(
         [
             [

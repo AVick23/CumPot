@@ -394,24 +394,20 @@ def attach_media_to_task(
     channel_message_ids: list,
     mark_done: bool = False,
     task_item: dict | None = None,
+    replace: bool = False,  # новый параметр
 ) -> None:
     """
-    Сохраняет медиа не просто как file_id, а с мета-данными:
-    - задача
-    - категория
-    - локация
-    - дата
-    - пользователь
-    - channel_message_id
-
-    Это позволяет потом собирать отдельные фотоотчёты.
+    Сохраняет медиа не просто как file_id, а с мета-данными.
+    Если replace=False – добавляет к существующим.
+    Если replace=True – заменяет старые новыми.
     """
     logger.info(
-        "💾 attach_media_to_task: user=%s item=%s media_count=%s mark_done=%s",
+        "💾 attach_media_to_task: user=%s item=%s media_count=%s mark_done=%s replace=%s",
         user_id,
         item_id,
         len(media_items or []),
         mark_done,
+        replace,
     )
 
     shift = get_active_shift(user_id)
@@ -440,60 +436,85 @@ def attach_media_to_task(
     user_db = get_user(user_id)
     user_name = full_name(user_db)
 
-    records = []
-
-    for index, media in enumerate(media_items):
-        channel_message_id = None
-
-        if index < len(channel_message_ids):
-            channel_message_id = channel_message_ids[index]
-        elif channel_message_ids:
-            channel_message_id = channel_message_ids[0]
-
-        records.append(
-            {
-                "type": media.get("type", "photo"),
-                "file_id": media.get("file_id"),
-
-                # Привязка к задаче
-                "item_id": item_id,
-                "item_text": task_item.get("text"),
-                "category": task_item.get("category"),
-
-                # Привязка к локации и дате
-                "location": location,
-                "date": date,
-
-                # Кто прикрепил
-                "user_id": user_id,
-                "user_name": user_name,
-
-                # Канал
-                "channel_message_id": channel_message_id,
-
-                # Время
-                "added_at": time_msk_str(),
-            }
-        )
-
-    if mark_done:
-        save_shared_progress(location, date, item_id, True, user_id)
-
-    payload = json.dumps(records, ensure_ascii=False)
-    channel_payload = json.dumps(channel_message_ids, ensure_ascii=False)
-
-    first_file_id = records[0].get("file_id") if records else None
-    first_channel_message_id = records[0].get("channel_message_id") if records else None
-
+    # Получаем существующие данные из БД
     with get_connection() as conn:
         existing = conn.execute(
             """
-            SELECT id, completed
+            SELECT photo_file_ids, photo_channel_message_ids, completed
             FROM checklist_shared_progress
             WHERE location = ? AND date = ? AND item_id = ?
             """,
             (location, date, item_id),
         ).fetchone()
+
+        existing_records = []
+        existing_channel_ids = []
+        if existing:
+            try:
+                existing_records = json.loads(existing["photo_file_ids"]) if existing["photo_file_ids"] else []
+                if not isinstance(existing_records, list):
+                    existing_records = []
+            except Exception:
+                existing_records = []
+            try:
+                existing_channel_ids = json.loads(existing["photo_channel_message_ids"]) if existing["photo_channel_message_ids"] else []
+                if not isinstance(existing_channel_ids, list):
+                    existing_channel_ids = []
+            except Exception:
+                existing_channel_ids = []
+
+        # Формируем новые записи для медиа
+        new_records = []
+        new_channel_ids = []
+
+        for index, media in enumerate(media_items):
+            channel_message_id = None
+            if index < len(channel_message_ids):
+                channel_message_id = channel_message_ids[index]
+            elif channel_message_ids:
+                channel_message_id = channel_message_ids[0]
+
+            new_records.append(
+                {
+                    "type": media.get("type", "photo"),
+                    "file_id": media.get("file_id"),
+                    "item_id": item_id,
+                    "item_text": task_item.get("text"),
+                    "category": task_item.get("category"),
+                    "location": location,
+                    "date": date,
+                    "user_id": user_id,
+                    "user_name": user_name,
+                    "channel_message_id": channel_message_id,
+                    "added_at": time_msk_str(),
+                }
+            )
+            if channel_message_id:
+                new_channel_ids.append(channel_message_id)
+
+        if not replace:
+            # Добавляем к существующим (избегая дублей по file_id)
+            existing_file_ids = {r.get("file_id") for r in existing_records if r.get("file_id")}
+            for rec in new_records:
+                if rec.get("file_id") not in existing_file_ids:
+                    existing_records.append(rec)
+                    existing_file_ids.add(rec.get("file_id"))
+            # Объединяем channel ids
+            existing_channel_ids.extend(new_channel_ids)
+            final_records = existing_records
+            final_channel_ids = existing_channel_ids
+        else:
+            final_records = new_records
+            final_channel_ids = new_channel_ids
+
+        if mark_done:
+            save_shared_progress(location, date, item_id, True, user_id)
+
+        payload = json.dumps(final_records, ensure_ascii=False)
+        channel_payload = json.dumps(final_channel_ids, ensure_ascii=False)
+
+        first_file_id = final_records[0].get("file_id") if final_records else None
+        first_channel_message_id = final_channel_ids[0] if final_channel_ids else None
 
         if existing:
             conn.execute(
@@ -504,7 +525,9 @@ def attach_media_to_task(
                     photo_channel_message_ids = ?,
                     photo_file_id = ?,
                     photo_channel_message_id = ?,
-                    completed_by = ?
+                    completed_by = ?,
+                    completed = ?,
+                    completed_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -513,6 +536,8 @@ def attach_media_to_task(
                     first_file_id,
                     first_channel_message_id,
                     user_id,
+                    1 if mark_done else 0,
+                    time_msk_str() if mark_done else None,
                     existing["id"],
                 ),
             )
@@ -550,10 +575,11 @@ def attach_media_to_task(
         conn.commit()
 
     logger.info(
-        "✅ attach_media_to_task: медиа сохранены для item=%s location=%s date=%s",
+        "✅ attach_media_to_task: медиа сохранены для item=%s location=%s date=%s replace=%s",
         item_id,
         location,
         date,
+        replace,
     )
 
 

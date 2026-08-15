@@ -42,7 +42,8 @@ from .constants import (
     CB_CATEGORY_PREFIX,
     CB_ITEM_PREFIX,
     CB_TOGGLE_PREFIX,
-    CB_PHOTO_PREFIX,
+    CB_PHOTO_ADD_PREFIX,
+    CB_PHOTO_REPLACE_PREFIX,
     CB_VIEW_PHOTO_PREFIX,
     CB_PHOTO_CANCEL,
     CB_BACK_MENU,
@@ -431,9 +432,10 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
         return await show_item_detail(update, context, item_id, message_id)
 
-    # Запрос фото
-    if data.startswith(CB_PHOTO_PREFIX):
+    # Обработка добавления/замены фото
+    if data.startswith(CB_PHOTO_ADD_PREFIX) or data.startswith(CB_PHOTO_REPLACE_PREFIX):
         try:
+            # Формат: prefix + item_id
             item_id = int(data.split(":", 1)[1])
         except (TypeError, ValueError):
             await answer(query)
@@ -443,7 +445,6 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
         if not item:
             await answer(query)
-
             return await show_current_checklist(
                 update,
                 context,
@@ -451,9 +452,25 @@ async def toggle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 notice="⚠️ Задача не найдена.",
             )
 
-        await answer(query)
+        # Определяем действие
+        if data.startswith(CB_PHOTO_REPLACE_PREFIX):
+            replace_action = True
+            toast = "Вы выбрали замену фото"
+        else:
+            replace_action = False
+            toast = "Вы выбрали добавление фото"
 
-        logger.info("📸 Пользователь %s запросил прикрепление фото к задаче %s", user.id, item_id)
+        # Сохраняем действие в context
+        context.user_data["photo_replace"] = replace_action
+
+        await answer(query, toast)
+
+        logger.info(
+            "📸 Пользователь %s запросил %s фото к задаче %s",
+            user.id,
+            "замену" if replace_action else "добавление",
+            item_id,
+        )
 
         return await show_photo_prompt(update, context, item_id)
 
@@ -572,6 +589,7 @@ async def show_photo_prompt(
         "item_id": item_id,
         "mark_done": not bool(item.get("completed")),
         "prompt_message_id": msg.message_id,
+        "replace": context.user_data.get("photo_replace", False),  # сохраняем действие
     }
 
     return set_state(context, AWAIT_TASK_PHOTO)
@@ -746,12 +764,14 @@ async def _process_media_items(
     item_id = meta.get("item_id")
     mark_done = bool(meta.get("mark_done"))
     prompt_message_id = meta.get("prompt_message_id")
+    replace = bool(meta.get("replace", False))  # извлекаем действие
 
     logger.info(
-        "📥 Обрабатываю медиа для задачи %s. Файлов: %s. mark_done=%s",
+        "📥 Обрабатываю медиа для задачи %s. Файлов: %s. mark_done=%s, replace=%s",
         item_id,
         len(items),
         mark_done,
+        replace,
     )
 
     task_item = get_item_by_id(user.id, item_id)
@@ -796,9 +816,11 @@ async def _process_media_items(
         channel_message_ids=channel_message_ids,
         mark_done=mark_done,
         task_item=task_item,
+        replace=replace,
     )
 
     context.user_data.pop("await_photo", None)
+    context.user_data.pop("photo_replace", None)  # очищаем
 
     await cleanup_message(context, chat_id, prompt_message_id, "✅ Файлы получены")
 
@@ -831,11 +853,13 @@ async def _handle_single_media(
     item_id = meta.get("item_id")
     mark_done = bool(meta.get("mark_done"))
     prompt_message_id = meta.get("prompt_message_id")
+    replace = bool(meta.get("replace", False))
 
     logger.info(
-        "📥 Обрабатываю одиночное медиа для задачи %s. mark_done=%s",
+        "📥 Обрабатываю одиночное медиа для задачи %s. mark_done=%s, replace=%s",
         item_id,
         mark_done,
+        replace,
     )
 
     task_item = get_item_by_id(user.id, item_id)
@@ -892,9 +916,11 @@ async def _handle_single_media(
         channel_message_ids=channel_message_ids,
         mark_done=mark_done,
         task_item=task_item,
+        replace=replace,
     )
 
     context.user_data.pop("await_photo", None)
+    context.user_data.pop("photo_replace", None)
 
     await cleanup_message(context, chat_id, prompt_message_id, "✅ Файл получен")
 
@@ -947,6 +973,7 @@ async def photo_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         prompt_message_id = query.message.message_id
 
     context.user_data.pop("await_photo", None)
+    context.user_data.pop("photo_replace", None)
 
     logger.info("❌ Пользователь %s отменил прикрепление фото к задаче %s", user.id, item_id)
 
