@@ -10,6 +10,8 @@ from .constants import (
     CB_REF_PAGE_PREFIX,
     CB_REF_SEARCH_PAGE_PREFIX,
     CB_REF_BACK_TO_LIST,
+    CB_REF_BASE,
+    CB_REF_SEASON,
 )
 
 
@@ -56,27 +58,31 @@ def _pagination_row(
 
 
 def reference_main_keyboard() -> InlineKeyboardMarkup:
-    """
-    Главное меню справочника.
-    """
+    """Главное меню справочника с разделами."""
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "🔍 Поиск",
-                    callback_data=CB_REF_SEARCH,
+                    "📖 База рецептов",
+                    callback_data=CB_REF_BASE,
                 )
             ],
             [
                 InlineKeyboardButton(
-                    "📂 Категории",
-                    callback_data=f"{CB_REF_CATEGORY_PREFIX}all",
+                    "☀️ Сезонное меню",
+                    callback_data=CB_REF_SEASON,
                 )
             ],
             [
                 InlineKeyboardButton(
                     "📅 Сроки годности",
                     callback_data=CB_REF_SHELF_LIFE,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🔍 Поиск",
+                    callback_data=CB_REF_SEARCH,
                 )
             ],
             [
@@ -89,20 +95,20 @@ def reference_main_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def categories_keyboard(category_counts: dict[str, int]) -> InlineKeyboardMarkup:
-    """
-    Клавиатура категорий с количеством рецептов.
-    """
+def categories_keyboard(
+    category_counts: dict[str, int],
+    source: str = "base"
+) -> InlineKeyboardMarkup:
+    """Клавиатура категорий с указанием источника."""
     rows = []
 
     for category in sorted(category_counts.keys()):
         count = category_counts.get(category, 0)
-
         rows.append(
             [
                 InlineKeyboardButton(
                     f"{category} · {count}",
-                    callback_data=f"{CB_REF_CATEGORY_PREFIX}{category}",
+                    callback_data=f"{CB_REF_CATEGORY_PREFIX}{source}:{category}",
                 )
             ]
         )
@@ -125,9 +131,7 @@ def items_list_keyboard(
     page: int,
     total_pages: int,
 ) -> InlineKeyboardMarkup:
-    """
-    Клавиатура списка рецептов в категории.
-    """
+    """Клавиатура списка рецептов в категории."""
     rows = []
 
     for item in items:
@@ -153,7 +157,7 @@ def items_list_keyboard(
         [
             InlineKeyboardButton(
                 "📂 Категории",
-                callback_data=f"{CB_REF_CATEGORY_PREFIX}all",
+                callback_data=f"{CB_REF_CATEGORY_PREFIX}{item.source}:all" if items else CB_REF_HOME,
             ),
             InlineKeyboardButton(
                 "🏠 Меню",
@@ -170,9 +174,7 @@ def search_results_keyboard(
     page: int,
     total_pages: int,
 ) -> InlineKeyboardMarkup:
-    """
-    Клавиатура результатов поиска.
-    """
+    """Клавиатура результатов поиска."""
     rows = []
 
     for item in items:
@@ -211,9 +213,7 @@ def search_results_keyboard(
 
 
 def item_detail_keyboard(recipe) -> InlineKeyboardMarkup:
-    """
-    Клавиатура карточки рецепта.
-    """
+    """Клавиатура карточки рецепта."""
     category = recipe.category or "Рецепты"
 
     return InlineKeyboardMarkup(
@@ -227,7 +227,7 @@ def item_detail_keyboard(recipe) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     _clip(f"📂 {category}", 26),
-                    callback_data=f"{CB_REF_CATEGORY_PREFIX}{category}",
+                    callback_data=f"{CB_REF_CATEGORY_PREFIX}{recipe.source}:{category}",
                 ),
                 InlineKeyboardButton(
                     "🔍 Поиск",
@@ -245,9 +245,7 @@ def item_detail_keyboard(recipe) -> InlineKeyboardMarkup:
 
 
 def search_prompt_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура при ожидании поискового запроса.
-    """
+    """Клавиатура при ожидании поискового запроса."""
     return InlineKeyboardMarkup(
         [
             [
@@ -261,9 +259,7 @@ def search_prompt_keyboard() -> InlineKeyboardMarkup:
 
 
 def shelf_life_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура для раздела сроков годности.
-    """
+    """Клавиатура для раздела сроков годности."""
     return InlineKeyboardMarkup(
         [
             [

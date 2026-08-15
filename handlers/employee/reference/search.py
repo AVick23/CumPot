@@ -89,7 +89,7 @@ class Recipe:
     instruction: str = ""
     description: str = ""
     shelf_life: Optional[int] = None
-    source_file: str = ""
+    source: str = "base"
 
 
 @dataclass
@@ -154,34 +154,49 @@ class SearchIndex:
     def get_recipe(self, recipe_id: int) -> Recipe | None:
         return self.recipes.get(recipe_id)
 
-    def get_by_category(self, category: str) -> List[Recipe]:
+    def get_by_category(self, category: str, source: str = "base") -> List[Recipe]:
+        """
+        Возвращает рецепты по категории и источнику.
+        """
         recipes = [
             recipe
             for recipe in self.recipes.values()
-            if recipe.category == category
+            if recipe.category == category and recipe.source == source
         ]
 
         return sorted(recipes, key=lambda recipe: recipe.name.lower())
 
-    def get_all_categories(self) -> List[str]:
+    def get_all_categories(self, source: str = "base") -> List[str]:
+        """
+        Возвращает все категории для указанного источника.
+        """
         return sorted(
             {
                 recipe.category
                 for recipe in self.recipes.values()
-                if recipe.category
+                if recipe.category and recipe.source == source
             }
         )
 
-    def get_category_counts(self) -> Dict[str, int]:
+    def get_category_counts(self, source: str = "base") -> Dict[str, int]:
+        """
+        Возвращает количество рецептов по категориям для указанного источника.
+        """
         counts: Dict[str, int] = {}
 
         for recipe in self.recipes.values():
-            if not recipe.category:
+            if not recipe.category or recipe.source != source:
                 continue
 
             counts[recipe.category] = counts.get(recipe.category, 0) + 1
 
         return counts
+
+    def get_all_sources(self) -> List[str]:
+        """
+        Возвращает список всех источников (base, season и т.д.).
+        """
+        return sorted({recipe.source for recipe in self.recipes.values() if recipe.source})
 
     def _expand_token(self, token: str) -> List[str]:
         """
@@ -203,6 +218,9 @@ class SearchIndex:
         return []
 
     def search(self, query: str, limit: int = 50) -> List[Recipe]:
+        """
+        Поиск по всем рецептам с ранжированием.
+        """
         raw_query = (query or "").lower().replace("ё", "е").strip()
         tokens = tokenize(query)
 
@@ -327,9 +345,15 @@ def reset_search_index() -> SearchIndex:
     return _search_index
 
 
-def get_categories() -> List[str]:
-    return get_search_index().get_all_categories()
+def get_categories(source: str = "base") -> List[str]:
+    """
+    Возвращает категории для указанного источника.
+    """
+    return get_search_index().get_all_categories(source)
 
 
-def get_category_counts() -> Dict[str, int]:
-    return get_search_index().get_category_counts()
+def get_category_counts(source: str = "base") -> Dict[str, int]:
+    """
+    Возвращает количество рецептов по категориям для указанного источника.
+    """
+    return get_search_index().get_category_counts(source)
