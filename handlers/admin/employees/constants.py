@@ -15,7 +15,7 @@ EMPLOYEE_CHECKLISTS = 209
 EMPLOYEES_ANALYTICS = 210
 EMPLOYEE_AWAIT_RATE = 211
 EMPLOYEE_AWAIT_COMMENT = 212
-EMPLOYEE_DELETE_CONFIRM = 213          # НОВОЕ
+EMPLOYEE_DELETE_CONFIRM = 213
 
 
 # =========================================================
@@ -44,8 +44,10 @@ CB_EMP_SET_STATUS_PREFIX = "emp_setst:"
 CB_EMP_BACK = "emp_back"
 CB_EMP_CANCEL = "emp_cancel"
 
-CB_EMP_DELETE = "emp_delete"              # НОВОЕ
-CB_EMP_DELETE_CONFIRM_PREFIX = "emp_delc:"  # НОВОЕ
+CB_EMP_DELETE = "emp_delete"
+CB_EMP_DELETE_SOFT = "emp_del_soft"          # НОВОЕ – скрыть
+CB_EMP_DELETE_HARD = "emp_del_hard"          # НОВОЕ – удалить полностью
+CB_EMP_DELETE_CONFIRM_PREFIX = "emp_delc:"   # Удалено, используем отдельные callback'и
 
 
 # =========================================================

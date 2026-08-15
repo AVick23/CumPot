@@ -187,8 +187,9 @@ def init_db():
             "birthday": "TEXT",
             "address": "TEXT",
             "responsibilities": "TEXT",
-            "status": "TEXT DEFAULT 'Сотрудник'",      # НОВОЕ
-            "admin_comment": "TEXT",                  # НОВОЕ
+            "status": "TEXT DEFAULT 'Сотрудник'",
+            "admin_comment": "TEXT",
+            "is_active": "BOOLEAN DEFAULT 1",          # <-- НОВОЕ
         }
         for field, col_type in new_user_fields.items():
             if field not in user_columns:

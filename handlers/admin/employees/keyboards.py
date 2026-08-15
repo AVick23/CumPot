@@ -18,7 +18,8 @@ from .constants import (
     CB_EMP_BACK,
     CB_EMP_CANCEL,
     CB_EMP_DELETE,
-    CB_EMP_DELETE_CONFIRM_PREFIX,
+    CB_EMP_DELETE_SOFT,
+    CB_EMP_DELETE_HARD,
     STATUSES,
 )
 
@@ -90,19 +91,27 @@ def employee_detail_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 
 def confirm_delete_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """Клавиатура подтверждения удаления."""
+    """Клавиатура подтверждения удаления с двумя вариантами."""
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "✅ Да, удалить",
-                    callback_data=f"{CB_EMP_DELETE_CONFIRM_PREFIX}{user_id}",
+                    "🗑 Удалить полностью",
+                    callback_data=f"{CB_EMP_DELETE_HARD}:{user_id}",
                 ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "🙈 Скрыть из списка (данные сохранятся)",
+                    callback_data=f"{CB_EMP_DELETE_SOFT}:{user_id}",
+                ),
+            ],
+            [
                 InlineKeyboardButton(
                     "❌ Отмена",
                     callback_data=f"{CB_EMP_DETAIL_PREFIX}{user_id}",
                 ),
-            ]
+            ],
         ]
     )
 

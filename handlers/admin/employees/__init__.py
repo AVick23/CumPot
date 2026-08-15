@@ -20,7 +20,7 @@ from .constants import (
     EMPLOYEES_ANALYTICS,
     EMPLOYEE_AWAIT_RATE,
     EMPLOYEE_AWAIT_COMMENT,
-    EMPLOYEE_DELETE_CONFIRM,          # НОВОЕ
+    EMPLOYEE_DELETE_CONFIRM,
 )
 
 
@@ -79,7 +79,6 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(employees_callback),
     ]
 
-    # НОВОЕ СОСТОЯНИЕ ДЛЯ ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ
     states[EMPLOYEE_DELETE_CONFIRM] = [
         CallbackQueryHandler(employees_callback),
     ]

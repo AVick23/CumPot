@@ -5,7 +5,7 @@ from telegram import Update, InputMediaPhoto
 from telegram.ext import ContextTypes
 
 from db import get_connection
-from db.users import get_all_users, get_user
+from db.users import get_all_users, get_active_users, get_user, deactivate_user
 from db.profile import (
     get_employee_full_info,
     update_employee_status,
@@ -50,7 +50,8 @@ from .constants import (
     CB_EMP_BACK,
     CB_EMP_CANCEL,
     CB_EMP_DELETE,
-    CB_EMP_DELETE_CONFIRM_PREFIX,
+    CB_EMP_DELETE_SOFT,
+    CB_EMP_DELETE_HARD,
     STATUSES,
     REPORT_PERIOD_DAYS,
 )
@@ -149,7 +150,7 @@ async def show_employees_list(
     message_id: int | None = None,
     notice: str | None = None,
 ) -> int:
-    users = get_all_users()
+    users = get_active_users()  # <-- ТОЛЬКО АКТИВНЫЕ
 
     if not users:
         text = "👥 Команда пока пуста."
@@ -179,7 +180,6 @@ async def show_employee_detail(
     message_id: int | None = None,
     notice: str | None = None,
 ) -> int:
-    # Сохраняем ID текущего сотрудника в контексте для удаления
     context.user_data["current_employee_id"] = tg_id
 
     user = get_user(tg_id)
@@ -187,6 +187,10 @@ async def show_employee_detail(
     if not user:
         await _render(update, context, "⚠️ Сотрудник не найден.", None, message_id)
         return await show_employees_list(update, context, message_id)
+
+    # Проверка активности (необязательно, можно показывать карточку даже если скрыт)
+    if user.get("is_active") == 0:
+        notice = (notice or "") + "\n\n⚠️ Сотрудник скрыт из списка."
 
     info = get_employee_full_info(tg_id) or {}
 
@@ -401,7 +405,7 @@ async def show_analytics(
     context: ContextTypes.DEFAULT_TYPE,
     message_id: int | None = None,
 ) -> int:
-    users = get_all_users()
+    users = get_active_users()  # <-- ТОЛЬКО АКТИВНЫЕ
 
     date_from, date_to = _period_range(REPORT_PERIOD_DAYS)
 
@@ -461,13 +465,9 @@ async def show_delete_confirm(
     text = (
         f"⚠️ <b>Удаление сотрудника</b>\n\n"
         f"Вы уверены, что хотите удалить <b>{_short_name(user)}</b>?\n\n"
-        "Будут удалены все данные:\n"
-        "• Профиль\n"
-        "• Смены\n"
-        "• Такси\n"
-        "• Отчёты\n"
-        "• Прогресс по чек-листам\n"
-        "• Ставки\n\n"
+        "Выберите способ удаления:\n"
+        "• <b>Удалить полностью</b> – все данные будут безвозвратно стёрты.\n"
+        "• <b>Скрыть из списка</b> – сотрудник исчезнет из команды, но все его данные сохранятся.\n\n"
         "Это действие <b>НЕЛЬЗЯ</b> отменить!"
     )
 
@@ -483,6 +483,7 @@ async def delete_employee(
     context: ContextTypes.DEFAULT_TYPE,
     tg_id: int,
     message_id: int | None = None,
+    hard: bool = True,
 ) -> int:
     user = get_user(tg_id)
 
@@ -492,12 +493,20 @@ async def delete_employee(
 
     name = _short_name(user)
 
-    try:
-        delete_employee_completely(tg_id)
-        notice = f"✅ Сотрудник <b>{name}</b> удалён."
-    except Exception as e:
-        logger.error("Ошибка удаления сотрудника %s: %s", tg_id, e)
-        notice = f"⚠️ Ошибка при удалении сотрудника {name}."
+    if hard:
+        try:
+            delete_employee_completely(tg_id)
+            notice = f"✅ Сотрудник <b>{name}</b> полностью удалён."
+        except Exception as e:
+            logger.error("Ошибка полного удаления %s: %s", tg_id, e)
+            notice = f"⚠️ Ошибка при удалении сотрудника {name}."
+    else:
+        try:
+            deactivate_user(tg_id)
+            notice = f"🙈 Сотрудник <b>{name}</b> скрыт из списка. Данные сохранены."
+        except Exception as e:
+            logger.error("Ошибка скрытия %s: %s", tg_id, e)
+            notice = f"⚠️ Ошибка при скрытии сотрудника {name}."
 
     return await show_employees_list(update, context, message_id, notice)
 
@@ -536,7 +545,7 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Общий XLSX
     if data == CB_EMP_XLSX_ALL:
-        users = get_all_users()
+        users = get_active_users()
 
         if not users:
             return await show_employees_list(update, context, message_id, notice="⚠️ Нет данных.")
@@ -685,7 +694,7 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         return await show_employee_taxi(update, context, tg_id, message_id)
 
-    # УДАЛЕНИЕ СОТРУДНИКА
+    # УДАЛЕНИЕ СОТРУДНИКА – показать подтверждение
     if data == CB_EMP_DELETE:
         tg_id = context.user_data.get("current_employee_id")
         if not tg_id:
@@ -693,10 +702,15 @@ async def employees_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         return await show_delete_confirm(update, context, tg_id, message_id)
 
-    # ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ
-    if data.startswith(CB_EMP_DELETE_CONFIRM_PREFIX):
+    # ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ – полное
+    if data.startswith(CB_EMP_DELETE_HARD):
         tg_id = int(data.split(":")[1])
-        return await delete_employee(update, context, tg_id, message_id)
+        return await delete_employee(update, context, tg_id, message_id, hard=True)
+
+    # ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ – скрытие
+    if data.startswith(CB_EMP_DELETE_SOFT):
+        tg_id = int(data.split(":")[1])
+        return await delete_employee(update, context, tg_id, message_id, hard=False)
 
     return await show_employees_list(update, context, message_id)
 
