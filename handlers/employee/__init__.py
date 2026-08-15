@@ -25,7 +25,7 @@ from .checklists.handlers import (
 # Импорт для отчётов, профиля и справочника
 from .reports import register_report_states
 from .profile import register_profile_states
-from .reference import register_reference_states   # ДОБАВЛЕНО
+from .reference import register_reference_states
 
 from .menu.constants import (
     ONBOARD_NAME,
@@ -40,6 +40,7 @@ from .menu.constants import (
     CB_SHIFT_TYPE_PREFIX,
     CB_REPORTS,
     CB_PROFILE,
+    CB_REFERENCE,   # добавлен импорт
 )
 
 from .checklists.constants import (
@@ -83,13 +84,13 @@ def register_employee_states(states: dict):
         CallbackQueryHandler(onboarding_position_guard),
     ]
 
-    # Главное меню
+    # Главное меню – ИСПРАВЛЕНО: добавлен CB_REFERENCE
     states[MAIN_MENU] = [
         CallbackQueryHandler(
             main_menu_callback,
             pattern=(
                 f"^{CB_START_SHIFT}$|^{CB_CHECKLIST}$|^{CB_PROGRESS}$|"
-                f"^{CB_BACK_MENU}$|^{CB_REPORTS}$|^{CB_PROFILE}$"
+                f"^{CB_BACK_MENU}$|^{CB_REPORTS}$|^{CB_PROFILE}$|^{CB_REFERENCE}$"
             )
         ),
         CallbackQueryHandler(noop, pattern="^noop$"),
@@ -147,4 +148,4 @@ def register_employee_states(states: dict):
     # Регистрируем состояния для отчётов, профиля и справочника
     register_report_states(states)
     register_profile_states(states)
-    register_reference_states(states)   # ДОБАВЛЕНО
+    register_reference_states(states)
