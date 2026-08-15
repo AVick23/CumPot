@@ -3,13 +3,16 @@ import string
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional, List
-from nltk.stem import SnowballStemmer
 
+# Импортируем nltk и загружаем punkt, если ещё не загружен
 try:
+    import nltk
     nltk.data.find('tokenizers/punkt')
-except LookupError:
+except (LookupError, NameError):
     import nltk
     nltk.download('punkt')
+
+from nltk.stem import SnowballStemmer
 
 stemmer = SnowballStemmer("russian")
 
@@ -106,7 +109,6 @@ class SearchIndex:
                 corrected_tokens.append(token)
             else:
                 # Используем нечёткое сравнение (можно заменить на Damerau-Levenshtein)
-                # Для простоты воспользуемся difflib
                 import difflib
                 matches = difflib.get_close_matches(token, list(self.vocabulary), n=1, cutoff=0.7)
                 if matches:
