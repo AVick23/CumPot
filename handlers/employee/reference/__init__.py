@@ -56,6 +56,6 @@ def register_reference_states(states: dict):
     ]
 
 
-# Загружаем данные при импорте модуля
+# Загружаем данные при импорте модуля (теперь из встроенного списка)
 from .handlers import load_recipes_from_excel
 load_recipes_from_excel()
