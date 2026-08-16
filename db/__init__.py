@@ -136,14 +136,17 @@ def init_db():
         """)
 
         # ------------------------------------------------------------
-        # Новая таблица для отправленных напоминаний
+        # Новая таблица для отправленных напоминаний (с учётом времени смены)
         # ------------------------------------------------------------
+        conn.execute("DROP TABLE IF EXISTS opening_reminders_sent")
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS opening_reminders_sent (
+            CREATE TABLE opening_reminders_sent (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 location TEXT NOT NULL,
                 date TEXT NOT NULL,
+                shift_start_time TEXT NOT NULL,
                 sent_at TEXT,
-                PRIMARY KEY (location, date)
+                UNIQUE(location, date, shift_start_time)
             )
         """)
 

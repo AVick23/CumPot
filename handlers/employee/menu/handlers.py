@@ -249,16 +249,18 @@ async def shift_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
             await render(update, context, f"⚠️ Не удалось начать смену: {str(e)}", None, message_id)
             return MAIN_MENU
 
-        # --- НОВАЯ ЛОГИКА: отправка напоминания, если это первая смена ---
+        # --- НОВАЯ ЛОГИКА: отправка напоминания при старте первой смены и для бара в 10:00 ---
         location = shift_type.get("location")
+        start_time = shift_type.get("start_time")  # "07:00", "10:00", "15:00", etc.
+        today = today_msk_str()
+
         if location:
             weekday = now_msk().weekday()
-            today = today_msk_str()
             earliest_id = get_earliest_shift_type_id(location, weekday)
 
-            if earliest_id is not None and shift_type_id == earliest_id:
-                # Проверяем, не отправляли ли уже сегодня для этой локации
-                if not is_opening_reminder_sent(location, today):
+            # Функция для отправки напоминания, если ещё не отправляли для данного времени
+            async def send_reminder_if_needed(shift_start_time: str, reason: str = ""):
+                if not is_opening_reminder_sent(location, today, shift_start_time):
                     report_text = get_last_closing_report()
                     if report_text:
                         reminder_text = build_opening_reminder(report_text)
@@ -269,10 +271,10 @@ async def shift_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
                                     text=reminder_text,
                                     parse_mode="Markdown"
                                 )
-                                mark_opening_reminder_sent(location, today)
+                                mark_opening_reminder_sent(location, today, shift_start_time)
                                 logger.info(
                                     f"🌅 Напоминание отправлено пользователю {user.id} "
-                                    f"при старте первой смены ({location})"
+                                    f"при старте смены {shift_start_time} ({location}) {reason}"
                                 )
                             except Exception as e:
                                 logger.error(f"Ошибка отправки напоминания: {e}")
@@ -280,6 +282,15 @@ async def shift_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
                             logger.info("Не удалось сформировать текст напоминания")
                     else:
                         logger.info("Нет отчёта закрытия для формирования напоминания")
+
+            # 1. Если это самая ранняя смена – отправляем
+            if earliest_id is not None and shift_type_id == earliest_id:
+                await send_reminder_if_needed(start_time, "(первая смена)")
+
+            # 2. Если это бар и время 10:00 – отправляем отдельно (день)
+            if location == "bar" and start_time == "10:00":
+                await send_reminder_if_needed(start_time, "(дневная смена)")
+
         # --- Конец новой логики ---
 
         return await show_main_menu(update, context, message_id, notice="✅ Смена открыта. Хорошей смены!")

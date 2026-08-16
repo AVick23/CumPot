@@ -1,5 +1,5 @@
 from . import get_connection
-from utils.time_utils import now_msk, today_msk_str, time_msk_str
+from utils.time_utils import now_msk, today_msk_str, time_msk_str, yesterday_msk_str
 
 
 def _auto_close_outdated_shifts(conn):
@@ -239,7 +239,7 @@ def get_shifts_for_month(user_id: int, year: int, month: int) -> set[str]:
 
 
 # ============================================================
-# ОТЧЁТЫ ПО СМЕНАМ (добавлены функции для работы с отчётами)
+# ОТЧЁТЫ ПО СМЕНАМ
 # ============================================================
 
 def get_report(date_str: str, report_type: str) -> dict | None:
@@ -274,7 +274,6 @@ def get_previous_report_of_type(date_str: str, report_type: str) -> dict | None:
 
 def get_last_closing_report() -> str | None:
     """Возвращает полный текст последнего отчёта закрытия (за вчера или самый свежий до сегодня)."""
-    from utils.time_utils import yesterday_msk_str, today_msk_str
     yesterday = yesterday_msk_str()
     report = get_report(yesterday, "closing")
     if report:
@@ -287,27 +286,27 @@ def get_last_closing_report() -> str | None:
 
 
 # ============================================================
-# НАПОМИНАНИЯ ДЛЯ ПЕРВОЙ СМЕНЫ
+# НАПОМИНАНИЯ ДЛЯ ПЕРВОЙ СМЕНЫ (с учётом времени)
 # ============================================================
 
-def mark_opening_reminder_sent(location: str, date: str) -> None:
-    """Сохраняет факт отправки напоминания для первой смены в локации в указанную дату."""
+def mark_opening_reminder_sent(location: str, date: str, shift_start_time: str) -> None:
+    """Сохраняет факт отправки напоминания для конкретного времени смены в локации в указанную дату."""
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT OR REPLACE INTO opening_reminders_sent (location, date, sent_at)
-            VALUES (?, ?, ?)
+            INSERT OR REPLACE INTO opening_reminders_sent (location, date, shift_start_time, sent_at)
+            VALUES (?, ?, ?, ?)
             """,
-            (location, date, now_msk().isoformat())
+            (location, date, shift_start_time, now_msk().isoformat())
         )
         conn.commit()
 
 
-def is_opening_reminder_sent(location: str, date: str) -> bool:
-    """Проверяет, отправлялось ли уже напоминание для первой смены в локации в эту дату."""
+def is_opening_reminder_sent(location: str, date: str, shift_start_time: str) -> bool:
+    """Проверяет, отправлялось ли уже напоминание для данного времени смены в локации в эту дату."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT 1 FROM opening_reminders_sent WHERE location = ? AND date = ?",
-            (location, date)
+            "SELECT 1 FROM opening_reminders_sent WHERE location = ? AND date = ? AND shift_start_time = ?",
+            (location, date, shift_start_time)
         ).fetchone()
         return row is not None
