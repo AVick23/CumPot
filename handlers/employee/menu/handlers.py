@@ -5,9 +5,12 @@ from telegram.ext import ContextTypes
 from db.users import get_user, update_user_profile
 from db.shifts import (
     start_shift, get_active_shift,
-    get_shift_types_for_location, get_shift_type
+    get_shift_types_for_location, get_shift_type,
+    get_earliest_shift_type_id, get_last_closing_report,
+    mark_opening_reminder_sent, is_opening_reminder_sent
 )
-from utils.time_utils import now_msk
+from utils.time_utils import now_msk, today_msk_str
+from utils.reminder_builder import build_opening_reminder
 
 from .constants import (
     ONBOARD_NAME,
@@ -22,7 +25,7 @@ from .constants import (
     CB_SHIFT_TYPE_PREFIX,
     CB_REPORTS,
     CB_PROFILE,
-    CB_REFERENCE,   # ДОБАВЛЕНО
+    CB_REFERENCE,
     LOCATIONS,
     FULL_NAME_LIMIT,
 )
@@ -201,7 +204,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from ..profile.handlers import show_profile
         return await show_profile(update, context, message_id)
 
-    if data == CB_REFERENCE:   # ДОБАВЛЕНО
+    if data == CB_REFERENCE:
         from ..reference.handlers import show_reference_main
         return await show_reference_main(update, context, message_id)
 
@@ -245,6 +248,39 @@ async def shift_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.error("Ошибка начала смены: %s", e)
             await render(update, context, f"⚠️ Не удалось начать смену: {str(e)}", None, message_id)
             return MAIN_MENU
+
+        # --- НОВАЯ ЛОГИКА: отправка напоминания, если это первая смена ---
+        location = shift_type.get("location")
+        if location:
+            weekday = now_msk().weekday()
+            today = today_msk_str()
+            earliest_id = get_earliest_shift_type_id(location, weekday)
+
+            if earliest_id is not None and shift_type_id == earliest_id:
+                # Проверяем, не отправляли ли уже сегодня для этой локации
+                if not is_opening_reminder_sent(location, today):
+                    report_text = get_last_closing_report()
+                    if report_text:
+                        reminder_text = build_opening_reminder(report_text)
+                        if reminder_text:
+                            try:
+                                await context.bot.send_message(
+                                    chat_id=user.id,
+                                    text=reminder_text,
+                                    parse_mode="Markdown"
+                                )
+                                mark_opening_reminder_sent(location, today)
+                                logger.info(
+                                    f"🌅 Напоминание отправлено пользователю {user.id} "
+                                    f"при старте первой смены ({location})"
+                                )
+                            except Exception as e:
+                                logger.error(f"Ошибка отправки напоминания: {e}")
+                        else:
+                            logger.info("Не удалось сформировать текст напоминания")
+                    else:
+                        logger.info("Нет отчёта закрытия для формирования напоминания")
+        # --- Конец новой логики ---
 
         return await show_main_menu(update, context, message_id, notice="✅ Смена открыта. Хорошей смены!")
 

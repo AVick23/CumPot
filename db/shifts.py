@@ -110,6 +110,27 @@ def get_shift_type(shift_type_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def get_earliest_shift_type_id(location: str, weekday: int) -> int | None:
+    """
+    Возвращает ID типа смены с самым ранним start_time для локации и дня недели.
+    """
+    weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    day_short = weekdays[weekday]
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM shift_types
+            WHERE location = ?
+              AND (days = 'all' OR days LIKE ? OR days LIKE ? OR days LIKE ?)
+            ORDER BY start_time ASC
+            LIMIT 1
+            """,
+            (location, f"%{day_short}%", f"{day_short},%", f"%,{day_short}%")
+        ).fetchone()
+        return row["id"] if row else None
+
+
 # ============================================================
 # УПРАВЛЕНИЕ СМЕНАМИ
 # ============================================================
@@ -215,3 +236,78 @@ def get_shifts_for_month(user_id: int, year: int, month: int) -> set[str]:
             (user_id, start_date, end_date)
         ).fetchall()
         return {row["date"] for row in rows}
+
+
+# ============================================================
+# ОТЧЁТЫ ПО СМЕНАМ (добавлены функции для работы с отчётами)
+# ============================================================
+
+def get_report(date_str: str, report_type: str) -> dict | None:
+    """Возвращает отчёт (полный текст и parsed_data) по дате и типу."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, date, report_type, author_id, full_text, parsed_data, created_at, updated_at
+            FROM shift_reports
+            WHERE date = ? AND report_type = ?
+            """,
+            (date_str, report_type),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_previous_report_of_type(date_str: str, report_type: str) -> dict | None:
+    """Находит последний сохранённый отчёт указанного типа СТРОГО ДО указанной даты."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, date, report_type, author_id, full_text, parsed_data, created_at, updated_at
+            FROM shift_reports
+            WHERE report_type = ? AND date < ?
+            ORDER BY date DESC, id DESC
+            LIMIT 1
+            """,
+            (report_type, date_str),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_last_closing_report() -> str | None:
+    """Возвращает полный текст последнего отчёта закрытия (за вчера или самый свежий до сегодня)."""
+    from utils.time_utils import yesterday_msk_str, today_msk_str
+    yesterday = yesterday_msk_str()
+    report = get_report(yesterday, "closing")
+    if report:
+        return report.get("full_text")
+    # Если за вчера нет, берём самый свежий до сегодня
+    latest = get_previous_report_of_type(today_msk_str(), "closing")
+    if latest:
+        return latest.get("full_text")
+    return None
+
+
+# ============================================================
+# НАПОМИНАНИЯ ДЛЯ ПЕРВОЙ СМЕНЫ
+# ============================================================
+
+def mark_opening_reminder_sent(location: str, date: str) -> None:
+    """Сохраняет факт отправки напоминания для первой смены в локации в указанную дату."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO opening_reminders_sent (location, date, sent_at)
+            VALUES (?, ?, ?)
+            """,
+            (location, date, now_msk().isoformat())
+        )
+        conn.commit()
+
+
+def is_opening_reminder_sent(location: str, date: str) -> bool:
+    """Проверяет, отправлялось ли уже напоминание для первой смены в локации в эту дату."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM opening_reminders_sent WHERE location = ? AND date = ?",
+            (location, date)
+        ).fetchone()
+        return row is not None
