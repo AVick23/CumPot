@@ -19,6 +19,11 @@ def time_msk_str() -> str:
     return now_msk().strftime("%H:%M:%S")
 
 
+def yesterday_msk_str() -> str:
+    """Дата вчера по МСК в формате YYYY-MM-DD"""
+    return (now_msk() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+
 def parse_date(date_str: str) -> datetime:
     """Парсит строку даты YYYY-MM-DD как дату по МСК"""
     return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=MSK_TZ)
